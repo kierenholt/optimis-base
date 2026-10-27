@@ -1,0 +1,16 @@
+{
+  "id": "uk.org.optimis.test",
+  "version": "0.1.0",
+  "core_dal_version": "~1.0",
+  "egress": {
+    "allowed_domains": [],
+    "timeout_ms": 8000
+  },
+  "endpoints": {
+    "get_pupil_record": {
+      "scopes": ["dal.pupils.read:all"],
+      "mutates": false,
+      "timeout_ms": 2500
+    }
+  }
+}
