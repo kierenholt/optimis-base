@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -46,7 +48,7 @@ func NewCoreDAL(dataDirPath string, schoolURN string) (*CoreDAL, error) {
 	}
 
 	dbPath := filepath.Join(dataDirPath, "core.db")
-	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)", dbPath)
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbPath)
 
 	writeDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -80,32 +82,68 @@ func NewCoreDAL(dataDirPath string, schoolURN string) (*CoreDAL, error) {
 	return d, nil
 }
 
+func resolveSchemaDir() (string, error) {
+	_, callerFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", errors.New("failed to resolve caller path for CoreDAL schema directory")
+	}
+	schemaDir := filepath.Clean(filepath.Join(filepath.Dir(callerFile), "..", "..", "docs", "schema", "core"))
+	info, err := os.Stat(schemaDir)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("mandatory schema directory not found at %s: %w", schemaDir, err)
+	}
+	return schemaDir, nil
+}
+
 func (d *CoreDAL) initSchema(schoolURN string) error {
-	ddl := `
-	PRAGMA journal_mode=WAL;
-	PRAGMA synchronous=NORMAL;
-	PRAGMA busy_timeout=5000;
-
-	CREATE TABLE IF NOT EXISTS __system_config (
-		key TEXT PRIMARY KEY,
-		value TEXT NOT NULL
-	);
-
-	CREATE TABLE IF NOT EXISTS pupils (
-		id TEXT PRIMARY KEY,
-		upn TEXT NOT NULL,
-		first_name TEXT NOT NULL,
-		last_name TEXT NOT NULL,
-		academic_year_id TEXT NOT NULL,
-		effective_from TEXT NOT NULL,
-		effective_to TEXT
-	);
-	`
-	if _, err := d.writeDB.Exec(ddl); err != nil {
-		return fmt.Errorf("failed to initialize core.db schema: %w", err)
+	schemaDir, err := resolveSchemaDir()
+	if err != nil {
+		return err
 	}
 
-	_, err := d.writeDB.Exec(
+	entries, err := os.ReadDir(schemaDir)
+	if err != nil {
+		return fmt.Errorf("failed to read schema directory %s: %w", schemaDir, err)
+	}
+
+	var sqlFiles []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+			sqlFiles = append(sqlFiles, filepath.Join(schemaDir, entry.Name()))
+		}
+	}
+	sort.Strings(sqlFiles)
+	if len(sqlFiles) == 0 {
+		return fmt.Errorf("no SQL schema files found in %s", schemaDir)
+	}
+
+	if _, err := d.writeDB.Exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;`); err != nil {
+		return fmt.Errorf("failed to configure SQLite pragmas: %w", err)
+	}
+
+	// If an older 1-table MVP core.db exists without the normalized person_id column on pupils,
+	// drop the legacy pupils table so the 45-table modular Core Schema can be created cleanly.
+	var hasPersonID int
+	_ = d.writeDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('pupils') WHERE name = 'person_id'`).Scan(&hasPersonID)
+	var hasPupilsTable int
+	_ = d.writeDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'pupils'`).Scan(&hasPupilsTable)
+	if hasPupilsTable > 0 && hasPersonID == 0 {
+		if _, err := d.writeDB.Exec(`DROP TABLE pupils;`); err != nil {
+			return fmt.Errorf("failed to drop legacy MVP pupils table: %w", err)
+		}
+	}
+
+	for _, file := range sqlFiles {
+		ddlBytes, err := os.ReadFile(file)
+		if err != nil {
+			return fmt.Errorf("failed to read schema file %s: %w", filepath.Base(file), err)
+		}
+		if _, err := d.writeDB.Exec(string(ddlBytes)); err != nil {
+			return fmt.Errorf("failed to execute schema file %s: %w", filepath.Base(file), err)
+		}
+	}
+
+	_, err = d.writeDB.Exec(
 		`INSERT INTO __system_config (key, value) VALUES ('school_urn', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
 		schoolURN,
 	)
@@ -141,20 +179,66 @@ func (d *CoreDAL) SeedPupil(ctx context.Context, in SeedPupilInput) (*Pupil, err
 		return nil, errors.New("missing mandatory field: effective_from")
 	}
 
-	id := "pup_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	uid := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	personID := "per_" + uid
+	pupilID := "pup_" + uid
+	enrolmentID := "enr_" + uid
 
-	_, err := d.writeDB.ExecContext(
+	tx, err := d.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin SeedPupil transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	_, err = tx.ExecContext(
 		ctx,
-		`INSERT INTO pupils (id, upn, first_name, last_name, academic_year_id, effective_from, effective_to)
-		 VALUES (?, ?, ?, ?, ?, ?, NULL)`,
-		id, in.UPN, in.FirstName, in.LastName, in.AcademicYearID, in.EffectiveFrom,
+		`INSERT INTO academic_years (id, name, status, sequence_number, first_day, last_day)
+		 VALUES (?, ?, 'CURRENT', (SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM academic_years), ?, '2099-08-31')
+		 ON CONFLICT(id) DO NOTHING`,
+		in.AcademicYearID, in.AcademicYearID, in.EffectiveFrom,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ensure academic_year %s: %w", in.AcademicYearID, err)
+	}
+
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO persons (id, legal_first_name, legal_last_name, sex, status)
+		 VALUES (?, ?, ?, 'U', 'ACTIVE')`,
+		personID, in.FirstName, in.LastName,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert person for pupil: %w", err)
+	}
+
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO pupils (id, person_id, upn)
+		 VALUES (?, ?, ?)`,
+		pupilID, personID, in.UPN,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert pupil: %w", err)
 	}
 
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO pupil_year_enrolments (id, pupil_id, academic_year_id, nc_year_group, effective_from, effective_to)
+		 VALUES (?, ?, ?, '7', ?, NULL)`,
+		enrolmentID, pupilID, in.AcademicYearID, in.EffectiveFrom,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert pupil_year_enrolment: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit SeedPupil transaction: %w", err)
+	}
+
 	return &Pupil{
-		ID:             id,
+		ID:             pupilID,
 		UPN:            in.UPN,
 		FirstName:      in.FirstName,
 		LastName:       in.LastName,
@@ -167,8 +251,34 @@ func (d *CoreDAL) DeletePupil(ctx context.Context, pupilID string) error {
 	if strings.TrimSpace(pupilID) == "" {
 		return errors.New("missing mandatory parameter: pupil_id")
 	}
-	_, err := d.writeDB.ExecContext(ctx, `DELETE FROM pupils WHERE id = ?`, pupilID)
-	return err
+
+	tx, err := d.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin DeletePupil transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	var personID string
+	err = tx.QueryRowContext(ctx, `SELECT person_id FROM pupils WHERE id = ?`, pupilID).Scan(&personID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("failed to look up person_id for pupil %s: %w", pupilID, err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM pupil_year_enrolments WHERE pupil_id = ?`, pupilID); err != nil {
+		return fmt.Errorf("failed to delete pupil_year_enrolments: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM pupils WHERE id = ?`, pupilID); err != nil {
+		return fmt.Errorf("failed to delete pupil: %w", err)
+	}
+	if personID != "" {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM persons WHERE id = ?`, personID); err != nil {
+			return fmt.Errorf("failed to delete person: %w", err)
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (d *CoreDAL) GetPupilByID(ctx context.Context, pupilID string) (*Pupil, error) {
@@ -178,9 +288,13 @@ func (d *CoreDAL) GetPupilByID(ctx context.Context, pupilID string) (*Pupil, err
 
 	row := d.readDB.QueryRowContext(
 		ctx,
-		`SELECT id, upn, first_name, last_name, academic_year_id, effective_from, effective_to
-		 FROM pupils
-		 WHERE id = ? AND (effective_to IS NULL OR effective_to >= date('now'))`,
+		`SELECT p.id, p.upn, per.legal_first_name, per.legal_last_name, enr.academic_year_id, enr.effective_from, enr.effective_to
+		 FROM pupils p
+		 JOIN persons per ON per.id = p.person_id
+		 JOIN pupil_year_enrolments enr ON enr.pupil_id = p.id
+		 WHERE p.id = ? AND (enr.effective_to IS NULL OR enr.effective_to >= date('now'))
+		 ORDER BY enr.effective_from DESC
+		 LIMIT 1`,
 		pupilID,
 	)
 
