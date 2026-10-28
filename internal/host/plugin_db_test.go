@@ -183,6 +183,10 @@ func TestLoadPlugin_FailingMigrationInUpgrade_RollsBackFileSnapshotAutomatically
   "database": {
     "alias": "plugin_rollback"
   },
+  "gdpr_hooks": {
+    "export_pupil_data": "export_pupil_data",
+    "purge_pupil_data": "purge_pupil_data"
+  },
   "egress": {
     "allowed_domains": []
   },
@@ -213,6 +217,14 @@ function count_items(ctx, args)
       max_page_count = pages[1].max_page_count
     }
   }
+end
+
+function export_pupil_data(ctx, args)
+  return { ok = true, data = {} }
+end
+
+function purge_pupil_data(ctx, args)
+  return { ok = true, data = { purged_rows = 0 } }
 end
 `
 	mig001 := `CREATE TABLE items (id TEXT PRIMARY KEY, label TEXT NOT NULL);`
@@ -364,6 +376,10 @@ func TestExecuteRPC_PluginDBScopeAndWriteTxHttpGuard_FailsFastAndRollsBack_test(
   "database": {
     "alias": "plugin_guard"
   },
+  "gdpr_hooks": {
+    "export_pupil_data": "export_pupil_data",
+    "purge_pupil_data": "purge_pupil_data"
+  },
   "egress": {
     "allowed_domains": ["https://api.example.org"]
   },
@@ -397,6 +413,14 @@ end
 function count_entries(ctx, args)
   local rows = ctx.plugin_db.query("SELECT COUNT(*) AS cnt FROM guard_items")
   return { ok = true, data = { cnt = rows[1].cnt } }
+end
+
+function export_pupil_data(ctx, args)
+  return { ok = true, data = {} }
+end
+
+function purge_pupil_data(ctx, args)
+  return { ok = true, data = { purged_rows = 0 } }
 end
 `
 	if err := os.WriteFile(filepath.Join(pluginDir, "manifest.json"), []byte(manifestJSON), 0o644); err != nil {

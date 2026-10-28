@@ -1,6 +1,6 @@
 # End-to-End Playwright Verification Suites (`tests/e2e`)
 
-This directory contains the sequential Playwright E2E test suites verifying the Optimis Host UI Shell, Sandboxed `<iframe sandbox="allow-scripts">` Plugin Bridge, Core DAL domain scoping, and Backend Session/Persona Resolution.
+This directory contains the sequential Playwright E2E test suites verifying the Optimis Host UI Shell, Sandboxed `<iframe sandbox="allow-scripts">` Plugin Bridge, Core DAL domain scoping, Backend Session/Persona Resolution, Safeguarding Vault Envelope Encryption, and UK GDPR SAR Redaction & Retention Purge.
 
 ---
 
@@ -17,6 +17,10 @@ This directory contains the sequential Playwright E2E test suites verifying the 
 
 ## 2. E2E Spec Files
 
+* [`gdpr_sar_redaction_and_purge.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/gdpr_sar_redaction_and_purge.spec.ts):
+  * Verifies UK GDPR Subject Access Request (SAR) aggregation across `core.db` and attached `plugin_<name>.db` instances (both `ACTIVE` and `UNINSTALLED_DORMANT`), interactive redaction of `redactable_fields` in the React Host Shell Admin SAR Redaction UI (`App.tsx`), KCSIE safeguarding retention lock protection (`KCSIE_RETENTION_LOCK`), and zero-orphan statutory retention purges.
+* [`safeguarding_vault_dsl_unlock.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/safeguarding_vault_dsl_unlock.spec.ts):
+  * Verifies Section 5B Safeguarding Isolation: write-only postbox creation by Teachers (`dal.safeguarding.create`), 403 rejection of non-DSLs on vault read/key-renewal/decrypt, envelope-encrypted DSL Vault UI unlock via short-lived signed OAuth Cloud Key (`POST /api/safeguarding/cloud-key/renew` & `POST /api/safeguarding/notes/:id/decrypt`), and strict write-only Lua sandbox isolation.
 * [`backend_session_persona_resolution.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/backend_session_persona_resolution.spec.ts):
   * Verifies `GET /api/auth/personas`, `POST /api/auth/persona` (`SameSite=Strict` `mis_session` cookie issuance), and `GET /api/auth/session` against seeded `ADMIN`, `DSL`, `TEACHER`, and terminated staff in `core.db`.
   * Verifies that switching to a persona without required endpoint scopes causes `POST /api/plugins/:id/rpc/:method` to fail fast (`caller lacks required DAL scopes`).

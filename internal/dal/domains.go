@@ -172,7 +172,18 @@ type ReadSafeguardingNoteDSLInput struct {
 	ClientIP         string `json:"client_ip"`
 }
 
-type DecryptedSafeguardingNote struct {
+type SafeguardingAuditLogEntry struct {
+	AuditID       string `json:"audit_id"`
+	NoteID        string `json:"note_id"`
+	PupilID       string `json:"pupil_id"`
+	ActorPersonID string `json:"actor_person_id"`
+	ActionType    string `json:"action_type"`
+	RequestID     string `json:"request_id"`
+	ClientIP      string `json:"client_ip"`
+	Timestamp     string `json:"timestamp"`
+}
+
+type SafeguardingNoteEnvelopeMetadata struct {
 	NoteID             string `json:"note_id"`
 	PupilID            string `json:"pupil_id"`
 	ReportedByStaffID  string `json:"reported_by_staff_id"`
@@ -180,10 +191,23 @@ type DecryptedSafeguardingNote struct {
 	ConcernCategory    string `json:"concern_category"`
 	Status             string `json:"status"`
 	IncidentDate       string `json:"incident_date"`
-	Summary            string `json:"summary"`
-	BodyMap            string `json:"body_map"`
-	VerbatimAccount    string `json:"verbatim_account"`
-	ActionTaken        string `json:"action_taken"`
+	KMSKeyID           string `json:"kms_key_id"`
+	CreatedAt          string `json:"created_at"`
+}
+
+type DecryptedSafeguardingNote struct {
+	NoteID             string                      `json:"note_id"`
+	PupilID            string                      `json:"pupil_id"`
+	ReportedByStaffID  string                      `json:"reported_by_staff_id"`
+	AssignedDSLStaffID string                      `json:"assigned_dsl_staff_id"`
+	ConcernCategory    string                      `json:"concern_category"`
+	Status             string                      `json:"status"`
+	IncidentDate       string                      `json:"incident_date"`
+	Summary            string                      `json:"summary"`
+	BodyMap            string                      `json:"body_map"`
+	VerbatimAccount    string                      `json:"verbatim_account"`
+	ActionTaken        string                      `json:"action_taken"`
+	AuditLogs          []SafeguardingAuditLogEntry `json:"audit_logs,omitempty"`
 }
 
 type safeguardingEncryptedPayload struct {
@@ -1352,7 +1376,114 @@ func (d *CoreDAL) ReadSafeguardingNoteDSL(
 		return nil, fmt.Errorf("failed to write DSL_DECRYPT_VIEW audit log: %w", err)
 	}
 
+	auditRows, err := d.readDB.QueryContext(
+		ctx,
+		`SELECT audit_id, note_id, pupil_id, actor_person_id, action_type, request_id, client_ip, timestamp
+		 FROM safeguarding_audit_logs
+		 WHERE note_id = ?
+		 ORDER BY timestamp ASC, audit_id ASC`,
+		note.NoteID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query safeguarding_audit_logs for note %s: %w", note.NoteID, err)
+	}
+	defer auditRows.Close()
+
+	for auditRows.Next() {
+		var entry SafeguardingAuditLogEntry
+		if scanErr := auditRows.Scan(
+			&entry.AuditID,
+			&entry.NoteID,
+			&entry.PupilID,
+			&entry.ActorPersonID,
+			&entry.ActionType,
+			&entry.RequestID,
+			&entry.ClientIP,
+			&entry.Timestamp,
+		); scanErr != nil {
+			return nil, fmt.Errorf("failed to scan safeguarding_audit_logs row: %w", scanErr)
+		}
+		note.AuditLogs = append(note.AuditLogs, entry)
+	}
+	if err := auditRows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating safeguarding_audit_logs: %w", err)
+	}
+
 	return &note, nil
+}
+
+func (d *CoreDAL) ListSafeguardingNoteEnvelopesDSL(
+	ctx context.Context,
+	dslStaffID string,
+	pupilID string,
+) ([]SafeguardingNoteEnvelopeMetadata, error) {
+	trimmedDSL := strings.TrimSpace(dslStaffID)
+	if trimmedDSL == "" {
+		return nil, errors.New("missing mandatory parameter: dsl_staff_id")
+	}
+
+	var isDSL int
+	err := d.readDB.QueryRowContext(
+		ctx,
+		`SELECT is_dsl FROM staff WHERE id = ?`,
+		trimmedDSL,
+	).Scan(&isDSL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify DSL staff record: %w", err)
+	}
+	if isDSL != 1 {
+		return nil, fmt.Errorf("unauthorized: staff %s is not a Designated Safeguarding Lead (is_dsl=0)", trimmedDSL)
+	}
+
+	var rows *sql.Rows
+	trimmedPupil := strings.TrimSpace(pupilID)
+	if trimmedPupil != "" {
+		rows, err = d.readDB.QueryContext(
+			ctx,
+			`SELECT id, pupil_id, reported_by_staff_id, COALESCE(assigned_dsl_staff_id, ''),
+			        concern_category, status, incident_date, kms_key_id, created_at
+			 FROM safeguarding_notes
+			 WHERE pupil_id = ?
+			 ORDER BY created_at DESC, id ASC`,
+			trimmedPupil,
+		)
+	} else {
+		rows, err = d.readDB.QueryContext(
+			ctx,
+			`SELECT id, pupil_id, reported_by_staff_id, COALESCE(assigned_dsl_staff_id, ''),
+			        concern_category, status, incident_date, kms_key_id, created_at
+			 FROM safeguarding_notes
+			 ORDER BY created_at DESC, id ASC`,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query safeguarding note envelopes: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]SafeguardingNoteEnvelopeMetadata, 0)
+	for rows.Next() {
+		var meta SafeguardingNoteEnvelopeMetadata
+		if err := rows.Scan(
+			&meta.NoteID,
+			&meta.PupilID,
+			&meta.ReportedByStaffID,
+			&meta.AssignedDSLStaffID,
+			&meta.ConcernCategory,
+			&meta.Status,
+			&meta.IncidentDate,
+			&meta.KMSKeyID,
+			&meta.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan safeguarding note envelope metadata: %w", err)
+		}
+		result = append(result, meta)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating safeguarding note envelopes: %w", err)
+	}
+
+	return result, nil
 }
 
 // ============================================================================

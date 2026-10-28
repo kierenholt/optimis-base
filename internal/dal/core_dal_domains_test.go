@@ -852,3 +852,105 @@ func TestReadSafeguardingNoteDSL_NonDSLStaffOrExpiredCloudKeyToken_FailsFastWith
 	}
 	logTap.Logf("verified non-DSL staff and expired cloud key tokens are rejected")
 }
+
+func TestListSafeguardingNoteEnvelopesDSL_DSLAndNonDSL_ReturnsEncryptedEnvelopeMetadataOnlyToDSL_test(t *testing.T) {
+	ctx := context.Background()
+	d, fx, logTap := setupIsolatedCoreDALWithFixtures(t)
+
+	receipt, err := d.CreateSafeguardingPostboxNote(ctx, dal.CreateSafeguardingPostboxInput{
+		PupilID:            fx.ActivePupilID,
+		ReportedByStaffID:  fx.TeacherStaffID,
+		AssignedDSLStaffID: fx.DSLStaffID,
+		ConcernCategory:    "ONLINE_SAFETY",
+		IncidentDate:       fx.ReferenceDate,
+		Summary:            "Sensitive online safety disclosure",
+		BodyMap:            "NONE",
+		VerbatimAccount:    "Strictly confidential verbatim text.",
+		ActionTaken:        "Referred to DSL",
+		RequestID:          "req_sfg_list_meta_1",
+		ClientIP:           "10.0.0.15",
+		HostKMSKeyHandle:   fx.HostKMSKeyHandle,
+	})
+	if err != nil {
+		t.Fatalf("CreateSafeguardingPostboxNote failed: %v", err)
+	}
+
+	// 1. Non-DSL staff member MUST fail fast when listing safeguarding note envelopes
+	if _, err := d.ListSafeguardingNoteEnvelopesDSL(ctx, fx.TeacherStaffID, fx.ActivePupilID); err == nil {
+		t.Fatalf("SECURITY VIOLATION: non-DSL teacher (%s) was allowed to list safeguarding note envelopes", fx.TeacherStaffID)
+	}
+
+	// 2. Authorized DSL receives envelope metadata (NoteID, Category, Status, KMSKeyID) without plaintext
+	envelopes, err := d.ListSafeguardingNoteEnvelopesDSL(ctx, fx.DSLStaffID, fx.ActivePupilID)
+	if err != nil {
+		t.Fatalf("ListSafeguardingNoteEnvelopesDSL failed for DSL: %v", err)
+	}
+	if len(envelopes) != 1 || envelopes[0].NoteID != receipt.NoteID {
+		t.Fatalf("expected 1 envelope for note %s, got %+v", receipt.NoteID, envelopes)
+	}
+	if envelopes[0].ConcernCategory != "ONLINE_SAFETY" || envelopes[0].Status != "OPEN_TRIAGE" {
+		t.Errorf("unexpected envelope metadata: %+v", envelopes[0])
+	}
+	logTap.Logf("verified DSL envelope metadata listing for note %s", receipt.NoteID)
+}
+
+func TestReadSafeguardingNoteDSL_ExpiredCloudKeyRenewed_RestoresAccessWithoutDataLoss_test(t *testing.T) {
+	ctx := context.Background()
+	d, fx, logTap := setupIsolatedCoreDALWithFixtures(t)
+
+	receipt, err := d.CreateSafeguardingPostboxNote(ctx, dal.CreateSafeguardingPostboxInput{
+		PupilID:            fx.ActivePupilID,
+		ReportedByStaffID:  fx.TeacherStaffID,
+		AssignedDSLStaffID: fx.DSLStaffID,
+		ConcernCategory:    "EMOTIONAL",
+		IncidentDate:       fx.ReferenceDate,
+		Summary:            "Cloud key renewal test summary",
+		BodyMap:            "NONE",
+		VerbatimAccount:    "Cloud key renewal verbatim account.",
+		ActionTaken:        "Logged in postbox",
+		RequestID:          "req_sfg_renew_1",
+		ClientIP:           "10.0.0.15",
+		HostKMSKeyHandle:   fx.HostKMSKeyHandle,
+	})
+	if err != nil {
+		t.Fatalf("CreateSafeguardingPostboxNote failed: %v", err)
+	}
+
+	// 1. Expired cloud key fails fast
+	expiredKey, err := d.IssueDSLCloudKeyToken(fx.DSLStaffID, fx.HostKMSKeyHandle, -1*time.Hour)
+	if err != nil {
+		t.Fatalf("IssueDSLCloudKeyToken (expired) failed: %v", err)
+	}
+	if _, err := d.ReadSafeguardingNoteDSL(ctx, dal.ReadSafeguardingNoteDSLInput{
+		NoteID:           receipt.NoteID,
+		DSLStaffID:       fx.DSLStaffID,
+		CloudKeyToken:    expiredKey,
+		HostKMSKeyHandle: fx.HostKMSKeyHandle,
+		RequestID:        "req_sfg_renew_attempt_1",
+		ClientIP:         "10.0.0.20",
+	}); err == nil {
+		t.Fatalf("expected expired cloud key to fail fast")
+	}
+
+	// 2. Generating a new cloud key seamlessly restores access without data loss (GEMINI.md §5B)
+	renewedKey, err := d.IssueDSLCloudKeyToken(fx.DSLStaffID, fx.HostKMSKeyHandle, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("IssueDSLCloudKeyToken (renewed) failed: %v", err)
+	}
+	decrypted, err := d.ReadSafeguardingNoteDSL(ctx, dal.ReadSafeguardingNoteDSLInput{
+		NoteID:           receipt.NoteID,
+		DSLStaffID:       fx.DSLStaffID,
+		CloudKeyToken:    renewedKey,
+		HostKMSKeyHandle: fx.HostKMSKeyHandle,
+		RequestID:        "req_sfg_renew_attempt_2",
+		ClientIP:         "10.0.0.20",
+	})
+	if err != nil {
+		t.Fatalf("ReadSafeguardingNoteDSL with renewed key failed: %v", err)
+	}
+	if decrypted.Summary != "Cloud key renewal test summary" || len(decrypted.AuditLogs) != 2 {
+		t.Fatalf("unexpected decrypted note or audit log count after cloud key renewal: %+v", decrypted)
+	}
+	logTap.Logf("verified OAuth Cloud Key renewal restores DSL vault access with zero data loss")
+}
+

@@ -134,6 +134,8 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 	})
 
 	h.RegisterAuthAndPersonaRoutes(mux)
+	h.RegisterSafeguardingRoutes(mux)
+	h.RegisterGDPRRoutes(mux)
 
 	mux.HandleFunc("POST /api/plugins/{plugin_id}/rpc/{method}", func(w http.ResponseWriter, r *http.Request) {
 		pluginID := strings.TrimSpace(r.PathValue("plugin_id"))
@@ -199,6 +201,10 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 		plugin, ok := h.GetLoadedPlugin(pluginID)
 		if !ok {
 			http.Error(w, "plugin not found", http.StatusNotFound)
+			return
+		}
+		if plugin.State == PluginStateUninstalledDormant {
+			http.Error(w, "PLUGIN_DORMANT_QUARANTINE: plugin UI disabled in dormant quarantine", http.StatusForbidden)
 			return
 		}
 

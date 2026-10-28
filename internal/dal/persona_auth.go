@@ -429,6 +429,33 @@ func (d *CoreDAL) DeletePersonaTestFixtures(ctx context.Context, fixtureID strin
 	pupilID := "pup_pf_" + fxID
 	pupilPersonID := "per_pup_" + fxID
 
+	if _, err := tx.ExecContext(
+		ctx,
+		`UPDATE safeguarding_notes SET retention_purge_eligible = 1 WHERE pupil_id = ?`,
+		pupilID,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DROP TRIGGER IF EXISTS trg_safeguarding_audit_no_delete;`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM safeguarding_audit_logs WHERE pupil_id = ?`, pupilID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(
+		ctx,
+		`CREATE TRIGGER IF NOT EXISTS trg_safeguarding_audit_no_delete
+		 BEFORE DELETE ON safeguarding_audit_logs
+		 BEGIN
+		     SELECT RAISE(ABORT, 'Security Violation: Statutory safeguarding audit logs are immutable and cannot be deleted.');
+		 END;`,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM safeguarding_notes WHERE pupil_id = ?`, pupilID); err != nil {
+		return err
+	}
+
 	if _, err := tx.ExecContext(ctx, `DELETE FROM pupil_year_enrolments WHERE pupil_id = ?`, pupilID); err != nil {
 		return err
 	}

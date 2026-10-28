@@ -558,6 +558,10 @@ func (h *Host) ExecuteWorker(
 	}
 
 	workerSpec, declared := plugin.Manifest.Workers[workerName]
+	if plugin.State == PluginStateUninstalledDormant {
+		h.recordDiagnostic(pluginID, workerName, "PLUGIN_DORMANT_QUARANTINE", time.Since(start))
+		return nil, fmt.Errorf("PLUGIN_DORMANT_QUARANTINE: plugin %s is uninstalled and in dormant GDPR retention quarantine", pluginID)
+	}
 	if !declared {
 		h.recordDiagnostic(pluginID, workerName, "UNDECLARED_WORKER", time.Since(start))
 		return nil, fmt.Errorf("worker %q is not declared in manifest.json for plugin %s", workerName, pluginID)

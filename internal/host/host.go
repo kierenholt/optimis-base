@@ -67,11 +67,19 @@ type Manifest struct {
 	Workers        map[string]EndpointSpec `json:"workers,omitempty"`
 }
 
+type PluginState string
+
+const (
+	PluginStateActive             PluginState = "ACTIVE"
+	PluginStateUninstalledDormant PluginState = "UNINSTALLED_DORMANT"
+)
+
 type LoadedPlugin struct {
 	Manifest        Manifest
 	LuaSource       string
 	DirPath         string
 	Folder          string
+	State           PluginState
 	ManifestModTime time.Time
 	LuaModTime      time.Time
 }
@@ -258,6 +266,15 @@ func readPluginFromDisk(dirPath string, folder string) (*LoadedPlugin, error) {
 		if err := dal.ValidatePluginDatabaseAlias(manifest.Database.Alias); err != nil {
 			return nil, err
 		}
+		if manifest.GDPRHooks == nil ||
+			strings.TrimSpace(manifest.GDPRHooks.ExportPupilData) == "" ||
+			strings.TrimSpace(manifest.GDPRHooks.PurgePupilData) == "" {
+			return nil, fmt.Errorf(
+				"manifest.json for plugin %s declares database.alias (%s) and must declare mandatory gdpr_hooks (export_pupil_data and purge_pupil_data)",
+				manifest.ID,
+				manifest.Database.Alias,
+			)
+		}
 	}
 
 	luaPath := filepath.Join(dirPath, "src", "init.lua")
@@ -275,6 +292,7 @@ func readPluginFromDisk(dirPath string, folder string) (*LoadedPlugin, error) {
 		LuaSource:       string(luaBytes),
 		DirPath:         dirPath,
 		Folder:          folder,
+		State:           PluginStateActive,
 		ManifestModTime: manifestStat.ModTime(),
 		LuaModTime:      luaStat.ModTime(),
 	}, nil
@@ -539,6 +557,7 @@ func (h *Host) GetLoadedPlugin(pluginID string) (*LoadedPlugin, bool) {
 	if mErr == nil && lErr == nil {
 		if !manifestStat.ModTime().Equal(p.ManifestModTime) || !luaStat.ModTime().Equal(p.LuaModTime) {
 			if reloaded, err := readPluginFromDisk(p.DirPath, p.Folder); err == nil {
+				reloaded.State = p.State
 				if migErr := h.provisionAndMigratePluginDB(context.Background(), reloaded); migErr == nil {
 					h.mu.Lock()
 					h.plugins[pluginID] = reloaded
@@ -576,6 +595,11 @@ func (h *Host) ExecuteRPC(
 	if !exists {
 		h.logError(fmt.Sprintf("Plugin not found: %s", pluginID))
 		return nil, fmt.Errorf("plugin not loaded: %s", pluginID)
+	}
+	if plugin.State == PluginStateUninstalledDormant {
+		h.recordDiagnostic(pluginID, methodName, "PLUGIN_DORMANT_QUARANTINE", time.Since(start))
+		h.logError(fmt.Sprintf("Blocked RPC %s.%s because plugin is in UNINSTALLED_DORMANT quarantine state", pluginID, methodName))
+		return nil, fmt.Errorf("PLUGIN_DORMANT_QUARANTINE: plugin %s is uninstalled and in dormant GDPR retention quarantine", pluginID)
 	}
 
 	endpointSpec, declared := plugin.Manifest.Endpoints[methodName]
