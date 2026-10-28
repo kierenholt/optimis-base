@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"optimis/internal/dal"
 )
 
@@ -94,6 +92,49 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 		})
 	})
 
+	mux.HandleFunc("POST /api/test/seed-milestone1-fixtures", func(w http.ResponseWriter, r *http.Request) {
+		var in dal.Milestone1SeedInput
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": fmt.Sprintf("invalid JSON body: %v", err),
+			})
+			return
+		}
+		seeded, err := h.coreDAL.SeedMilestone1Fixtures(r.Context(), in)
+		if err != nil {
+			h.logError(fmt.Sprintf("Failed to seed Milestone 1 fixtures: %v", err))
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": err.Error(),
+			})
+			return
+		}
+		h.logInfo(fmt.Sprintf("Seeded Milestone 1 fixtures %s", seeded.FixtureID))
+		writeJSON(w, http.StatusCreated, seeded)
+	})
+
+	mux.HandleFunc("DELETE /api/test/seed-milestone1-fixtures/{fixture_id}", func(w http.ResponseWriter, r *http.Request) {
+		fixtureID := strings.TrimSpace(r.PathValue("fixture_id"))
+		if fixtureID == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": "missing mandatory path parameter: fixture_id",
+			})
+			return
+		}
+		if err := h.coreDAL.DeleteMilestone1Fixtures(r.Context(), fixtureID); err != nil {
+			h.logError(fmt.Sprintf("Failed to delete Milestone 1 fixtures %s: %v", fixtureID, err))
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": err.Error(),
+			})
+			return
+		}
+		h.logInfo(fmt.Sprintf("Deleted Milestone 1 fixtures %s", fixtureID))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"deleted": true,
+		})
+	})
+
+	h.RegisterAuthAndPersonaRoutes(mux)
+
 	mux.HandleFunc("POST /api/plugins/{plugin_id}/rpc/{method}", func(w http.ResponseWriter, r *http.Request) {
 		pluginID := strings.TrimSpace(r.PathValue("plugin_id"))
 		method := strings.TrimSpace(r.PathValue("method"))
@@ -119,13 +160,22 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 			body.Args = map[string]any{}
 		}
 
-		caller := CallerContext{
-			Type:        "USER",
-			UserID:      "usr_teacher_1",
-			StaffID:     "stf_001",
-			ActiveRoles: []string{"teacher"},
-			Scopes:      []string{"dal.pupils.read:all"},
-			RequestID:   "req_" + uuid.NewString(),
+		explicitStaffID := ""
+		if s, ok := body.Args["staff_id"].(string); ok && strings.TrimSpace(s) != "" {
+			explicitStaffID = strings.TrimSpace(s)
+		} else if s, ok := body.Args["__caller_staff_id"].(string); ok && strings.TrimSpace(s) != "" {
+			explicitStaffID = strings.TrimSpace(s)
+		} else if qStaff := strings.TrimSpace(r.URL.Query().Get("staff_id")); qStaff != "" {
+			explicitStaffID = qStaff
+		}
+
+		caller, callerErr := h.ResolveRequestCaller(r, explicitStaffID)
+		if callerErr != nil {
+			writeJSON(w, http.StatusBadRequest, RPCResponse{
+				OK:        false,
+				ErrorCode: callerErr.Error(),
+			})
+			return
 		}
 
 		res, err := h.ExecuteRPC(r.Context(), pluginID, method, caller, body.Args)

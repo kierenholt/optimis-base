@@ -94,6 +94,7 @@ Follow this workflow and set of strict guardrails whenever authoring or updating
 - [ ] All DOM assertions use `data-testid` wherever possible.
 - [ ] Mock/seeded data is created in setup and cleaned up in teardown.
 - [ ] No silent fallbacks were introduced in test helpers or fixtures.
+- [ ] Created or updated `GEMINI.md` in any new or heavily updated test folders (e.g., `tests/e2e/GEMINI.md`).
 
 ---
 

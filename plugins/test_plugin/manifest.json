@@ -1,7 +1,15 @@
 {
   "id": "uk.org.optimis.test",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "core_dal_version": "~1.0",
+  "database": {
+    "alias": "plugin_test",
+    "max_db_size_mb": 64
+  },
+  "gdpr_hooks": {
+    "export_pupil_data": "export_pupil_data",
+    "purge_pupil_data": "purge_pupil_data"
+  },
   "egress": {
     "allowed_domains": [],
     "timeout_ms": 8000
@@ -10,6 +18,46 @@
     "get_pupil_record": {
       "scopes": ["dal.pupils.read:all"],
       "mutates": false,
+      "timeout_ms": 2500
+    },
+    "save_pupil_note": {
+      "scopes": ["dal.pupils.read:all"],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "list_pupil_notes": {
+      "scopes": ["dal.pupils.read:all"],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "export_pupil_data": {
+      "scopes": ["dal.pupils.read:all"],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "purge_pupil_data": {
+      "scopes": ["dal.pupils.read:all"],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "get_group_roster_summary": {
+      "scopes": ["dal.pupils.read:own_groups", "dal.groups.read:own_groups"],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "get_pupil_guardians": {
+      "scopes": ["dal.guardians.read:own_groups"],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "record_group_am_attendance": {
+      "scopes": ["dal.attendance.read:own_groups", "dal.attendance.write:own_groups"],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "submit_safeguarding_postbox": {
+      "scopes": ["dal.safeguarding.create"],
+      "mutates": true,
       "timeout_ms": 2500
     }
   }

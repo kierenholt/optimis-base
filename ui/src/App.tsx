@@ -6,6 +6,11 @@ export function App() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const params = new URLSearchParams(window.location.search);
   const pupilId = params.get('pupil_id');
+  const groupId = params.get('group_id');
+  const otherGroupId = params.get('other_group_id');
+  const referenceDate = params.get('reference_date');
+  const academicYearId = params.get('academic_year_id');
+  const staffId = params.get('staff_id');
 
   useEffect(() => {
     const sendInit = () => {
@@ -17,8 +22,23 @@ export function App() {
         {
           type: 'mis:init',
           theme: { primary: '#2563eb' },
-          context: { pupil_id: pupilId },
-          permitted_methods: ['get_pupil_record'],
+          context: {
+            pupil_id: pupilId,
+            group_id: groupId,
+            other_group_id: otherGroupId,
+            reference_date: referenceDate,
+            academic_year_id: academicYearId,
+            staff_id: staffId,
+          },
+          permitted_methods: [
+            'get_pupil_record',
+            'save_pupil_note',
+            'list_pupil_notes',
+            'get_group_roster_summary',
+            'get_pupil_guardians',
+            'record_group_am_attendance',
+            'submit_safeguarding_postbox',
+          ],
         },
         '*'
       );

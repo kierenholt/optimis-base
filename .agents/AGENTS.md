@@ -6,7 +6,7 @@
 * Always use `npm` commands (e.g., `npm test -- <test-name> local 1`, `npm run test:go -- [step-or-test-name]`) to run tests rather than invoking `node scripts/...` or `npx playwright` directly.
 * Always execute tests outside of the sandbox (`BypassSandbox: true`), as Playwright E2E and integration tests require network access to local emulators, microservices, and browser binaries.
 * If you create or modify an `npm` script/command in `package.json`, you MUST document it under `## Available NPM Commands` in `.agents/AGENTS.md`.
-
+* Always create or update a `GEMINI.md` in any new or heavily updated folders to describe the files and architecture inside it, in addition to updating `<project-root>/GEMINI.md`.
 
 ## Available NPM Commands
 

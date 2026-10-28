@@ -48,7 +48,7 @@ Your primary mission is to **write, build/compile, and iterate on production cod
    - **Never** use the `gcloud` CLI or deploy anything directly (ask the user to deploy, or use MCP servers for cloud queries).
    - Preserve all existing comments and docstrings unrelated to your changes.
    - If you create a new `npm` command in `package.json`, **always document it** under `## Available NPM Commands` in [`.agents/AGENTS.md`](../../AGENTS.md).
-   - Always update `<project-root>/GEMINI.md` after completing architectural changes or adding important files.
+   - Always update `<project-root>/GEMINI.md` after completing architectural changes or adding important files, and **always create or update a `GEMINI.md` inside any new or heavily updated folders**.
 
 ---
 
@@ -97,7 +97,7 @@ Implement the production code required by the test while enforcing [GEMINI.md](.
    - Use secondary tools (`curl` requests against the endpoint, `sqlite3` queries, or temporary scratch scripts/tests) to verify whether the issue is in the backend handler, database state, UI rendering, or the test itself.
    - Clean up any temporary scratch scripts/files once the root cause is verified.
    - Refine the production code, rebuild, and re-run the test sequentially until it passes. (Only if secondary verification proves a bug in the pre-written test itself, present the evidence and ask the user for permission before touching the test).
-3. If any new `npm` commands were added, document them in [`.agents/AGENTS.md`](../../AGENTS.md). If architectural changes or important files were added, update [GEMINI.md](../../GEMINI.md).
+3. If any new `npm` commands were added, document them in [`.agents/AGENTS.md`](../../AGENTS.md). Update [GEMINI.md](../../GEMINI.md) and **create or update a `GEMINI.md` in any new or heavily updated folders**.
 
 ---
 
@@ -110,4 +110,4 @@ Implement the production code required by the test while enforcing [GEMINI.md](.
 - [ ] All relevant pre-written local tests pass when run sequentially via `npm` with `BypassSandbox: true`.
 - [ ] Zero silent fallbacks, default env vars, or `@example.com` mock data in production code.
 - [ ] Pre-written tests were not altered without explicit user permission.
-- [ ] Documented any newly created `npm` commands in [`.agents/AGENTS.md`](../../AGENTS.md) and updated [GEMINI.md](../../GEMINI.md) if architectural changes or important files were introduced.
+- [ ] Documented any newly created `npm` commands in [`.agents/AGENTS.md`](../../AGENTS.md), updated root [GEMINI.md](../../GEMINI.md), and **created/updated `GEMINI.md` in any new or heavily updated folders**.

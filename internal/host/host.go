@@ -2,11 +2,15 @@ package host
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,6 +20,13 @@ import (
 
 	"optimis/internal/dal"
 )
+
+const (
+	defaultMaxDBSizeMB  = 500
+	defaultSQLitePageSz = 4096
+)
+
+var sqlSchemaPrefixRegex = regexp.MustCompile(`(?i)\b([a-z0-9_]+)\s*\.\s*([a-z0-9_]+)\b`)
 
 type Config struct {
 	DataDirPath      string
@@ -40,13 +51,20 @@ type DatabaseSpec struct {
 	MaxDBSizeMB int    `json:"max_db_size_mb,omitempty"`
 }
 
+type GDPRHooksSpec struct {
+	ExportPupilData string `json:"export_pupil_data"`
+	PurgePupilData  string `json:"purge_pupil_data"`
+}
+
 type Manifest struct {
 	ID             string                  `json:"id"`
 	Version        string                  `json:"version"`
 	CoreDALVersion string                  `json:"core_dal_version"`
 	Database       *DatabaseSpec           `json:"database,omitempty"`
+	GDPRHooks      *GDPRHooksSpec          `json:"gdpr_hooks,omitempty"`
 	Egress         EgressSpec              `json:"egress"`
 	Endpoints      map[string]EndpointSpec `json:"endpoints"`
+	Workers        map[string]EndpointSpec `json:"workers,omitempty"`
 }
 
 type LoadedPlugin struct {
@@ -150,7 +168,8 @@ func (h *Host) logError(msg string) {
 func (h *Host) recordDiagnostic(pluginID string, method string, errClass string, duration time.Duration) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	entry := fmt.Sprintf("plugin=%s method=%s error_class=%s duration_ms=%d", pluginID, method, errClass, duration.Milliseconds())
+	safeClass := scrubDiagnosticToken(errClass)
+	entry := fmt.Sprintf("plugin=%s method=%s error_class=%s duration_ms=%d", pluginID, method, safeClass, duration.Milliseconds())
 	h.diagnostics = append(h.diagnostics, entry)
 }
 
@@ -235,6 +254,11 @@ func readPluginFromDisk(dirPath string, folder string) (*LoadedPlugin, error) {
 	if len(manifest.Endpoints) == 0 {
 		return nil, errors.New("manifest.json must declare at least one endpoint")
 	}
+	if manifest.Database != nil {
+		if err := dal.ValidatePluginDatabaseAlias(manifest.Database.Alias); err != nil {
+			return nil, err
+		}
+	}
 
 	luaPath := filepath.Join(dirPath, "src", "init.lua")
 	luaStat, err := os.Stat(luaPath)
@@ -256,6 +280,229 @@ func readPluginFromDisk(dirPath string, folder string) (*LoadedPlugin, error) {
 	}, nil
 }
 
+func copyFileSync(srcPath string, dstPath string) error {
+	srcFile, err := os.Open(srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to open source file %s: %w", filepath.Base(srcPath), err)
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.OpenFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to open destination file %s: %w", filepath.Base(dstPath), err)
+	}
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		_ = dstFile.Close()
+		return fmt.Errorf("failed to copy %s to %s: %w", filepath.Base(srcPath), filepath.Base(dstPath), err)
+	}
+	if err := dstFile.Sync(); err != nil {
+		_ = dstFile.Close()
+		return fmt.Errorf("failed to sync %s: %w", filepath.Base(dstPath), err)
+	}
+	return dstFile.Close()
+}
+
+func computeMaxPageCount(maxDBSizeMB int, pageSize int) int {
+	if maxDBSizeMB <= 0 {
+		maxDBSizeMB = defaultMaxDBSizeMB
+	}
+	if pageSize <= 0 {
+		pageSize = defaultSQLitePageSz
+	}
+	pages := (maxDBSizeMB * 1024 * 1024) / pageSize
+	if pages < 1 {
+		pages = 1
+	}
+	return pages
+}
+
+func (h *Host) provisionAndMigratePluginDB(ctx context.Context, plugin *LoadedPlugin) error {
+	if plugin.Manifest.Database == nil || strings.TrimSpace(plugin.Manifest.Database.Alias) == "" {
+		return nil
+	}
+
+	alias := strings.TrimSpace(plugin.Manifest.Database.Alias)
+	if err := dal.ValidatePluginDatabaseAlias(alias); err != nil {
+		return err
+	}
+
+	maxDBSizeMB := plugin.Manifest.Database.MaxDBSizeMB
+	if maxDBSizeMB <= 0 {
+		maxDBSizeMB = defaultMaxDBSizeMB
+	}
+
+	dbFilePath := filepath.Join(h.cfg.DataDirPath, alias+".db")
+	snapshotPath := dbFilePath + ".snapshot"
+
+	if h.coreDAL.IsPluginDBAttached(alias) {
+		if err := h.coreDAL.DetachPluginDB(ctx, alias); err != nil {
+			return fmt.Errorf("failed to detach %s prior to migration check: %w", alias, err)
+		}
+	}
+
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbFilePath)
+	bootDB, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return fmt.Errorf("failed to open plugin DB %s: %w", alias, err)
+	}
+	bootDB.SetMaxOpenConns(1)
+
+	var pageSize int
+	if err := bootDB.QueryRowContext(ctx, `PRAGMA page_size;`).Scan(&pageSize); err != nil || pageSize <= 0 {
+		pageSize = defaultSQLitePageSz
+	}
+	maxPageCount := computeMaxPageCount(maxDBSizeMB, pageSize)
+
+	if _, err := bootDB.ExecContext(ctx, `PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;`); err != nil {
+		_ = bootDB.Close()
+		return fmt.Errorf("failed to configure WAL pragmas on %s.db: %w", alias, err)
+	}
+	if _, err := bootDB.ExecContext(ctx, fmt.Sprintf(`PRAGMA max_page_count = %d;`, maxPageCount)); err != nil {
+		_ = bootDB.Close()
+		return fmt.Errorf("failed to set max_page_count on %s.db: %w", alias, err)
+	}
+	if _, err := bootDB.ExecContext(
+		ctx,
+		`CREATE TABLE IF NOT EXISTS __plugin_migrations (
+			filename TEXT PRIMARY KEY,
+			applied_at TEXT NOT NULL
+		);`,
+	); err != nil {
+		_ = bootDB.Close()
+		return fmt.Errorf("failed to ensure __plugin_migrations table in %s.db: %w", alias, err)
+	}
+
+	appliedMigrations := make(map[string]bool)
+	rows, err := bootDB.QueryContext(ctx, `SELECT filename FROM __plugin_migrations`)
+	if err != nil {
+		_ = bootDB.Close()
+		return fmt.Errorf("failed to query applied migrations in %s.db: %w", alias, err)
+	}
+	for rows.Next() {
+		var fn string
+		if err := rows.Scan(&fn); err != nil {
+			_ = rows.Close()
+			_ = bootDB.Close()
+			return fmt.Errorf("failed to scan migration filename: %w", err)
+		}
+		appliedMigrations[fn] = true
+	}
+	_ = rows.Close()
+
+	_, _ = bootDB.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE);`)
+	if err := bootDB.Close(); err != nil {
+		return fmt.Errorf("failed to close bootstrap handle for %s.db: %w", alias, err)
+	}
+
+	migrationsDir := filepath.Join(plugin.DirPath, "migrations")
+	var pendingFiles []string
+	if info, statErr := os.Stat(migrationsDir); statErr == nil && info.IsDir() {
+		entries, readErr := os.ReadDir(migrationsDir)
+		if readErr != nil {
+			return fmt.Errorf("failed to read migrations dir for %s: %w", plugin.Manifest.ID, readErr)
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+				if !appliedMigrations[entry.Name()] {
+					pendingFiles = append(pendingFiles, filepath.Join(migrationsDir, entry.Name()))
+				}
+			}
+		}
+		sort.Strings(pendingFiles)
+	}
+
+	if len(pendingFiles) > 0 {
+		// 1. Take automatic file-level snapshot of <alias>.db before applying migrations
+		if err := copyFileSync(dbFilePath, snapshotPath); err != nil {
+			return fmt.Errorf("failed to create file-level snapshot for %s.db: %w", alias, err)
+		}
+		h.logInfo(fmt.Sprintf("Created migration file snapshot %s", filepath.Base(snapshotPath)))
+
+		migErr := h.runMigrationsInImmediateTx(ctx, dsn, maxPageCount, pendingFiles)
+		if migErr != nil {
+			// Automatic file-snapshot rollback on failure
+			_ = os.Remove(dbFilePath + "-wal")
+			_ = os.Remove(dbFilePath + "-shm")
+			if restoreErr := copyFileSync(snapshotPath, dbFilePath); restoreErr != nil {
+				_ = os.Remove(snapshotPath)
+				return fmt.Errorf("migration failed (%v) and snapshot restore failed: %w", migErr, restoreErr)
+			}
+			_ = os.Remove(snapshotPath)
+			_ = h.coreDAL.AttachPluginDB(ctx, alias, dbFilePath, maxPageCount)
+			h.recordDiagnostic(plugin.Manifest.ID, "migrations", "MIGRATION_ROLLBACK", 0)
+			h.logError(fmt.Sprintf("Rolled back %s.db from file snapshot after migration failure: %v", alias, migErr))
+			return fmt.Errorf("plugin %s migration failed (rolled back from snapshot): %w", plugin.Manifest.ID, migErr)
+		}
+
+		_ = os.Remove(snapshotPath)
+		h.logInfo(fmt.Sprintf("Applied %d migration(s) to %s.db inside BEGIN IMMEDIATE", len(pendingFiles), alias))
+	}
+
+	if err := h.coreDAL.AttachPluginDB(ctx, alias, dbFilePath, maxPageCount); err != nil {
+		return err
+	}
+	h.logInfo(fmt.Sprintf("Attached %s.db (max_page_count=%d) across WriteDB and ReadDB", alias, maxPageCount))
+	return nil
+}
+
+func (h *Host) runMigrationsInImmediateTx(ctx context.Context, dsn string, maxPageCount int, pendingFiles []string) error {
+	migDB, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return err
+	}
+	migDB.SetMaxOpenConns(1)
+	defer migDB.Close()
+
+	conn, err := migDB.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`PRAGMA max_page_count = %d;`, maxPageCount)); err != nil {
+		return err
+	}
+
+	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE;`); err != nil {
+		return fmt.Errorf("failed to begin immediate transaction: %w", err)
+	}
+
+	for _, file := range pendingFiles {
+		sqlBytes, readErr := os.ReadFile(file)
+		if readErr != nil {
+			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
+			return fmt.Errorf("failed to read migration %s: %w", filepath.Base(file), readErr)
+		}
+		sqlText := strings.TrimSpace(string(sqlBytes))
+		if sqlText == "" {
+			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
+			return fmt.Errorf("migration file %s is empty", filepath.Base(file))
+		}
+		if _, execErr := conn.ExecContext(ctx, sqlText); execErr != nil {
+			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
+			return fmt.Errorf("failed executing migration %s: %w", filepath.Base(file), execErr)
+		}
+		if _, recErr := conn.ExecContext(
+			ctx,
+			`INSERT INTO __plugin_migrations (filename, applied_at) VALUES (?, ?)`,
+			filepath.Base(file),
+			time.Now().UTC().Format(time.RFC3339Nano),
+		); recErr != nil {
+			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
+			return fmt.Errorf("failed recording migration %s: %w", filepath.Base(file), recErr)
+		}
+	}
+
+	if _, err := conn.ExecContext(ctx, `COMMIT;`); err != nil {
+		_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
+		return fmt.Errorf("failed to commit migration transaction: %w", err)
+	}
+
+	_, _ = conn.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE);`)
+	return nil
+}
+
 func (h *Host) LoadPlugin(pluginFolder string) error {
 	if strings.TrimSpace(pluginFolder) == "" {
 		return errors.New("missing mandatory parameter: pluginFolder")
@@ -264,6 +511,10 @@ func (h *Host) LoadPlugin(pluginFolder string) error {
 	dirPath := filepath.Join(h.cfg.PluginsDir, pluginFolder)
 	loaded, err := readPluginFromDisk(dirPath, pluginFolder)
 	if err != nil {
+		return err
+	}
+
+	if err := h.provisionAndMigratePluginDB(context.Background(), loaded); err != nil {
 		return err
 	}
 
@@ -288,11 +539,13 @@ func (h *Host) GetLoadedPlugin(pluginID string) (*LoadedPlugin, bool) {
 	if mErr == nil && lErr == nil {
 		if !manifestStat.ModTime().Equal(p.ManifestModTime) || !luaStat.ModTime().Equal(p.LuaModTime) {
 			if reloaded, err := readPluginFromDisk(p.DirPath, p.Folder); err == nil {
-				h.mu.Lock()
-				h.plugins[pluginID] = reloaded
-				h.mu.Unlock()
-				h.logInfo(fmt.Sprintf("Hot-reloaded plugin %s v%s from disk", reloaded.Manifest.ID, reloaded.Manifest.Version))
-				return reloaded, true
+				if migErr := h.provisionAndMigratePluginDB(context.Background(), reloaded); migErr == nil {
+					h.mu.Lock()
+					h.plugins[pluginID] = reloaded
+					h.mu.Unlock()
+					h.logInfo(fmt.Sprintf("Hot-reloaded plugin %s v%s from disk", reloaded.Manifest.ID, reloaded.Manifest.Version))
+					return reloaded, true
+				}
 			}
 		}
 	}
@@ -373,8 +626,14 @@ func (h *Host) ExecuteRPC(
 	L.SetContext(execCtx)
 
 	var bufferedEvents []Event
+	var writeTx *sql.Tx
+	defer func() {
+		if writeTx != nil {
+			_ = writeTx.Rollback()
+		}
+	}()
 
-	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, endpointSpec, caller, &bufferedEvents)
+	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, endpointSpec, caller, &bufferedEvents, &writeTx)
 	argsTable := goMapToLuaTable(L, args)
 
 	if err := L.DoString(plugin.LuaSource); err != nil {
@@ -410,11 +669,24 @@ func (h *Host) ExecuteRPC(
 
 	okVal := L.GetField(retTbl, "ok")
 	if okVal != lua.LTrue {
+		if writeTx != nil {
+			_ = writeTx.Rollback()
+			writeTx = nil
+		}
 		errCode := L.GetField(retTbl, "error_code").String()
 		return &RPCResponse{
 			OK:        false,
 			ErrorCode: errCode,
 		}, nil
+	}
+
+	if writeTx != nil {
+		if err := writeTx.Commit(); err != nil {
+			writeTx = nil
+			h.recordDiagnostic(pluginID, methodName, "SQLITE_COMMIT_ERROR", time.Since(start))
+			return nil, fmt.Errorf("failed to commit plugin_db write transaction: %w", err)
+		}
+		writeTx = nil
 	}
 
 	dataVal := luaValueToGo(L.GetField(retTbl, "data"))
@@ -431,6 +703,79 @@ func (h *Host) ExecuteRPC(
 	}, nil
 }
 
+func validatePluginDBSQLScope(sqlQuery string, alias string) error {
+	trimmed := strings.TrimSpace(sqlQuery)
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "attach ") || strings.HasPrefix(lower, "detach ") {
+		return errors.New("ATTACH and DETACH statements are forbidden in ctx.plugin_db")
+	}
+
+	matches := sqlSchemaPrefixRegex.FindAllStringSubmatch(lower, -1)
+	for _, m := range matches {
+		schemaPrefix := m[1]
+		if schemaPrefix == "excluded" || schemaPrefix == "new" || schemaPrefix == "old" {
+			continue
+		}
+		if schemaPrefix == "main" || schemaPrefix == "temp" || strings.HasPrefix(schemaPrefix, "plugin_") {
+			if schemaPrefix != strings.ToLower(alias) {
+				return fmt.Errorf("ctx.plugin_db is scoped to %s; access to schema %q is forbidden", alias, schemaPrefix)
+			}
+		}
+	}
+	return nil
+}
+
+func luaTableToSQLArgs(L *lua.LState, argIdx int) ([]any, error) {
+	if L.GetTop() < argIdx {
+		return nil, nil
+	}
+	lv := L.Get(argIdx)
+	if lv == lua.LNil {
+		return nil, nil
+	}
+	tbl, ok := lv.(*lua.LTable)
+	if !ok {
+		return nil, errors.New("SQL params argument must be a Lua table")
+	}
+	maxn := tbl.MaxN()
+	args := make([]any, 0, maxn)
+	for i := 1; i <= maxn; i++ {
+		item := tbl.RawGetInt(i)
+		switch v := item.(type) {
+		case *lua.LNilType:
+			args = append(args, nil)
+		case lua.LBool:
+			args = append(args, bool(v))
+		case lua.LString:
+			args = append(args, string(v))
+		case lua.LNumber:
+			f := float64(v)
+			if f == float64(int64(f)) {
+				args = append(args, int64(f))
+			} else {
+				args = append(args, f)
+			}
+		default:
+			args = append(args, v.String())
+		}
+	}
+	return args, nil
+}
+
+func markLuaTableAsArray(L *lua.LState, tbl *lua.LTable) {
+	mt := L.NewTable()
+	L.SetField(mt, "__is_array", lua.LTrue)
+	L.SetMetatable(tbl, mt)
+}
+
+func isMarkedLuaArray(tbl *lua.LTable) bool {
+	mt, ok := tbl.Metatable.(*lua.LTable)
+	if !ok || mt == nil {
+		return false
+	}
+	return mt.RawGetString("__is_array") == lua.LTrue
+}
+
 func (h *Host) buildLuaCtxTable(
 	L *lua.LState,
 	execCtx context.Context,
@@ -438,6 +783,7 @@ func (h *Host) buildLuaCtxTable(
 	endpointSpec EndpointSpec,
 	caller CallerContext,
 	bufferedEvents *[]Event,
+	writeTx **sql.Tx,
 ) *lua.LTable {
 	ctxTbl := L.NewTable()
 
@@ -455,35 +801,10 @@ func (h *Host) buildLuaCtxTable(
 	L.SetField(ctxTbl, "caller", callerTbl)
 
 	// 2. ctx.dal (scoped by declared endpoint scopes)
-	dalTbl := L.NewTable()
-	if hasDomainScope(endpointSpec.Scopes, "dal.pupils.read") {
-		pupilsTbl := L.NewTable()
-		L.SetField(pupilsTbl, "get_by_id", L.NewFunction(func(L *lua.LState) int {
-			pupilID := strings.TrimSpace(L.OptString(1, ""))
-			if pupilID == "" {
-				L.RaiseError("missing mandatory parameter: pupil_id")
-				return 0
-			}
-			pupil, err := h.coreDAL.GetPupilByID(execCtx, pupilID)
-			if err != nil {
-				L.RaiseError("dal.pupils.get_by_id failed: %s", err.Error())
-				return 0
-			}
-			pTbl := L.NewTable()
-			L.SetField(pTbl, "id", lua.LString(pupil.ID))
-			L.SetField(pTbl, "upn", lua.LString(pupil.UPN))
-			L.SetField(pTbl, "first_name", lua.LString(pupil.FirstName))
-			L.SetField(pTbl, "last_name", lua.LString(pupil.LastName))
-			L.SetField(pTbl, "academic_year_id", lua.LString(pupil.AcademicYearID))
-			L.SetField(pTbl, "effective_from", lua.LString(pupil.EffectiveFrom))
-			L.Push(pTbl)
-			return 1
-		}))
-		L.SetField(dalTbl, "pupils", pupilsTbl)
-	}
+	dalTbl := h.buildLuaDALTable(L, execCtx, endpointSpec, caller)
 	L.SetField(ctxTbl, "dal", dalTbl)
 
-	// 3. ctx.plugin_db
+	// 3. ctx.plugin_db (scoped to attached plugin_<name>.db)
 	pluginDBTbl := L.NewTable()
 	L.SetField(pluginDBTbl, "query", L.NewFunction(func(L *lua.LState) int {
 		sqlQuery := strings.TrimSpace(L.OptString(1, ""))
@@ -491,9 +812,86 @@ func (h *Host) buildLuaCtxTable(
 			L.RaiseError("plugin_db.query requires a non-empty SQL query")
 			return 0
 		}
-		L.Push(L.NewTable())
+		if plugin.Manifest.Database == nil || strings.TrimSpace(plugin.Manifest.Database.Alias) == "" {
+			L.RaiseError("plugin %s does not declare database.alias in manifest.json", plugin.Manifest.ID)
+			return 0
+		}
+		alias := strings.TrimSpace(plugin.Manifest.Database.Alias)
+		if err := validatePluginDBSQLScope(sqlQuery, alias); err != nil {
+			L.RaiseError("plugin_db.query scope violation: %s", err.Error())
+			return 0
+		}
+		sqlArgs, err := luaTableToSQLArgs(L, 2)
+		if err != nil {
+			L.RaiseError("plugin_db.query invalid params: %s", err.Error())
+			return 0
+		}
+
+		var rows *sql.Rows
+		if *writeTx != nil {
+			rows, err = (*writeTx).QueryContext(execCtx, sqlQuery, sqlArgs...)
+		} else {
+			rows, err = h.coreDAL.ReadDB().QueryContext(execCtx, sqlQuery, sqlArgs...)
+		}
+		if err != nil {
+			L.RaiseError("plugin_db.query failed: %s", err.Error())
+			return 0
+		}
+		defer rows.Close()
+
+		cols, err := rows.Columns()
+		if err != nil {
+			L.RaiseError("plugin_db.query failed to read columns: %s", err.Error())
+			return 0
+		}
+
+		resultTbl := L.NewTable()
+		markLuaTableAsArray(L, resultTbl)
+		rowIndex := 1
+
+		for rows.Next() {
+			vals := make([]any, len(cols))
+			ptrs := make([]any, len(cols))
+			for i := range vals {
+				ptrs[i] = &vals[i]
+			}
+			if err := rows.Scan(ptrs...); err != nil {
+				L.RaiseError("plugin_db.query row scan failed: %s", err.Error())
+				return 0
+			}
+
+			rowTbl := L.NewTable()
+			for i, colName := range cols {
+				rawVal := vals[i]
+				switch v := rawVal.(type) {
+				case nil:
+					L.SetField(rowTbl, colName, lua.LNil)
+				case int64:
+					L.SetField(rowTbl, colName, lua.LNumber(v))
+				case float64:
+					L.SetField(rowTbl, colName, lua.LNumber(v))
+				case bool:
+					L.SetField(rowTbl, colName, lua.LBool(v))
+				case string:
+					L.SetField(rowTbl, colName, lua.LString(v))
+				case []byte:
+					L.SetField(rowTbl, colName, lua.LString(string(v)))
+				default:
+					L.SetField(rowTbl, colName, lua.LString(fmt.Sprintf("%v", v)))
+				}
+			}
+			resultTbl.RawSetInt(rowIndex, rowTbl)
+			rowIndex++
+		}
+		if err := rows.Err(); err != nil {
+			L.RaiseError("plugin_db.query iteration error: %s", err.Error())
+			return 0
+		}
+
+		L.Push(resultTbl)
 		return 1
 	}))
+
 	if endpointSpec.Mutates {
 		L.SetField(pluginDBTbl, "exec", L.NewFunction(func(L *lua.LState) int {
 			sqlQuery := strings.TrimSpace(L.OptString(1, ""))
@@ -501,8 +899,42 @@ func (h *Host) buildLuaCtxTable(
 				L.RaiseError("plugin_db.exec requires a non-empty SQL statement")
 				return 0
 			}
+			if plugin.Manifest.Database == nil || strings.TrimSpace(plugin.Manifest.Database.Alias) == "" {
+				L.RaiseError("plugin %s does not declare database.alias in manifest.json", plugin.Manifest.ID)
+				return 0
+			}
+			alias := strings.TrimSpace(plugin.Manifest.Database.Alias)
+			if err := validatePluginDBSQLScope(sqlQuery, alias); err != nil {
+				L.RaiseError("plugin_db.exec scope violation: %s", err.Error())
+				return 0
+			}
+			sqlArgs, err := luaTableToSQLArgs(L, 2)
+			if err != nil {
+				L.RaiseError("plugin_db.exec invalid params: %s", err.Error())
+				return 0
+			}
+
+			if *writeTx == nil {
+				tx, txErr := h.coreDAL.WriteDB().BeginTx(execCtx, nil)
+				if txErr != nil {
+					L.RaiseError("plugin_db.exec failed to start WriteDB transaction: %s", txErr.Error())
+					return 0
+				}
+				*writeTx = tx
+			}
+
+			res, execErr := (*writeTx).ExecContext(execCtx, sqlQuery, sqlArgs...)
+			if execErr != nil {
+				L.RaiseError("plugin_db.exec failed: %s", execErr.Error())
+				return 0
+			}
+
+			rowsAffected, _ := res.RowsAffected()
+			lastInsertID, _ := res.LastInsertId()
+
 			resTbl := L.NewTable()
-			L.SetField(resTbl, "rows_affected", lua.LNumber(0))
+			L.SetField(resTbl, "rows_affected", lua.LNumber(rowsAffected))
+			L.SetField(resTbl, "last_insert_id", lua.LNumber(lastInsertID))
 			L.Push(resTbl)
 			return 1
 		}))
@@ -537,9 +969,15 @@ func (h *Host) buildLuaCtxTable(
 	}))
 	L.SetField(ctxTbl, "events", eventsTbl)
 
-	// 5. ctx.http (default-deny domain check)
+	// 5. ctx.http (default-deny domain check + disallowed inside write transactions)
 	httpTbl := L.NewTable()
 	L.SetField(httpTbl, "get", L.NewFunction(func(L *lua.LState) int {
+		if *writeTx != nil {
+			_ = (*writeTx).Rollback()
+			*writeTx = nil
+			L.RaiseError("ctx.http.get disallowed inside an open SQLite write transaction")
+			return 0
+		}
 		targetURL := strings.TrimSpace(L.OptString(1, ""))
 		if !isDomainAllowed(targetURL, plugin.Manifest.Egress.AllowedDomains) {
 			L.RaiseError("egress domain not permitted by manifest.json: %s", targetURL)
@@ -551,6 +989,12 @@ func (h *Host) buildLuaCtxTable(
 		return 1
 	}))
 	L.SetField(httpTbl, "post", L.NewFunction(func(L *lua.LState) int {
+		if *writeTx != nil {
+			_ = (*writeTx).Rollback()
+			*writeTx = nil
+			L.RaiseError("ctx.http.post disallowed inside an open SQLite write transaction")
+			return 0
+		}
 		targetURL := strings.TrimSpace(L.OptString(1, ""))
 		if !isDomainAllowed(targetURL, plugin.Manifest.Egress.AllowedDomains) {
 			L.RaiseError("egress domain not permitted by manifest.json: %s", targetURL)
@@ -572,9 +1016,16 @@ func hasAllScopes(callerScopes []string, requiredScopes []string) bool {
 		set[s] = struct{}{}
 	}
 	for _, req := range requiredScopes {
-		if _, ok := set[req]; !ok {
-			return false
+		if _, ok := set[req]; ok {
+			continue
 		}
+		if strings.HasSuffix(req, ":own_groups") {
+			allScope := strings.TrimSuffix(req, ":own_groups") + ":all"
+			if _, ok := set[allScope]; ok {
+				continue
+			}
+		}
+		return false
 	}
 	return true
 }
@@ -648,6 +1099,9 @@ func luaValueToGo(lv lua.LValue) any {
 				arr = append(arr, luaValueToGo(v.RawGetInt(i)))
 			}
 			return arr
+		}
+		if isMarkedLuaArray(v) {
+			return []any{}
 		}
 		m := make(map[string]any)
 		v.ForEach(func(key, val lua.LValue) {

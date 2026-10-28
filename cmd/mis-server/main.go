@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -46,6 +47,21 @@ func requireEnv(key string) (string, error) {
 	return val, nil
 }
 
+func parseStrictBoolEnv(key string) (bool, error) {
+	raw, err := requireEnv(key)
+	if err != nil {
+		return false, err
+	}
+	switch strings.ToLower(raw) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid boolean environment variable %s=%q: must be 'true' or 'false'", key, raw)
+	}
+}
+
 func run() error {
 	if err := loadDotEnv(".env"); err != nil {
 		return err
@@ -71,6 +87,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	enableDevPersonaSwitcher, err := parseStrictBoolEnv("ENABLE_DEV_PERSONA_SWITCHER")
+	if err != nil {
+		return err
+	}
 
 	h, err := host.NewHost(host.Config{
 		DataDirPath:      dataDirPath,
@@ -82,6 +102,10 @@ func run() error {
 		return err
 	}
 	defer h.Close()
+
+	if err := h.ConfigureAuthMode(context.Background(), enableDevPersonaSwitcher); err != nil {
+		return err
+	}
 
 	if err := h.LoadPlugin("test_plugin"); err != nil {
 		return fmt.Errorf("failed to load test_plugin: %w", err)
