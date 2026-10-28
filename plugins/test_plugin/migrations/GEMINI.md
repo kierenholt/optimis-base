@@ -16,5 +16,5 @@ This directory holds the sequential SQL migration scripts (`*.sql`) executed by 
 ## 2. Migration Files
 
 * [`001_init.sql`](file:///home/kieren/Documents/code/optimis/plugins/test_plugin/migrations/001_init.sql): Creates the `pupil_notes` table (`id`, `pupil_id`, `note`, `created_by`) and `idx_pupil_notes_pupil_id` index inside `plugin_test.db` for `save_pupil_note`, `list_pupil_notes`, `export_pupil_data`, and `purge_pupil_data`.
-* [`002_worker_event_logs.sql`](file:///home/kieren/Documents/code/optimis/plugins/test_plugin/migrations/002_worker_event_logs.sql): Creates the `worker_event_logs` table (`id`, `pupil_id`, `worker_method`, `event_name`, `hop`, `caller_type`, `summary_json`) and `idx_worker_event_logs_pupil_id` index inside `plugin_test.db` for background Event Bus worker auditing (`on_core_event_audit`, `on_loop_relay`, `list_worker_event_logs`, and `purge_pupil_data`).
+* [`002_worker_event_logs.sql`](file:///home/kieren/Documents/code/optimis/plugins/test_plugin/migrations/002_worker_event_logs.sql): Creates the `worker_event_logs` table (`id`, `pupil_id`, `event_name`, `hop`, `caller_type`, `caller_staff_id`, `created_at`) and `idx_worker_event_logs_pupil_id` index inside `plugin_test.db` for background Event Bus worker auditing (`on_core_event_audit`, `on_loop_relay`, `list_worker_event_logs`, and `purge_pupil_data`).
 

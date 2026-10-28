@@ -6,6 +6,7 @@ test.describe.configure({ mode: 'serial' });
 test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & Default Dashboard Layout (Sections 6C, 9.4 & 9.5)', () => {
   let seededPupilId: string = '';
   let secondPupilId: string = '';
+  let seededPersonaFixtureId: string = '';
   let browserLogs: string[] = [];
   let pageErrors: string[] = [];
   let logCursor: string = '';
@@ -15,6 +16,7 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     pageErrors = [];
     seededPupilId = '';
     secondPupilId = '';
+    seededPersonaFixtureId = '';
     logCursor = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
@@ -93,7 +95,20 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 3. Clean up seeded pupil records at the end of the test
+    // 3. Clean up seeded persona fixtures and reset dev persona sessions if used
+    if (seededPersonaFixtureId) {
+      const delPersonaRes = await request.delete(
+        `/api/test/seed-personas/${encodeURIComponent(seededPersonaFixtureId)}`
+      );
+      if (!delPersonaRes.ok()) {
+        throw new Error(`Failed to clean up persona fixture ${seededPersonaFixtureId}: ${delPersonaRes.status()}`);
+      }
+    }
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+
+    // 4. Clean up seeded pupil records at the end of the test
     if (seededPupilId) {
       const del1 = await request.delete(`/api/test/seed-pupil/${encodeURIComponent(seededPupilId)}`);
       if (!del1.ok()) {
@@ -245,5 +260,100 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
 
     const cspStatus = pluginFrame.getByTestId('sdk-csp-fetch-status');
     await expect(cspStatus).toHaveText('CSP_BLOCKED');
+  });
+
+  test('uiConfigAndMisInit_callerWithRestrictedPersonaScopes_filtersPermittedMethodsByCallerScopes_test', async ({
+    page,
+    request,
+  }) => {
+    // 1. Seed isolated staff personas (ADMIN, DSL, TEACHER) in core.db
+    const seedRes = await request.post('/api/test/seed-personas', {
+      data: {
+        academic_year_id: 'ay_2026_2027',
+        effective_from: '2026-09-01',
+      },
+    });
+    if (!seedRes.ok()) {
+      throw new Error(`Failed to seed persona fixtures: ${seedRes.status()}`);
+    }
+    const personaBody = await seedRes.json();
+    if (!personaBody.fixture_id || !personaBody.teacher_staff_id) {
+      throw new Error('Seeded persona fixture response missing mandatory identifiers');
+    }
+    seededPersonaFixtureId = personaBody.fixture_id;
+
+    // 2. Switch active persona to Classroom Teacher (holds :own_groups & dal.safeguarding.create, lacks dal.pupils.read:all and dal.guardians.read:own_groups)
+    const switchRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personaBody.teacher_staff_id },
+    });
+    expect(switchRes.ok()).toBe(true);
+    const switchBody = await switchRes.json();
+    expect(switchBody.ok).toBe(true);
+    expect(switchBody.session_token).toBeTruthy();
+
+    // 3. Verify GET /api/system/ui-config filters plugins[0].permitted_methods strictly by caller's scopes (hasAllScopes)
+    const uiConfigRes = await request.get('/api/system/ui-config');
+    expect(uiConfigRes.ok()).toBe(true);
+    const uiConfigBody = await uiConfigRes.json();
+    expect(uiConfigBody.ok).toBe(true);
+    expect(Array.isArray(uiConfigBody.plugins)).toBe(true);
+    expect(uiConfigBody.plugins.length).toBeGreaterThan(0);
+
+    const testPluginDescriptor = uiConfigBody.plugins.find(
+      (p: { id: string }) => p.id === 'uk.org.optimis.test'
+    );
+    expect(testPluginDescriptor).toBeDefined();
+
+    const expectedTeacherPermittedMethods = [
+      'get_group_roster_summary',
+      'list_worker_event_logs',
+      'mutate_then_illegal_egress',
+      'push_external_sparx_post',
+      'record_group_am_attendance',
+      'submit_safeguarding_postbox',
+      'sync_external_sparx_get',
+      'trigger_loop_relay',
+    ];
+    expect(testPluginDescriptor.permitted_methods).toEqual(expectedTeacherPermittedMethods);
+    expect(testPluginDescriptor.permitted_methods).not.toContain('get_pupil_record');
+    expect(testPluginDescriptor.permitted_methods).not.toContain('save_pupil_note');
+    expect(testPluginDescriptor.permitted_methods).not.toContain('list_pupil_notes');
+    expect(testPluginDescriptor.permitted_methods).not.toContain('export_pupil_data');
+    expect(testPluginDescriptor.permitted_methods).not.toContain('purge_pupil_data');
+    expect(testPluginDescriptor.permitted_methods).not.toContain('get_pupil_guardians');
+
+    // 4. Load Host UI under the restricted Teacher session and verify mis:init propagates scope-filtered permitted_methods into <iframe sandbox="allow-scripts">
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: switchBody.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
+
+    await page.goto(`/?pupil_id=${encodeURIComponent(seededPupilId)}`);
+
+    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    await expect(pluginFrame.getByTestId('sdk-theme-status')).toContainText('THEME:light');
+
+    await expect
+      .poll(
+        async () =>
+          await pluginFrame.getByTestId('plugin-root').evaluate(() => {
+            const w = window as unknown as {
+              mis: {
+                permittedMethods: string[];
+              };
+            };
+            return w.mis.permittedMethods;
+          }),
+        {
+          message:
+            'Expected window.mis.permittedMethods inside sandboxed iframe to match scope-filtered permitted_methods from /api/system/ui-config',
+          timeout: 5000,
+        }
+      )
+      .toEqual(expectedTeacherPermittedMethods);
   });
 });

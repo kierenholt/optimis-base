@@ -1,11 +1,7 @@
-# React Host UI Shell Source (`ui/src`)
+# Host UI Shell Components (`ui/src`)
 
-This directory contains the TypeScript + React source files for the embedded Optimis Host UI Shell (Sections 5B, 5C, 6C, 7B, 9.4 & 9.5).
-
-## Key Files
-
-* [`App.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/App.tsx):
-  * **Default Dashboard Layout & Theme Engine (`--mis-*`)**: Renders the Left Navigation Sidebar (`data-testid="host-sidebar"`), Top Workspace Bar (`data-testid="host-topbar"` with `data-testid="theme-mode-toggle-btn"` and `data-testid="active-theme-mode-indicator"`), and Responsive Default Dashboard Grid (`data-testid="host-dashboard-grid"` & `data-testid="dashboard-summary-strip"`). Applies `--mis-*` Light and WCAG AAA High-Contrast CSS Custom Properties to `:root` and propagates live theme updates to child plugin iframes.
-  * **Sandboxed Plugin Bridge & Entity Deep-Linking (`window.postMessage`)**: Unconditionally responds to `mis:ready` with `mis:init` (`theme_mode`, `theme_tokens`, `context`, `permitted_methods`), routes `mis:rpc:request` calls to `POST /api/plugins/:plugin_id/rpc/:method`, and handles `mis:link:navigate` entity deep-links (`student`, `group`, `staff`) by waking the designated handler plugin and updating its context.
-  * **Host Compliance Consoles**: Renders the DSL Envelope-Encrypted Safeguarding Vault (`data-testid="dsl-safeguarding-vault-panel"`) and Admin UK GDPR SAR Redaction & Retention Purge UI (`data-testid="sar-redaction-panel"`).
-* [`main.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/main.tsx): Fail-fast React DOM entrypoint mounting `<App />` into `#root`.
+* [`main.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/main.tsx): React 19 DOM root entrypoint mounting [`App`](file:///home/kieren/Documents/code/optimis/ui/src/App.tsx).
+* [`App.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/App.tsx): Host UI Shell layout (Left Navigation Sidebar, Top Bar with Light / High-Contrast theme switcher, Statutory Summary Strip, Keep-Alive `<iframe sandbox="allow-scripts">` Plugin Workspace, and `window.postMessage` RPC & Entity Deep-Link coordinator).
+* [`SafeguardingVaultPanel.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/SafeguardingVaultPanel.tsx): Designated Safeguarding Lead (DSL) Envelope-Encrypted Vault panel (`Renew OAuth Cloud Key` & `Unlock & Decrypt Note`).
+* [`GdprSarPanel.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/GdprSarPanel.tsx): Admin/DPO UK GDPR Subject Access Request (SAR) interactive `redactable_fields` redaction UI and statutory retention purge panel.
+* [`themeAndTypes.ts`](file:///home/kieren/Documents/code/optimis/ui/src/themeAndTypes.ts): Default Light and WCAG AAA High-Contrast `--mis-*` CSS Custom Property catalogs, `applyHostThemeToRoot` helper, and shared TypeScript interfaces.

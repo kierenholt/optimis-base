@@ -70,16 +70,28 @@ func (h *Host) SetPluginState(pluginID string, state PluginState) error {
 	}
 
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	p, exists := h.plugins[trimmedID]
 	if !exists {
+		h.mu.Unlock()
 		return fmt.Errorf("plugin not found: %s", trimmedID)
 	}
 	p.State = state
+	var poolToStop *pluginEventWorkerPool
+	if state == PluginStateUninstalledDormant {
+		poolToStop = h.workerPools[trimmedID]
+		delete(h.workerPools, trimmedID)
+	}
 	h.serviceLogs = append(
 		h.serviceLogs,
 		fmt.Sprintf("[%s] INFO Plugin %s state transitioned to %s", time.Now().UTC().Format(time.RFC3339Nano), trimmedID, state),
 	)
+	h.mu.Unlock()
+
+	if poolToStop != nil {
+		poolToStop.stop()
+	} else if state == PluginStateActive {
+		h.startOrReplacePluginWorkerPool(p)
+	}
 	return nil
 }
 

@@ -15,7 +15,7 @@ This directory contains the unpacked reference and test fixture plugin (`uk.org.
      - `submit_safeguarding_postbox` (`dal.safeguarding.create`, `mutates: true`)
       - `sync_external_sparx_get`, `push_external_sparx_post`, & `mutate_then_illegal_egress` (`dal.pupils.read:own_groups`, `ctx.http` egress endpoints)
       - `trigger_loop_relay` (`dal.pupils.read:own_groups`, `mutates: false`) & `list_worker_event_logs` (`dal.pupils.read:own_groups`, `mutates: false`)
-   - Declares background Event Bus workers (`on_core_event_audit` subscribed to `core.attendance.session_recorded`, `core.safeguarding.postbox_created`, and `core.group.membership_changed`; `on_loop_relay` subscribed to `uk.org.optimis.test.loop_relay`).
+   - Declares background Event Bus workers (`on_core_event_audit` subscribed to `core.attendance.session_recorded`, `core.safeguarding.postbox_created`, and `core.group.membership_changed`; `on_loop_relay` subscribed to `test.loop_relay`).
    - Declares UK GDPR hooks (`export_pupil_data` and `purge_pupil_data`).
 
 2. **Sandboxed Lua Runtime Entrypoint ([`src/init.lua`](file:///home/kieren/Documents/code/optimis/plugins/test_plugin/src/init.lua))**:
@@ -27,5 +27,5 @@ This directory contains the unpacked reference and test fixture plugin (`uk.org.
 
 4. **Per-Plugin Attached SQLite Migrations ([`migrations/`](file:///home/kieren/Documents/code/optimis/plugins/test_plugin/migrations/GEMINI.md))**:
    - [`migrations/001_init.sql`](file:///home/kieren/Documents/code/optimis/plugins/test_plugin/migrations/001_init.sql): Provisions the `pupil_notes` table and `idx_pupil_notes_pupil_id` index inside `plugin_test.db` inside `BEGIN IMMEDIATE` with automatic file-snapshot rollback protection.
-   - [`migrations/002_worker_event_logs.sql`](file:///home/kieren/Documents/code/optimis/plugins/test_plugin/migrations/002_worker_event_logs.sql): Non-destructive Expand-and-Contract migration adding `worker_event_logs` (`id`, `pupil_id`, `worker_method`, `event_name`, `hop`, `caller_type`, `summary_json`) for background Event Bus worker auditing.
+   - [`migrations/002_worker_event_logs.sql`](file:///home/kieren/Documents/code/optimis/plugins/test_plugin/migrations/002_worker_event_logs.sql): Non-destructive Expand-and-Contract migration adding `worker_event_logs` (`id`, `pupil_id`, `event_name`, `hop`, `caller_type`, `caller_staff_id`, `created_at`) for background Event Bus worker auditing.
 

@@ -120,6 +120,15 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("GET /api/system/ui-config", func(w http.ResponseWriter, r *http.Request) {
+		caller, callerErr := h.ResolveRequestCaller(r, strings.TrimSpace(r.URL.Query().Get("staff_id")))
+		if callerErr != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{
+				"ok":         false,
+				"error_code": callerErr.Error(),
+			})
+			return
+		}
+
 		schoolURN := h.cfg.SchoolURN
 		schoolName := "Oakridge All-Through Academy"
 		academicYearID := "ay_2026_2027"
@@ -173,8 +182,13 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 				continue
 			}
 			methods := make([]string, 0, len(p.Manifest.Endpoints))
-			for m := range p.Manifest.Endpoints {
-				methods = append(methods, m)
+			for m, spec := range p.Manifest.Endpoints {
+				if hasAllScopes(caller.Scopes, spec.Scopes) {
+					methods = append(methods, m)
+				}
+			}
+			if len(p.Manifest.Endpoints) > 0 && len(methods) == 0 {
+				continue
 			}
 			sort.Strings(methods)
 
