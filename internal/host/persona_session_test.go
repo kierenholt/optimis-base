@@ -46,7 +46,7 @@ func TestResolveStaffPersona_SeededPersonasInCoreDB_ReturnsActiveRolesAndMergedS
 		t.Fatalf("ListActiveStaffPersonas failed: %v", err)
 	}
 
-	var foundAdmin, foundDSL, foundTeacher, foundTerminated bool
+	var foundAdmin, foundDSL, foundHoD, foundTeacher, foundTerminated bool
 	for _, p := range personas {
 		switch p.StaffID {
 		case seeded.AdminStaffID:
@@ -56,14 +56,19 @@ func TestResolveStaffPersona_SeededPersonasInCoreDB_ReturnsActiveRolesAndMergedS
 			if !p.IsDSL {
 				t.Errorf("expected DSL persona IsDSL == true")
 			}
+		case seeded.HoDStaffID:
+			foundHoD = true
+			if len(p.ActiveRoles) == 0 || p.ActiveRoles[0] != "HOD" {
+				t.Errorf("expected HoD persona active_roles to include HOD, got %v", p.ActiveRoles)
+			}
 		case seeded.TeacherStaffID:
 			foundTeacher = true
 		case seeded.TerminatedStaffID:
 			foundTerminated = true
 		}
 	}
-	if !foundAdmin || !foundDSL || !foundTeacher {
-		t.Fatalf("expected Admin, DSL, and Teacher in active personas list, got: %+v", personas)
+	if !foundAdmin || !foundDSL || !foundHoD || !foundTeacher {
+		t.Fatalf("expected Admin, DSL, HoD, and Teacher in active personas list, got: %+v", personas)
 	}
 	if foundTerminated {
 		t.Fatalf("SECURITY VIOLATION: terminated staff member %s was returned in active personas list", seeded.TerminatedStaffID)

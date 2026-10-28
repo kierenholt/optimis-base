@@ -313,3 +313,113 @@ func TestGetSystemUIConfig_CallerWithRestrictedPersonaScopes_FiltersPermittedMet
 		t.Fatalf("expected 0 plugins when caller holds zero matching endpoint scopes, got %+v", payload2.Plugins)
 	}
 }
+
+func TestManifestWidgetsAndSeedLruPlugins_ValidAndInvalidWidgetDeclarations_ExposesWidgetsInUIConfigAndFailsFastOnInvalidEntry_test(t *testing.T) {
+	tempDir := t.TempDir()
+	pluginsDir, err := filepath.Abs("../../plugins")
+	if err != nil {
+		t.Fatalf("failed to resolve plugins directory: %v", err)
+	}
+
+	t.Setenv("ENABLE_DEV_PERSONA_SWITCHER", "true")
+
+	h, err := NewHost(Config{
+		DataDirPath:      tempDir,
+		SchoolURN:        "100001",
+		HostKMSKeyHandle: "local-dev-kms-key-01",
+		PluginsDir:       pluginsDir,
+	})
+	if err != nil {
+		t.Fatalf("NewHost failed: %v", err)
+	}
+	logCursor := h.LogCursor()
+	t.Cleanup(func() {
+		entries := h.LogsSince(logCursor)
+		if t.Failed() && len(entries) > 0 {
+			t.Logf("--- TAPPED HOST SERVICE LOGS ---\n%s", strings.Join(entries, "\n"))
+		}
+		_ = h.Close()
+	})
+
+	if err := h.LoadPlugin("test_plugin"); err != nil {
+		t.Fatalf("LoadPlugin failed: %v", err)
+	}
+
+	handler, err := h.NewHTTPHandler()
+	if err != nil {
+		t.Fatalf("NewHTTPHandler failed: %v", err)
+	}
+
+	// 1. Verify GET /plugins/uk.org.optimis.test/ui/widget.html serves widget HTML with connect-src 'none' CSP
+	reqWidget := httptest.NewRequest(http.MethodGet, "/plugins/uk.org.optimis.test/ui/widget.html", nil)
+	recWidget := httptest.NewRecorder()
+	handler.ServeHTTP(recWidget, reqWidget)
+	if recWidget.Code != http.StatusOK {
+		t.Fatalf("GET /plugins/uk.org.optimis.test/ui/widget.html expected 200 OK, got %d: %s", recWidget.Code, recWidget.Body.String())
+	}
+	if !strings.Contains(recWidget.Header().Get("Content-Security-Policy"), "connect-src 'none'") {
+		t.Fatalf("expected connect-src 'none' CSP on widget.html, got %q", recWidget.Header().Get("Content-Security-Policy"))
+	}
+
+	// 2. Seed synthetic LRU plugins via POST /api/test/seed-lru-plugins and verify GET /api/system/ui-config
+	seedBody, _ := json.Marshal(map[string]any{
+		"plugin_ids": []string{"uk.org.optimis.lru1", "uk.org.optimis.lru2"},
+	})
+	reqSeed := httptest.NewRequest(http.MethodPost, "/api/test/seed-lru-plugins", bytes.NewReader(seedBody))
+	recSeed := httptest.NewRecorder()
+	handler.ServeHTTP(recSeed, reqSeed)
+	if recSeed.Code != http.StatusCreated {
+		t.Fatalf("POST /api/test/seed-lru-plugins expected 201 Created, got %d: %s", recSeed.Code, recSeed.Body.String())
+	}
+
+	reqConfig := httptest.NewRequest(http.MethodGet, "/api/system/ui-config", nil)
+	recConfig := httptest.NewRecorder()
+	handler.ServeHTTP(recConfig, reqConfig)
+	if recConfig.Code != http.StatusOK {
+		t.Fatalf("GET /api/system/ui-config expected 200 OK, got %d", recConfig.Code)
+	}
+
+	var configPayload struct {
+		OK      bool `json:"ok"`
+		Plugins []struct {
+			ID      string `json:"id"`
+			Widgets []struct {
+				ID       string `json:"id"`
+				Title    string `json:"title"`
+				Entry    string `json:"entry"`
+				EntryURL string `json:"entry_url"`
+			} `json:"widgets"`
+		} `json:"plugins"`
+	}
+	if err := json.Unmarshal(recConfig.Body.Bytes(), &configPayload); err != nil {
+		t.Fatalf("failed to unmarshal ui-config response: %v", err)
+	}
+	if len(configPayload.Plugins) != 3 {
+		t.Fatalf("expected 3 active plugins (test + lru1 + lru2), got %d", len(configPayload.Plugins))
+	}
+
+	foundTestPlugin := false
+	for _, p := range configPayload.Plugins {
+		if p.ID == "uk.org.optimis.test" {
+			foundTestPlugin = true
+			if len(p.Widgets) < 2 {
+				t.Fatalf("expected at least 2 widgets on uk.org.optimis.test, got %+v", p.Widgets)
+			}
+			if p.Widgets[0].EntryURL != "/plugins/uk.org.optimis.test/ui/widget.html" {
+				t.Fatalf("expected widget entry_url /plugins/uk.org.optimis.test/ui/widget.html, got %q", p.Widgets[0].EntryURL)
+			}
+		}
+	}
+	if !foundTestPlugin {
+		t.Fatalf("expected uk.org.optimis.test in ui-config plugins")
+	}
+
+	// Clean up synthetic LRU plugins via DELETE /api/test/seed-lru-plugins
+	reqDel := httptest.NewRequest(http.MethodDelete, "/api/test/seed-lru-plugins", nil)
+	recDel := httptest.NewRecorder()
+	handler.ServeHTTP(recDel, reqDel)
+	if recDel.Code != http.StatusOK {
+		t.Fatalf("DELETE /api/test/seed-lru-plugins expected 200 OK, got %d", recDel.Code)
+	}
+}
+

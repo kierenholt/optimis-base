@@ -28,6 +28,8 @@
     themeTokens: Object.create(null),
     context: Object.create(null),
     permittedMethods: [],
+    scopes: [],
+    activeRoles: [],
   };
 
   function applyThemeTokens(themeMode, themeTokens, legacyTheme) {
@@ -67,6 +69,8 @@
       theme: Object.assign({}, state.themeTokens),
       context: Object.assign({}, state.context),
       permitted_methods: state.permittedMethods.slice(),
+      scopes: state.scopes.slice(),
+      active_roles: state.activeRoles.slice(),
     };
   }
 
@@ -184,6 +188,16 @@
       state.permittedMethods = Array.isArray(msg.permitted_methods)
         ? msg.permitted_methods.slice()
         : [];
+      state.scopes = Array.isArray(msg.scopes)
+        ? msg.scopes.slice()
+        : msg.caller && Array.isArray(msg.caller.scopes)
+          ? msg.caller.scopes.slice()
+          : [];
+      state.activeRoles = Array.isArray(msg.active_roles)
+        ? msg.active_roles.slice()
+        : msg.caller && Array.isArray(msg.caller.active_roles)
+          ? msg.caller.active_roles.slice()
+          : [];
       applyThemeTokens(msg.theme_mode, msg.theme_tokens, msg.theme);
       notifyInitListeners();
       return;
@@ -314,6 +328,12 @@
     },
     get permittedMethods() {
       return state.permittedMethods.slice();
+    },
+    get scopes() {
+      return state.scopes.slice();
+    },
+    get activeRoles() {
+      return state.activeRoles.slice();
     },
     ready: function () {
       return readyPromise;

@@ -128,10 +128,69 @@ export interface DecryptedSafeguardingNote {
   audit_logs?: SafeguardingAuditEntry[];
 }
 
+export const MAX_KEEP_ALIVE_POOL_SIZE = 5;
+
+export interface PluginWidgetDescriptor {
+  id: string;
+  plugin_id: string;
+  title: string;
+  entry: string;
+  entry_url: string;
+}
+
+export interface PlacedDashboardWidget {
+  id: string;
+  plugin_id: string;
+  title: string;
+  entry: string;
+  entry_url: string;
+  colSpan: number;
+  rowSpan: number;
+}
+
+export const DEFAULT_PLUGIN_WIDGETS: PluginWidgetDescriptor[] = [
+  {
+    id: 'attendance_pulse',
+    plugin_id: PLUGIN_ID,
+    title: 'Statutory Attendance Pulse',
+    entry: 'ui/dist/widget.html',
+    entry_url: `/plugins/${PLUGIN_ID}/ui/widget.html`,
+  },
+  {
+    id: 'pastoral_watch',
+    plugin_id: PLUGIN_ID,
+    title: 'Pastoral & Behaviour Watch',
+    entry: 'ui/dist/widget.html',
+    entry_url: `/plugins/${PLUGIN_ID}/ui/widget.html`,
+  },
+];
+
 export interface PluginNavEntry {
   id: string;
   title: string;
   version: string;
   entry_url: string;
   permitted_methods: string[];
+  widgets?: PluginWidgetDescriptor[];
 }
+
+export interface StaffPersonaSummary {
+  staff_id: string;
+  person_id: string;
+  user_id: string;
+  staff_code: string;
+  display_name: string;
+  job_title: string;
+  is_dsl: boolean;
+  active_roles: string[];
+  scopes: string[];
+}
+
+export interface ActiveCallerIdentity {
+  staff_id: string;
+  user_id: string;
+  active_roles: string[];
+  scopes: string[];
+}
+
+

@@ -297,7 +297,7 @@ func (h *Host) RegisterAuthAndPersonaRoutes(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("GET /api/auth/session", func(w http.ResponseWriter, r *http.Request) {
-		caller, err := h.ResolveRequestCaller(r, "")
+		caller, err := h.ResolveRequestCaller(r, strings.TrimSpace(r.URL.Query().Get("staff_id")))
 		if err != nil {
 			status := http.StatusUnauthorized
 			if strings.Contains(err.Error(), "REAL_SSO_NOT_CONFIGURED") {

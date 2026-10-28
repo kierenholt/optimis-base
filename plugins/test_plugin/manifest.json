@@ -105,5 +105,17 @@
       "timeout_ms": 30000,
       "max_concurrency": 1
     }
-  }
+  },
+  "widgets": [
+    {
+      "id": "attendance_pulse",
+      "title": "Statutory Attendance Pulse",
+      "entry": "ui/dist/widget.html"
+    },
+    {
+      "id": "pastoral_watch",
+      "title": "Pastoral & Behaviour Watch",
+      "entry": "ui/dist/widget.html"
+    }
+  ]
 }

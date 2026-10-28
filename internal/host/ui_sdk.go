@@ -1,6 +1,7 @@
 package host
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,12 +13,21 @@ import (
 
 const pluginSandboxCSP = "default-src 'none'; script-src 'self' 'unsafe-inline' http: https:; style-src 'self' 'unsafe-inline' http: https:; img-src 'self' data:; font-src 'self' data:; connect-src 'none';"
 
+type PluginUIWidgetDescriptor struct {
+	ID       string `json:"id"`
+	PluginID string `json:"plugin_id"`
+	Title    string `json:"title"`
+	Entry    string `json:"entry"`
+	EntryURL string `json:"entry_url"`
+}
+
 type PluginUINavDescriptor struct {
-	ID               string   `json:"id"`
-	Title            string   `json:"title"`
-	Version          string   `json:"version"`
-	EntryURL         string   `json:"entry_url"`
-	PermittedMethods []string `json:"permitted_methods"`
+	ID               string                     `json:"id"`
+	Title            string                     `json:"title"`
+	Version          string                     `json:"version"`
+	EntryURL         string                     `json:"entry_url"`
+	PermittedMethods []string                   `json:"permitted_methods"`
+	Widgets          []PluginUIWidgetDescriptor `json:"widgets"`
 }
 
 func DefaultThemeTokens() map[string]map[string]string {
@@ -119,6 +129,87 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 		_, _ = w.Write(content)
 	})
 
+	mux.HandleFunc("POST /api/test/seed-lru-plugins", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			PluginIDs []string `json:"plugin_ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"ok":    false,
+				"error": fmt.Sprintf("invalid JSON body: %v", err),
+			})
+			return
+		}
+		if len(in.PluginIDs) == 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"ok":    false,
+				"error": "missing mandatory parameter: plugin_ids",
+			})
+			return
+		}
+
+		h.mu.Lock()
+		basePlugin, ok := h.plugins["uk.org.optimis.test"]
+		if !ok {
+			h.mu.Unlock()
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"ok":    false,
+				"error": "base plugin uk.org.optimis.test is not loaded",
+			})
+			return
+		}
+
+		seededIDs := make([]string, 0, len(in.PluginIDs))
+		for _, rawID := range in.PluginIDs {
+			pid := strings.TrimSpace(rawID)
+			if pid == "" || pid == "uk.org.optimis.test" {
+				continue
+			}
+			cloneManifest := basePlugin.Manifest
+			cloneManifest.ID = pid
+			cloneManifest.Title = fmt.Sprintf("Synthetic Workspace (%s)", pid)
+			cloneManifest.Widgets = nil
+
+			h.plugins[pid] = &LoadedPlugin{
+				Manifest:         cloneManifest,
+				LuaSource:        basePlugin.LuaSource,
+				DirPath:          basePlugin.DirPath,
+				Folder:           basePlugin.Folder,
+				State:            PluginStateActive,
+				ManifestModTime:  basePlugin.ManifestModTime,
+				LuaModTime:       basePlugin.LuaModTime,
+				IsSyntheticClone: true,
+			}
+			seededIDs = append(seededIDs, pid)
+		}
+		h.mu.Unlock()
+
+		h.logInfo(fmt.Sprintf("Seeded %d synthetic LRU plugin(s)", len(seededIDs)))
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"ok":                true,
+			"seeded_plugin_ids": seededIDs,
+		})
+	})
+
+	mux.HandleFunc("DELETE /api/test/seed-lru-plugins", func(w http.ResponseWriter, r *http.Request) {
+		h.mu.Lock()
+		removed := 0
+		for pid, p := range h.plugins {
+			if p.IsSyntheticClone {
+				delete(h.plugins, pid)
+				removed++
+			}
+		}
+		h.mu.Unlock()
+
+		h.logInfo(fmt.Sprintf("Deleted %d synthetic LRU plugin(s)", removed))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":      true,
+			"deleted": true,
+			"removed": removed,
+		})
+	})
+
 	mux.HandleFunc("GET /api/system/ui-config", func(w http.ResponseWriter, r *http.Request) {
 		caller, callerErr := h.ResolveRequestCaller(r, strings.TrimSpace(r.URL.Query().Get("staff_id")))
 		if callerErr != nil {
@@ -192,9 +283,27 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 			}
 			sort.Strings(methods)
 
-			title := p.Manifest.ID
-			if p.Manifest.ID == "uk.org.optimis.test" {
-				title = "Pupil & Classroom Workspace"
+			title := strings.TrimSpace(p.Manifest.Title)
+			if title == "" {
+				title = p.Manifest.ID
+				if p.Manifest.ID == "uk.org.optimis.test" {
+					title = "Pupil & Classroom Workspace"
+				}
+			}
+
+			widgets := make([]PluginUIWidgetDescriptor, 0, len(p.Manifest.Widgets))
+			for _, wSpec := range p.Manifest.Widgets {
+				relEntry, err := normalizeWidgetEntryRelPath(wSpec.Entry)
+				if err != nil {
+					continue
+				}
+				widgets = append(widgets, PluginUIWidgetDescriptor{
+					ID:       wSpec.ID,
+					PluginID: p.Manifest.ID,
+					Title:    wSpec.Title,
+					Entry:    wSpec.Entry,
+					EntryURL: fmt.Sprintf("/plugins/%s/ui/%s", p.Manifest.ID, relEntry),
+				})
 			}
 
 			pluginDescriptors = append(pluginDescriptors, PluginUINavDescriptor{
@@ -203,11 +312,18 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 				Version:          p.Manifest.Version,
 				EntryURL:         fmt.Sprintf("/plugins/%s/ui/index.html", p.Manifest.ID),
 				PermittedMethods: methods,
+				Widgets:          widgets,
 			})
 		}
 		h.mu.RUnlock()
 
 		sort.Slice(pluginDescriptors, func(i, j int) bool {
+			if pluginDescriptors[i].ID == "uk.org.optimis.test" {
+				return true
+			}
+			if pluginDescriptors[j].ID == "uk.org.optimis.test" {
+				return false
+			}
 			return pluginDescriptors[i].ID < pluginDescriptors[j].ID
 		})
 
@@ -222,3 +338,4 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 		})
 	})
 }
+

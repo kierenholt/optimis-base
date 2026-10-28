@@ -8,7 +8,7 @@ This directory contains the canonical client-side Plugin UI SDK (`mis-bridge.js`
    - **Initialization & Theme Handshake (`mis:ready` -> `mis:init` / `mis:theme:update`)**:
      - Automatically dispatches `{ type: 'mis:ready' }` to `window.parent` on load.
      - Injects all `--mis-*` CSS Custom Properties onto `document.documentElement` (`:root`) and synchronizes `data-mis-theme="light" | "high-contrast"`.
-     - Exposes `window.mis.context`, `window.mis.theme`, `window.mis.themeMode`, `window.mis.permittedMethods`, `window.mis.ready()`, and `window.mis.onInit(callback)`.
+     - Exposes `window.mis.context`, `window.mis.theme`, `window.mis.themeMode`, `window.mis.permittedMethods`, `window.mis.scopes`, `window.mis.activeRoles`, `window.mis.ready()`, and `window.mis.onInit(callback)`.
    - **Programmatic RPC Promise API (`window.mis.rpc(method, args)`)**:
      - Validates `method` (non-empty string) and `args` (plain JSON object), failing fast by rejecting the returned `Promise` immediately on malformed inputs (`MISSING_RPC_METHOD`, `INVALID_RPC_ARGS`).
      - Posts `{ type: 'mis:rpc:request', request_id, method, args }` to `window.parent` and resolves with `msg.data` (`ok: true`) or rejects with a structured `Error` (`err.code = msg.error_code`).

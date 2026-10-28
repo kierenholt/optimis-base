@@ -1,20 +1,36 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DashboardWidgetGridPanel } from './DashboardWidgetGridPanel';
 import { GdprSarPanel } from './GdprSarPanel';
 import { SafeguardingVaultPanel } from './SafeguardingVaultPanel';
 import {
+  ActiveCallerIdentity,
   applyHostThemeToRoot,
   DecryptedSafeguardingNote,
   DEFAULT_PERMITTED_METHODS,
+  DEFAULT_PLUGIN_WIDGETS,
   DEFAULT_THEME_TOKENS,
+  MAX_KEEP_ALIVE_POOL_SIZE,
+  PlacedDashboardWidget,
   PLUGIN_ID,
   PluginNavEntry,
+  PluginWidgetDescriptor,
   SafeguardingNoteEnvelope,
   SARSection,
+  StaffPersonaSummary,
   ThemeMode,
 } from './themeAndTypes';
 
+function checkCallerAdminOrDpo(roles: string[], scopes: string[]): boolean {
+  if (roles.some((r) => r.toUpperCase() === 'ADMIN' || r.toUpperCase() === 'DPO')) {
+    return true;
+  }
+  return scopes.includes('dal.staff.write:admin');
+}
+
 export function App() {
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const pluginIframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map());
+  const widgetIframeRefs = useRef<Map<string, { pluginId: string; el: HTMLIFrameElement }>>(new Map());
+
   const params = new URLSearchParams(window.location.search);
   const initialPupilId = params.get('pupil_id') || '';
   const initialSecondPupilId = params.get('second_pupil_id') || '';
@@ -47,11 +63,26 @@ export function App() {
       version: '0.2.0',
       entry_url: `/plugins/${PLUGIN_ID}/ui/index.html`,
       permitted_methods: DEFAULT_PERMITTED_METHODS,
+      widgets: DEFAULT_PLUGIN_WIDGETS,
     },
   ]);
 
-  // Active Workspace & Entity Deep-Linking Context state (Sections 9A & 9C)
+  // Cached Keep-Alive LRU Pool state (Section 9A: N=5 max mounted plugin iframes)
   const [activePluginId, setActivePluginId] = useState<string>(PLUGIN_ID);
+  const [lruPluginOrder, setLruPluginOrder] = useState<string[]>([PLUGIN_ID]);
+  const [mountedPluginIds, setMountedPluginIds] = useState<string[]>([PLUGIN_ID]);
+
+  // Editable NxM Mini-Iframe Widget Grid state (Section 9B)
+  const [isDashboardEditMode, setIsDashboardEditMode] = useState<boolean>(false);
+  const [placedWidgets, setPlacedWidgets] = useState<PlacedDashboardWidget[]>([
+    {
+      ...DEFAULT_PLUGIN_WIDGETS[0],
+      colSpan: 2,
+      rowSpan: 1,
+    },
+  ]);
+
+  // Active Entity Deep-Linking Context state (Section 9C)
   const [activePupilId, setActivePupilId] = useState<string>(initialPupilId);
   const [activeGroupId, setActiveGroupId] = useState<string>(initialGroupId);
   const [activeStaffId, setActiveStaffId] = useState<string>(initialStaffId);
@@ -59,6 +90,12 @@ export function App() {
     initialPupilId ? `student:${initialPupilId}` : initialGroupId ? `group:${initialGroupId}` : 'dashboard:home'
   );
   const [deepLinkNavigationStatus, setDeepLinkNavigationStatus] = useState<string>('IDLE');
+
+  // In-UI Topbar Persona Switcher state (Section 8A)
+  const [devPersonaSwitcherEnabled, setDevPersonaSwitcherEnabled] = useState<boolean>(false);
+  const [availablePersonas, setAvailablePersonas] = useState<StaffPersonaSummary[]>([]);
+  const [activeCaller, setActiveCaller] = useState<ActiveCallerIdentity | null>(null);
+  const [personaSwitchError, setPersonaSwitchError] = useState<string>('');
 
   // DSL Safeguarding Vault state (Section 5B)
   const [hasSafeguardingRead, setHasSafeguardingRead] = useState<boolean>(false);
@@ -68,10 +105,62 @@ export function App() {
   const [dslVaultError, setDslVaultError] = useState<string>('');
 
   // UK GDPR SAR Redaction & Retention Purge state (Sections 5C, 7B & 9.3)
+  const [hasAdminOrDpoAccess, setHasAdminOrDpoAccess] = useState<boolean>(false);
   const [sarSections, setSarSections] = useState<SARSection[]>([]);
   const [sarExportStatus, setSarExportStatus] = useState<string>('');
   const [sarFinalizedJson, setSarFinalizedJson] = useState<string>('');
   const [sarPurgeStatus, setSarPurgeStatus] = useState<string>('');
+
+  const availableWidgets = useMemo<PluginWidgetDescriptor[]>(() => {
+    const list: PluginWidgetDescriptor[] = [];
+    for (const p of installedPlugins) {
+      if (Array.isArray(p.widgets)) {
+        for (const w of p.widgets) {
+          list.push(w);
+        }
+      }
+    }
+    return list.length > 0 ? list : DEFAULT_PLUGIN_WIDGETS;
+  }, [installedPlugins]);
+
+  const activatePluginInKeepAlivePool = useCallback((targetPluginId: string) => {
+    setActivePluginId(targetPluginId);
+    setLruPluginOrder((prevOrder) => {
+      const nextOrder = [...prevOrder.filter((id) => id !== targetPluginId), targetPluginId];
+      let evictedId: string | null = null;
+      if (nextOrder.length > MAX_KEEP_ALIVE_POOL_SIZE) {
+        evictedId = nextOrder[0];
+        nextOrder.shift();
+      }
+      setMountedPluginIds((prevMounted) => {
+        let nextMounted = evictedId ? prevMounted.filter((id) => id !== evictedId) : [...prevMounted];
+        if (!nextMounted.includes(targetPluginId)) {
+          nextMounted.push(targetPluginId);
+        }
+        return nextMounted;
+      });
+      return nextOrder;
+    });
+  }, []);
+
+  const handleRegisterPluginIframeRef = useCallback((pluginId: string, el: HTMLIFrameElement | null) => {
+    if (el) {
+      pluginIframeRefs.current.set(pluginId, el);
+    } else {
+      pluginIframeRefs.current.delete(pluginId);
+    }
+  }, []);
+
+  const handleRegisterWidgetIframeRef = useCallback(
+    (widgetId: string, pluginId: string, el: HTMLIFrameElement | null) => {
+      if (el) {
+        widgetIframeRefs.current.set(widgetId, { pluginId, el });
+      } else {
+        widgetIframeRefs.current.delete(widgetId);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     const loadUIConfig = async () => {
@@ -118,45 +207,64 @@ export function App() {
     applyHostThemeToRoot(themeMode, themeCatalog);
   }, [themeMode, themeCatalog]);
 
-  const sendInitToIframe = useCallback(
-    (overrideContext?: Partial<{ pupil_id: string; group_id: string; staff_id: string; entity_type: string; entity_id: string }>, overrideThemeMode?: ThemeMode) => {
-      const contentWin = iframeRef.current?.contentWindow;
-      if (!contentWin) {
-        return;
-      }
+  const buildInitPayload = useCallback(
+    (
+      targetPluginId: string,
+      overrideContext?: Partial<{
+        pupil_id: string;
+        group_id: string;
+        staff_id: string;
+        entity_type: string;
+        entity_id: string;
+      }>,
+      overrideThemeMode?: ThemeMode,
+      overridePlugins?: PluginNavEntry[],
+      overrideCaller?: ActiveCallerIdentity | null
+    ) => {
       const mode = overrideThemeMode || themeMode;
       const activeTokens = themeCatalog[mode] || DEFAULT_THEME_TOKENS[mode];
+      const effectivePlugins = overridePlugins || installedPlugins;
+      const effectiveCaller = overrideCaller !== undefined ? overrideCaller : activeCaller;
       const resolvedPupilId = overrideContext?.pupil_id !== undefined ? overrideContext.pupil_id : activePupilId;
       const resolvedGroupId = overrideContext?.group_id !== undefined ? overrideContext.group_id : activeGroupId;
-      const resolvedStaffId = overrideContext?.staff_id !== undefined ? overrideContext.staff_id : activeStaffId;
-      const activePluginDescriptor = installedPlugins.find((p) => p.id === activePluginId);
-      const permittedMethods = activePluginDescriptor
-        ? activePluginDescriptor.permitted_methods
+      const resolvedStaffId =
+        overrideContext?.staff_id !== undefined
+          ? overrideContext.staff_id
+          : activeStaffId || effectiveCaller?.staff_id || '';
+      const pluginDescriptor = effectivePlugins.find((p) => p.id === targetPluginId);
+      const permittedMethods = pluginDescriptor
+        ? pluginDescriptor.permitted_methods
         : DEFAULT_PERMITTED_METHODS;
 
-      contentWin.postMessage(
-        {
-          type: 'mis:init',
-          theme_mode: mode,
-          theme_tokens: activeTokens,
-          theme: {
-            primary: activeTokens['--mis-brand-primary'],
-          },
-          context: {
-            pupil_id: resolvedPupilId || null,
-            second_pupil_id: initialSecondPupilId || null,
-            group_id: resolvedGroupId || null,
-            other_group_id: initialOtherGroupId || null,
-            reference_date: initialReferenceDate || null,
-            academic_year_id: initialAcademicYearId || configuredAcademicYear,
-            staff_id: resolvedStaffId || null,
-            entity_type: overrideContext?.entity_type || (resolvedPupilId ? 'student' : resolvedGroupId ? 'group' : 'dashboard'),
-            entity_id: overrideContext?.entity_id || resolvedPupilId || resolvedGroupId || 'home',
-          },
-          permitted_methods: permittedMethods,
+      return {
+        type: 'mis:init',
+        theme_mode: mode,
+        theme_tokens: activeTokens,
+        theme: {
+          primary: activeTokens['--mis-brand-primary'],
         },
-        '*'
-      );
+        context: {
+          pupil_id: resolvedPupilId || null,
+          second_pupil_id: initialSecondPupilId || null,
+          group_id: resolvedGroupId || null,
+          other_group_id: initialOtherGroupId || null,
+          reference_date: initialReferenceDate || null,
+          academic_year_id: initialAcademicYearId || configuredAcademicYear,
+          staff_id: resolvedStaffId || null,
+          entity_type:
+            overrideContext?.entity_type || (resolvedPupilId ? 'student' : resolvedGroupId ? 'group' : 'dashboard'),
+          entity_id: overrideContext?.entity_id || resolvedPupilId || resolvedGroupId || 'home',
+        },
+        caller: {
+          staff_id: resolvedStaffId || null,
+          user_id: effectiveCaller?.user_id || null,
+          active_roles: effectiveCaller?.active_roles || [],
+          scopes: effectiveCaller?.scopes || [],
+        },
+        scopes: effectiveCaller?.scopes || [],
+        active_roles: effectiveCaller?.active_roles || [],
+        permitted_methods: permittedMethods,
+      };
     },
     [
       themeMode,
@@ -170,23 +278,94 @@ export function App() {
       configuredAcademicYear,
       activeStaffId,
       installedPlugins,
-      activePluginId,
+      activeCaller,
     ]
   );
 
+  const broadcastInitToMountedIframes = useCallback(
+    (
+      overrideContext?: Partial<{
+        pupil_id: string;
+        group_id: string;
+        staff_id: string;
+        entity_type: string;
+        entity_id: string;
+      }>,
+      overrideThemeMode?: ThemeMode,
+      overridePlugins?: PluginNavEntry[],
+      overrideCaller?: ActiveCallerIdentity | null
+    ) => {
+      for (const [pluginId, iframeEl] of pluginIframeRefs.current.entries()) {
+        if (iframeEl?.contentWindow) {
+          iframeEl.contentWindow.postMessage(
+            buildInitPayload(pluginId, overrideContext, overrideThemeMode, overridePlugins, overrideCaller),
+            '*'
+          );
+        }
+      }
+      for (const [, entry] of widgetIframeRefs.current.entries()) {
+        if (entry.el?.contentWindow) {
+          entry.el.contentWindow.postMessage(
+            buildInitPayload(entry.pluginId, overrideContext, overrideThemeMode, overridePlugins, overrideCaller),
+            '*'
+          );
+        }
+      }
+    },
+    [buildInitPayload]
+  );
+
   useEffect(() => {
-    sendInitToIframe();
-  }, [sendInitToIframe]);
+    broadcastInitToMountedIframes();
+  }, [broadcastInitToMountedIframes, mountedPluginIds, placedWidgets]);
+
+  useEffect(() => {
+    const loadPersonas = async () => {
+      try {
+        const res = await fetch('/api/auth/personas');
+        if (!res.ok) {
+          setDevPersonaSwitcherEnabled(false);
+          setAvailablePersonas([]);
+          return;
+        }
+        const body = await res.json();
+        if (body && body.ok && Array.isArray(body.personas)) {
+          setDevPersonaSwitcherEnabled(true);
+          setAvailablePersonas(body.personas);
+        } else {
+          setDevPersonaSwitcherEnabled(false);
+          setAvailablePersonas([]);
+        }
+      } catch {
+        setDevPersonaSwitcherEnabled(false);
+        setAvailablePersonas([]);
+      }
+    };
+    void loadPersonas();
+  }, []);
 
   useEffect(() => {
     const loadSessionAndSafeguarding = async () => {
       try {
-        const sessRes = await fetch('/api/auth/session');
+        const sessQuery = activeStaffId ? `?staff_id=${encodeURIComponent(activeStaffId)}` : '';
+        const sessRes = await fetch(`/api/auth/session${sessQuery}`);
         if (!sessRes.ok) {
           return;
         }
         const sessBody = await sessRes.json();
-        const scopes: string[] = sessBody?.caller?.scopes || [];
+        const caller = sessBody?.caller;
+        const scopes: string[] = Array.isArray(caller?.scopes) ? caller.scopes : [];
+        const roles: string[] = Array.isArray(caller?.active_roles) ? caller.active_roles : [];
+        if (caller && typeof caller.staff_id === 'string') {
+          setActiveCaller({
+            staff_id: caller.staff_id,
+            user_id: caller.user_id || '',
+            active_roles: roles,
+            scopes,
+          });
+        }
+        setHasAdminOrDpoAccess(checkCallerAdminOrDpo(roles, scopes));
+
         if (scopes.includes('dal.safeguarding.read')) {
           setHasSafeguardingRead(true);
           const query = activePupilId ? `?pupil_id=${encodeURIComponent(activePupilId)}` : '';
@@ -199,15 +378,115 @@ export function App() {
           }
         } else {
           setHasSafeguardingRead(false);
+          setSafeguardingEnvelopes([]);
+          setDecryptedNotes({});
         }
       } catch {
         // Ignore session fetch errors if not in DSL flow
       }
     };
     void loadSessionAndSafeguarding();
-  }, [activePupilId]);
+  }, [activePupilId, activeStaffId]);
+
+  const handleSelectPersona = async (nextStaffId: string) => {
+    const trimmed = nextStaffId.trim();
+    if (!trimmed) {
+      throw new Error('Missing mandatory staff_id for persona switch');
+    }
+    setPersonaSwitchError('');
+
+    const switchRes = await fetch('/api/auth/persona', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ staff_id: trimmed }),
+    });
+    const switchBody = await switchRes.json();
+    if (!switchRes.ok || !switchBody.ok) {
+      setPersonaSwitchError(switchBody.error_code || 'Failed to switch persona');
+      return;
+    }
+
+    const caller = switchBody.caller;
+    const resolvedStaffId: string = caller?.staff_id || trimmed;
+    const roles: string[] = Array.isArray(caller?.active_roles) ? caller.active_roles : [];
+    const scopes: string[] = Array.isArray(caller?.scopes) ? caller.scopes : [];
+    const nextCaller: ActiveCallerIdentity = {
+      staff_id: resolvedStaffId,
+      user_id: caller?.user_id || '',
+      active_roles: roles,
+      scopes,
+    };
+
+    setActiveStaffId(resolvedStaffId);
+    setActiveCaller(nextCaller);
+
+    const isAdminOrDpo = checkCallerAdminOrDpo(roles, scopes);
+    setHasAdminOrDpoAccess(isAdminOrDpo);
+    if (!isAdminOrDpo) {
+      setSarSections([]);
+      setSarExportStatus('');
+      setSarFinalizedJson('');
+      setSarPurgeStatus('');
+    }
+
+    if (scopes.includes('dal.safeguarding.read')) {
+      setHasSafeguardingRead(true);
+      setDslVaultError('');
+      const query = activePupilId ? `?pupil_id=${encodeURIComponent(activePupilId)}` : '';
+      const notesRes = await fetch(`/api/safeguarding/notes${query}`);
+      if (notesRes.ok) {
+        const notesBody = await notesRes.json();
+        if (notesBody.ok && Array.isArray(notesBody.notes)) {
+          setSafeguardingEnvelopes(notesBody.notes);
+        }
+      }
+    } else {
+      setHasSafeguardingRead(false);
+      setSafeguardingEnvelopes([]);
+      setDecryptedNotes({});
+      setCloudKeyToken('');
+      setDslVaultError('');
+    }
+
+    const uiRes = await fetch(`/api/system/ui-config?staff_id=${encodeURIComponent(resolvedStaffId)}`);
+    if (uiRes.ok) {
+      const uiBody = await uiRes.json();
+      if (uiBody && uiBody.ok && Array.isArray(uiBody.plugins)) {
+        setInstalledPlugins(uiBody.plugins);
+        broadcastInitToMountedIframes(
+          { staff_id: resolvedStaffId },
+          undefined,
+          uiBody.plugins,
+          nextCaller
+        );
+        return;
+      }
+    }
+
+    broadcastInitToMountedIframes({ staff_id: resolvedStaffId }, undefined, undefined, nextCaller);
+  };
 
   useEffect(() => {
+    const resolveSourceIframe = (source: MessageEventSource | null): { pluginId: string; win: Window | null } => {
+      if (source) {
+        for (const [pid, el] of pluginIframeRefs.current.entries()) {
+          if (el.contentWindow === source) {
+            return { pluginId: pid, win: el.contentWindow };
+          }
+        }
+        for (const [, entry] of widgetIframeRefs.current.entries()) {
+          if (entry.el.contentWindow === source) {
+            return { pluginId: entry.pluginId, win: entry.el.contentWindow };
+          }
+        }
+      }
+      const fallbackEl = pluginIframeRefs.current.get(activePluginId);
+      return {
+        pluginId: activePluginId,
+        win: (source as Window | null) || fallbackEl?.contentWindow || null,
+      };
+    };
+
     const handleMessage = async (event: MessageEvent) => {
       const msg = event.data;
       if (!msg || typeof msg !== 'object') {
@@ -215,7 +494,10 @@ export function App() {
       }
 
       if (msg.type === 'mis:ready') {
-        sendInitToIframe();
+        const { pluginId, win } = resolveSourceIframe(event.source);
+        if (win) {
+          win.postMessage(buildInitPayload(pluginId), '*');
+        }
         return;
       }
 
@@ -227,7 +509,7 @@ export function App() {
         }
 
         const designatedPlugin = entityLinkHandlers[entityType] || PLUGIN_ID;
-        setActivePluginId(designatedPlugin);
+        activatePluginInKeepAlivePool(designatedPlugin);
 
         let nextPupilId = activePupilId;
         let nextGroupId = activeGroupId;
@@ -249,7 +531,7 @@ export function App() {
         setActiveEntityContext(`${entityType}:${entityId}`);
         setDeepLinkNavigationStatus(`${entityType}:${entityId} -> ${designatedPlugin}`);
 
-        sendInitToIframe({
+        broadcastInitToMountedIframes({
           pupil_id: nextPupilId,
           group_id: nextGroupId,
           staff_id: nextStaffId,
@@ -265,14 +547,15 @@ export function App() {
           throw new Error('Malformed mis:rpc:request: missing request_id or method');
         }
 
-        const res = await fetch(`/api/plugins/${encodeURIComponent(activePluginId)}/rpc/${encodeURIComponent(method)}`, {
+        const { pluginId, win } = resolveSourceIframe(event.source);
+        const res = await fetch(`/api/plugins/${encodeURIComponent(pluginId)}/rpc/${encodeURIComponent(method)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ args: args ?? {} }),
         });
 
         const payload = await res.json();
-        iframeRef.current?.contentWindow?.postMessage(
+        win?.postMessage(
           {
             type: 'mis:rpc:response',
             request_id,
@@ -289,13 +572,50 @@ export function App() {
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [sendInitToIframe, entityLinkHandlers, activePluginId, activePupilId, activeGroupId, activeStaffId]);
+  }, [
+    buildInitPayload,
+    broadcastInitToMountedIframes,
+    activatePluginInKeepAlivePool,
+    entityLinkHandlers,
+    activePluginId,
+    activePupilId,
+    activeGroupId,
+    activeStaffId,
+  ]);
 
   const handleToggleThemeMode = () => {
     const nextMode: ThemeMode = themeMode === 'light' ? 'high-contrast' : 'light';
     applyHostThemeToRoot(nextMode, themeCatalog);
     setThemeMode(nextMode);
-    sendInitToIframe(undefined, nextMode);
+    broadcastInitToMountedIframes(undefined, nextMode);
+  };
+
+  const handlePlaceWidget = (widget: PluginWidgetDescriptor) => {
+    setPlacedWidgets((prev) => {
+      if (prev.some((w) => w.id === widget.id)) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          ...widget,
+          colSpan: 2,
+          rowSpan: 1,
+        },
+      ];
+    });
+  };
+
+  const handleResizeWidget = (widgetId: string, colSpan: number, rowSpan: number) => {
+    const safeCols = Math.max(1, Math.min(4, colSpan));
+    const safeRows = Math.max(1, Math.min(4, rowSpan));
+    setPlacedWidgets((prev) =>
+      prev.map((w) => (w.id === widgetId ? { ...w, colSpan: safeCols, rowSpan: safeRows } : w))
+    );
+  };
+
+  const handleRemoveWidget = (widgetId: string) => {
+    setPlacedWidgets((prev) => prev.filter((w) => w.id !== widgetId));
   };
 
   const handleRenewCloudKey = async () => {
@@ -483,7 +803,9 @@ export function App() {
               key={plug.id}
               type="button"
               data-testid={`nav-item-plugin-${plug.id}`}
-              onClick={() => setActivePluginId(plug.id)}
+              data-permitted-count={String(plug.permitted_methods.length)}
+              data-permitted-methods={plug.permitted_methods.join(',')}
+              onClick={() => activatePluginInKeepAlivePool(plug.id)}
               style={{
                 padding: '8px 12px',
                 borderRadius: 'var(--mis-radius-sm, 4px)',
@@ -504,6 +826,18 @@ export function App() {
               }}
             >
               <span>{plug.title}</span>
+              <span
+                data-testid={`nav-item-plugin-methods-count-${plug.id}`}
+                style={{
+                  marginLeft: 'auto',
+                  fontSize: '11px',
+                  padding: '1px 6px',
+                  borderRadius: '999px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.16)',
+                }}
+              >
+                {plug.permitted_methods.length}
+              </span>
             </button>
           ))}
         </nav>
@@ -536,6 +870,7 @@ export function App() {
             justifyContent: 'space-between',
             alignItems: 'center',
             gap: '16px',
+            flexWrap: 'wrap',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -557,7 +892,81 @@ export function App() {
             </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            {devPersonaSwitcherEnabled && (
+              <div
+                data-testid="persona-switcher-container"
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}
+              >
+                <label
+                  htmlFor="persona-switcher-select"
+                  style={{ fontSize: '12px', fontWeight: 600, color: 'var(--mis-text-secondary)' }}
+                >
+                  Persona:
+                </label>
+                <select
+                  id="persona-switcher-select"
+                  data-testid="persona-switcher-select"
+                  value={activeCaller?.staff_id || activeStaffId || ''}
+                  onChange={(e) => {
+                    void handleSelectPersona(e.target.value);
+                  }}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: 'var(--mis-radius-sm, 4px)',
+                    border: '1px solid var(--mis-border-strong)',
+                    backgroundColor: 'var(--mis-bg-elevated)',
+                    color: 'var(--mis-text-primary)',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {activeCaller?.staff_id &&
+                    !availablePersonas.some((p) => p.staff_id === activeCaller.staff_id) && (
+                      <option value={activeCaller.staff_id}>
+                        {activeCaller.staff_id} [{activeCaller.active_roles.join(', ')}]
+                      </option>
+                    )}
+                  {availablePersonas.map((p) => (
+                    <option
+                      key={p.staff_id}
+                      value={p.staff_id}
+                      data-testid={`persona-option-${p.staff_id}`}
+                    >
+                      {p.display_name} — {p.job_title} [{p.active_roles.join(', ')}]
+                    </option>
+                  ))}
+                </select>
+                {activeCaller && (
+                  <span
+                    data-testid="active-persona-badge"
+                    data-staff-id={activeCaller.staff_id}
+                    data-roles={activeCaller.active_roles.join(',')}
+                    data-scopes={activeCaller.scopes.join(',')}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: 'var(--mis-radius-sm, 4px)',
+                      backgroundColor: 'var(--mis-bg-elevated)',
+                      border: '1px solid var(--mis-border-subtle)',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {activeCaller.staff_id} ({activeCaller.active_roles.join(', ')})
+                  </span>
+                )}
+                {personaSwitchError && (
+                  <span
+                    data-testid="persona-switcher-error"
+                    style={{ fontSize: '12px', color: 'var(--mis-status-danger)', fontWeight: 600 }}
+                  >
+                    {personaSwitchError}
+                  </span>
+                )}
+              </div>
+            )}
+
             <span style={{ fontSize: '12px', color: 'var(--mis-text-secondary)' }}>
               Theme:{' '}
               <strong data-testid="active-theme-mode-indicator">{themeMode}</strong>
@@ -650,7 +1059,19 @@ export function App() {
             </div>
           </section>
 
-          {/* Active Keep-Alive Plugin Workspace Panel */}
+          {/* Editable NxM Mini-Iframe Widget Grid (Section 9B) */}
+          <DashboardWidgetGridPanel
+            isEditMode={isDashboardEditMode}
+            availableWidgets={availableWidgets}
+            placedWidgets={placedWidgets}
+            onToggleEditMode={() => setIsDashboardEditMode((prev) => !prev)}
+            onPlaceWidget={handlePlaceWidget}
+            onResizeWidget={handleResizeWidget}
+            onRemoveWidget={handleRemoveWidget}
+            onRegisterWidgetIframeRef={handleRegisterWidgetIframeRef}
+          />
+
+          {/* Cached Keep-Alive LRU Plugin Workspace Pool (Section 9A: N=5) */}
           <section
             data-testid="dashboard-workspace-panel"
             style={{
@@ -661,20 +1082,36 @@ export function App() {
               boxShadow: 'var(--mis-shadow-card)',
             }}
           >
-            <iframe
-              ref={iframeRef}
-              data-testid={`plugin-iframe-${PLUGIN_ID}`}
-              sandbox="allow-scripts"
-              src={`/plugins/${PLUGIN_ID}/ui/index.html`}
-              title="Test Plugin Micro-Frontend"
-              style={{
-                width: '100%',
-                height: '320px',
-                border: '1px solid var(--mis-border-subtle)',
-                borderRadius: 'var(--mis-radius-md, 8px)',
-                backgroundColor: 'var(--mis-bg-surface)',
-              }}
-            />
+            <div
+              data-testid="keep-alive-lru-pool"
+              data-pool-size={String(mountedPluginIds.length)}
+              data-lru-order={lruPluginOrder.join(',')}
+            >
+              {mountedPluginIds.map((pluginId) => {
+                const descriptor = installedPlugins.find((p) => p.id === pluginId);
+                const entryUrl = descriptor ? descriptor.entry_url : `/plugins/${pluginId}/ui/index.html`;
+                const isActive = pluginId === activePluginId;
+                return (
+                  <iframe
+                    key={pluginId}
+                    ref={(el) => handleRegisterPluginIframeRef(pluginId, el)}
+                    data-testid={`plugin-iframe-${pluginId}`}
+                    data-lru-active={isActive ? 'true' : 'false'}
+                    sandbox="allow-scripts"
+                    src={entryUrl}
+                    title={`Plugin Workspace: ${pluginId}`}
+                    style={{
+                      display: isActive ? 'block' : 'none',
+                      width: '100%',
+                      height: '320px',
+                      border: '1px solid var(--mis-border-subtle)',
+                      borderRadius: 'var(--mis-radius-md, 8px)',
+                      backgroundColor: 'var(--mis-bg-surface)',
+                    }}
+                  />
+                );
+              })}
+            </div>
           </section>
 
           {hasSafeguardingRead && (
@@ -689,16 +1126,18 @@ export function App() {
             />
           )}
 
-          <GdprSarPanel
-            sarSections={sarSections}
-            sarExportStatus={sarExportStatus}
-            sarFinalizedJson={sarFinalizedJson}
-            sarPurgeStatus={sarPurgeStatus}
-            onLoadSarExport={handleLoadSarExport}
-            onFinalizeSarExport={handleFinalizeSarExport}
-            onPurgePupilData={handlePurgePupilData}
-            onUpdateRedactableField={handleUpdateRedactableField}
-          />
+          {hasAdminOrDpoAccess && (
+            <GdprSarPanel
+              sarSections={sarSections}
+              sarExportStatus={sarExportStatus}
+              sarFinalizedJson={sarFinalizedJson}
+              sarPurgeStatus={sarPurgeStatus}
+              onLoadSarExport={handleLoadSarExport}
+              onFinalizeSarExport={handleFinalizeSarExport}
+              onPurgePupilData={handlePurgePupilData}
+              onUpdateRedactableField={handleUpdateRedactableField}
+            />
+          )}
         </main>
       </div>
     </div>

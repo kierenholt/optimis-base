@@ -25,9 +25,9 @@ This package implements the **Optimis Go Host Container** (Sections 5, 7, 8, 9, 
 * [`event_bus.go`](file:///home/kieren/Documents/code/optimis/internal/host/event_bus.go):
   * [`validateManifestWorkersAndLuaSource`](file:///home/kieren/Documents/code/optimis/internal/host/event_bus.go#L41) & [`startOrReplacePluginWorkerPool`](file:///home/kieren/Documents/code/optimis/internal/host/event_bus.go#L118): Allocates per-plugin buffered `chan Event` worker pools (`max_concurrency`), enforces `Hop > 3` loop protection (`events_dropped_total`), and exposes `GET /api/events/catalog`.
 * [`ui_sdk.go`](file:///home/kieren/Documents/code/optimis/internal/host/ui_sdk.go):
-  * [`RegisterUISDKAndConfigRoutes`](file:///home/kieren/Documents/code/optimis/internal/host/ui_sdk.go#L97): Serves `/sdk/mis-bridge.js` and `/sdk/mis-theme.css` with `connect-src 'none'` CSP headers and exposes `GET /api/system/ui-config`.
+  * [`RegisterUISDKAndConfigRoutes`](file:///home/kieren/Documents/code/optimis/internal/host/ui_sdk.go#L107): Serves `/sdk/mis-bridge.js` and `/sdk/mis-theme.css` with `connect-src 'none'` CSP headers, exposes `GET /api/system/ui-config` (including per-plugin `widgets` descriptors from `manifest.json`), and provides `POST`/`DELETE /api/test/seed-lru-plugins` for Keep-Alive LRU Pool E2E verification.
 * [`server.go`](file:///home/kieren/Documents/code/optimis/internal/host/server.go):
-  * [`NewHTTPHandler`](file:///home/kieren/Documents/code/optimis/internal/host/server.go#L19): Mounts the embedded React UI (`ui_dist`), sandboxed plugin UI assets, and all Host HTTP/RPC endpoints.
+  * [`NewHTTPHandler`](file:///home/kieren/Documents/code/optimis/internal/host/server.go#L19): Mounts the embedded React UI (`ui_dist`), sandboxed plugin UI & widget assets, and all Host HTTP/RPC endpoints.
 
 ---
 

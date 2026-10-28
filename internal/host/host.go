@@ -59,8 +59,15 @@ type GDPRHooksSpec struct {
 	PurgePupilData  string `json:"purge_pupil_data"`
 }
 
+type WidgetSpec struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Entry string `json:"entry"`
+}
+
 type Manifest struct {
 	ID             string                  `json:"id"`
+	Title          string                  `json:"title,omitempty"`
 	Version        string                  `json:"version"`
 	CoreDALVersion string                  `json:"core_dal_version"`
 	MaxConcurrency int                     `json:"max_concurrency,omitempty"`
@@ -70,6 +77,7 @@ type Manifest struct {
 	Egress         EgressSpec              `json:"egress"`
 	Endpoints      map[string]EndpointSpec `json:"endpoints"`
 	Workers        map[string]EndpointSpec `json:"workers,omitempty"`
+	Widgets        []WidgetSpec            `json:"widgets,omitempty"`
 }
 
 type PluginState string
@@ -80,13 +88,14 @@ const (
 )
 
 type LoadedPlugin struct {
-	Manifest        Manifest
-	LuaSource       string
-	DirPath         string
-	Folder          string
-	State           PluginState
-	ManifestModTime time.Time
-	LuaModTime      time.Time
+	Manifest         Manifest
+	LuaSource        string
+	DirPath          string
+	Folder           string
+	State            PluginState
+	ManifestModTime  time.Time
+	LuaModTime       time.Time
+	IsSyntheticClone bool
 }
 
 type CallerContext struct {
@@ -332,6 +341,34 @@ func readPluginFromDisk(dirPath string, folder string) (*LoadedPlugin, error) {
 		}
 	}
 
+	if len(manifest.Widgets) > 0 {
+		seenWidgetIDs := make(map[string]struct{}, len(manifest.Widgets))
+		for idx, w := range manifest.Widgets {
+			wid := strings.TrimSpace(w.ID)
+			wtitle := strings.TrimSpace(w.Title)
+			wentry := strings.TrimSpace(w.Entry)
+			if wid == "" || wtitle == "" || wentry == "" {
+				return nil, fmt.Errorf("manifest.json widget[%d] for plugin %s is missing mandatory id, title, or entry", idx, manifest.ID)
+			}
+			if _, dup := seenWidgetIDs[wid]; dup {
+				return nil, fmt.Errorf("manifest.json for plugin %s declares duplicate widget id %q", manifest.ID, wid)
+			}
+			seenWidgetIDs[wid] = struct{}{}
+
+			relEntry, err := normalizeWidgetEntryRelPath(wentry)
+			if err != nil {
+				return nil, fmt.Errorf("manifest.json widget %q for plugin %s has invalid entry %q: %w", wid, manifest.ID, wentry, err)
+			}
+			uiDistDir := filepath.Join(dirPath, "ui", "dist")
+			if distInfo, distErr := os.Stat(uiDistDir); distErr == nil && distInfo.IsDir() {
+				widgetFullPath := filepath.Join(uiDistDir, relEntry)
+				if st, statErr := os.Stat(widgetFullPath); statErr != nil || st.IsDir() {
+					return nil, fmt.Errorf("manifest.json widget %q entry file not found at %s", wid, widgetFullPath)
+				}
+			}
+		}
+	}
+
 	luaPath := filepath.Join(dirPath, "src", "init.lua")
 	luaStat, err := os.Stat(luaPath)
 	if err != nil {
@@ -356,6 +393,24 @@ func readPluginFromDisk(dirPath string, folder string) (*LoadedPlugin, error) {
 		ManifestModTime: manifestStat.ModTime(),
 		LuaModTime:      luaStat.ModTime(),
 	}, nil
+}
+
+func normalizeWidgetEntryRelPath(rawEntry string) (string, error) {
+	trimmed := strings.TrimSpace(rawEntry)
+	if trimmed == "" {
+		return "", errors.New("empty widget entry path")
+	}
+	trimmed = strings.TrimPrefix(trimmed, "/")
+	if strings.HasPrefix(trimmed, "ui/dist/") {
+		trimmed = strings.TrimPrefix(trimmed, "ui/dist/")
+	} else if strings.HasPrefix(trimmed, "ui/") {
+		trimmed = strings.TrimPrefix(trimmed, "ui/")
+	}
+	clean := filepath.Clean(trimmed)
+	if clean == "." || clean == "" || strings.HasPrefix(clean, "..") {
+		return "", fmt.Errorf("disallowed widget entry path: %s", rawEntry)
+	}
+	return clean, nil
 }
 
 func (h *Host) LoadPlugin(pluginFolder string) error {
@@ -389,6 +444,9 @@ func (h *Host) GetLoadedPlugin(pluginID string) (*LoadedPlugin, bool) {
 	h.mu.RUnlock()
 	if !ok {
 		return nil, false
+	}
+	if p.IsSyntheticClone {
+		return p, true
 	}
 
 	manifestStat, mErr := os.Stat(filepath.Join(p.DirPath, "manifest.json"))
