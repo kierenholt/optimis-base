@@ -566,3 +566,59 @@ func (d *CoreDAL) UpsertSessionAttendanceBatchScoped(
 		Session:       in.Session,
 	}, nil
 }
+
+type PupilAttendanceSummary struct {
+	PupilID            string `json:"pupil_id"`
+	AcademicYearID     string `json:"academic_year_id"`
+	ReferenceDate      string `json:"reference_date"`
+	TotalSessions      int    `json:"total_sessions"`
+	PresentSessions    int    `json:"present_sessions"`
+	AMPresentSessions  int    `json:"am_present_sessions"`
+	PMPresentSessions  int    `json:"pm_present_sessions"`
+}
+
+func (d *CoreDAL) GetPupilAttendanceSummaryScoped(
+	ctx context.Context,
+	scope DALQueryScope,
+	pupilID string,
+) (*PupilAttendanceSummary, error) {
+	trimmedPupilID := strings.TrimSpace(pupilID)
+	if trimmedPupilID == "" {
+		return nil, errors.New("missing mandatory parameter: pupil_id")
+	}
+	if err := validateScope(scope); err != nil {
+		return nil, err
+	}
+	if err := d.ensurePupilInOwnGroups(ctx, scope, trimmedPupilID); err != nil {
+		return nil, err
+	}
+
+	var totalSessions, presentSessions, amPresent, pmPresent int
+	if err := d.readDB.QueryRowContext(
+		ctx,
+		`SELECT
+			COUNT(*),
+			COALESCE(SUM(CASE WHEN ac.statistical_category IN ('PRESENT', 'APPROVED_EDUCATIONAL_ACTIVITY') OR asm.attendance_code IN ('/', '\', 'L', 'B', 'P', 'V', 'W') THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN asm.session = 'AM' AND (ac.statistical_category IN ('PRESENT', 'APPROVED_EDUCATIONAL_ACTIVITY') OR asm.attendance_code IN ('/', '\', 'L', 'B', 'P', 'V', 'W')) THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN asm.session = 'PM' AND (ac.statistical_category IN ('PRESENT', 'APPROVED_EDUCATIONAL_ACTIVITY') OR asm.attendance_code IN ('/', '\', 'L', 'B', 'P', 'V', 'W')) THEN 1 ELSE 0 END), 0)
+		 FROM attendance_session_marks asm
+		 LEFT JOIN attendance_codes ac ON ac.code = asm.attendance_code
+		 WHERE asm.pupil_id = ?
+		   AND asm.academic_year_id = ?
+		   AND asm.date <= ?`,
+		trimmedPupilID, scope.AcademicYearID, scope.ReferenceDate,
+	).Scan(&totalSessions, &presentSessions, &amPresent, &pmPresent); err != nil {
+		return nil, fmt.Errorf("failed to query pupil attendance summary: %w", err)
+	}
+
+	return &PupilAttendanceSummary{
+		PupilID:           trimmedPupilID,
+		AcademicYearID:    scope.AcademicYearID,
+		ReferenceDate:     scope.ReferenceDate,
+		TotalSessions:     totalSessions,
+		PresentSessions:   presentSessions,
+		AMPresentSessions: amPresent,
+		PMPresentSessions: pmPresent,
+	}, nil
+}
+

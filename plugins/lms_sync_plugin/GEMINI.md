@@ -1,0 +1,10 @@
+# Google Classroom LMS Directory Sync Plugin (`plugins/lms_sync_plugin`)
+
+Implements the **Google Classroom LMS Directory Sync** vertical plugin (`uk.org.optimis.lms.classroom`) per Architecture Blueprint Sections 3, 4, 9 & 10.
+
+## Key Files
+
+* [`manifest.json`](file:///home/kieren/Documents/code/optimis/plugins/lms_sync_plugin/manifest.json): Default-deny permission contract declaring `plugin_lms_sync` attached SQLite storage, `workers.on_membership_changed` (`core.group.membership_changed`), `https://classroom.googleapis.com` outbound HTTPS egress whitelist, `upsert_pupil_membership` (`dal.groups.write:all`, `dal.groups.read:all`, `dal.pupils.read:all`), and UK GDPR hooks (`export_pupil_data`, `purge_pupil_data`).
+* [`migrations/`](file:///home/kieren/Documents/code/optimis/plugins/lms_sync_plugin/migrations/GEMINI.md) ([`001_init.sql`](file:///home/kieren/Documents/code/optimis/plugins/lms_sync_plugin/migrations/001_init.sql)): Expand-and-contract DDL creating `lms_sync_logs` in `plugin_lms_sync.db`.
+* [`src/`](file:///home/kieren/Documents/code/optimis/plugins/lms_sync_plugin/src/GEMINI.md) ([`src/init.lua`](file:///home/kieren/Documents/code/optimis/plugins/lms_sync_plugin/src/init.lua)): Lua 5.1 implementation of `upsert_pupil_membership` (calling `ctx.dal.groups.upsert_pupil_membership`), background worker `on_membership_changed` (querying updated roster via `ctx.dal.pupils.list_by_group`, posting outbound via `ctx.http.post` to `https://classroom.googleapis.com/v1/courses/roster:sync` prior to opening any SQLite write transaction, and logging sync status in `plugin_lms_sync.db`), `get_group_roster`, `list_sync_logs`, and UK GDPR SAR/retention hooks (`export_pupil_data`, `purge_pupil_data`).
+* [`ui/`](file:///home/kieren/Documents/code/optimis/plugins/lms_sync_plugin/ui/GEMINI.md) ([`ui/dist/index.html`](file:///home/kieren/Documents/code/optimis/plugins/lms_sync_plugin/ui/dist/index.html)): Sandboxed micro-frontend (`connect-src 'none'`) wired via `/sdk/mis-bridge.js` and `data-mis-rpc` attributes for transferring pupils between sets and inspecting Google Classroom sync logs.

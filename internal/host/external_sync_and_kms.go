@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -773,3 +774,88 @@ func (h *Host) RegisterExternalSyncAndTestRoutes(mux *http.ServeMux) {
 		})
 	})
 }
+
+func (h *Host) handleMockParentDMZRoundTrip(req *http.Request) (*http.Response, error) {
+	if err := h.ensureParentDMZAvailable(req.Context()); err != nil {
+		return nil, err
+	}
+
+	path := ""
+	if req.URL != nil {
+		path = req.URL.Path
+	}
+
+	hdr := make(http.Header)
+	hdr.Set("Content-Type", "application/json; charset=utf-8")
+
+	switch path {
+	case "/v1/inbox/pull":
+		st := h.getExternalDepsState()
+		st.mu.Lock()
+		queued := make([]ParentDMZSubmission, len(st.dmzInbox))
+		copy(queued, st.dmzInbox)
+		st.dmzInbox = make([]ParentDMZSubmission, 0)
+		st.mu.Unlock()
+
+		respBody, _ := json.Marshal(map[string]any{
+			"ok":          true,
+			"submissions": queued,
+		})
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     hdr,
+			Body:       io.NopCloser(strings.NewReader(string(respBody))),
+			Request:    req,
+		}, nil
+
+	case "/v1/projections/push":
+		var bodyBytes []byte
+		if req.Body != nil {
+			var err error
+			bodyBytes, err = io.ReadAll(io.LimitReader(req.Body, maxEgressBodyBytes))
+			if err != nil {
+				return nil, fmt.Errorf("failed reading DMZ projection payload: %w", err)
+			}
+		}
+		var rawMap map[string]any
+		if err := json.Unmarshal(bodyBytes, &rawMap); err != nil {
+			return nil, fmt.Errorf("invalid DMZ projection JSON: %w", err)
+		}
+		if _, hasUPN := rawMap["upn"]; hasUPN {
+			return nil, fmt.Errorf("DMZ_SECURITY_VIOLATION: statutory UPN must be stripped before pushing to Parent DMZ")
+		}
+
+		var proj ParentDMZProjection
+		if err := json.Unmarshal(bodyBytes, &proj); err != nil {
+			return nil, fmt.Errorf("failed decoding ParentDMZProjection: %w", err)
+		}
+		if strings.TrimSpace(proj.PupilID) == "" {
+			return nil, fmt.Errorf("missing mandatory pupil_id in ParentDMZProjection")
+		}
+		if proj.AuthorizedGuardianIDs == nil {
+			proj.AuthorizedGuardianIDs = []string{}
+		}
+
+		st := h.getExternalDepsState()
+		st.mu.Lock()
+		st.dmzProjections[proj.PupilID] = proj
+		st.mu.Unlock()
+
+		respBody, _ := json.Marshal(map[string]any{
+			"ok":         true,
+			"projection": proj,
+		})
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     hdr,
+			Body:       io.NopCloser(strings.NewReader(string(respBody))),
+			Request:    req,
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("MOCK_PARENT_DMZ_UNKNOWN_PATH: unsupported path %s", path)
+	}
+}
+

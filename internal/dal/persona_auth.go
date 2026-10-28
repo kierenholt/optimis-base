@@ -45,13 +45,14 @@ type StaffPersona struct {
 }
 
 type PersonaTestFixtures struct {
-	FixtureID         string `json:"fixture_id"`
-	PupilID           string `json:"pupil_id"`
-	AdminStaffID      string `json:"admin_staff_id"`
-	DSLStaffID        string `json:"dsl_staff_id"`
-	HoDStaffID        string `json:"hod_staff_id"`
-	TeacherStaffID    string `json:"teacher_staff_id"`
-	TerminatedStaffID string `json:"terminated_staff_id"`
+	FixtureID                string `json:"fixture_id"`
+	PupilID                  string `json:"pupil_id"`
+	AdminStaffID             string `json:"admin_staff_id"`
+	DSLStaffID               string `json:"dsl_staff_id"`
+	HoDStaffID               string `json:"hod_staff_id"`
+	TeacherStaffID           string `json:"teacher_staff_id"`
+	AttendanceOfficerStaffID string `json:"attendance_officer_staff_id"`
+	TerminatedStaffID        string `json:"terminated_staff_id"`
 }
 
 func (d *CoreDAL) GetSystemConfigValue(ctx context.Context, key string) (string, error) {
@@ -508,13 +509,14 @@ func (d *CoreDAL) SeedPersonaTestFixtures(ctx context.Context, academicYearID st
 
 	fxID := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	out := &PersonaTestFixtures{
-		FixtureID:         fxID,
-		PupilID:           "pup_pf_" + fxID,
-		AdminStaffID:      "stf_admin_" + fxID,
-		DSLStaffID:        "stf_dsl_" + fxID,
-		HoDStaffID:        "stf_hod_" + fxID,
-		TeacherStaffID:    "stf_tch_" + fxID,
-		TerminatedStaffID: "stf_term_" + fxID,
+		FixtureID:                fxID,
+		PupilID:                  "pup_pf_" + fxID,
+		AdminStaffID:             "stf_admin_" + fxID,
+		DSLStaffID:               "stf_dsl_" + fxID,
+		HoDStaffID:               "stf_hod_" + fxID,
+		TeacherStaffID:           "stf_tch_" + fxID,
+		AttendanceOfficerStaffID: "stf_att_" + fxID,
+		TerminatedStaffID:        "stf_term_" + fxID,
 	}
 
 	tx, err := d.writeDB.BeginTx(ctx, nil)
@@ -554,6 +556,10 @@ func (d *CoreDAL) SeedPersonaTestFixtures(ctx context.Context, academicYearID st
 			"TEACHER", "STAFF", "Classroom Teacher", "TCH", "Scoped access to assigned teaching and registration groups",
 			`["dal.pupils.read:own_groups","dal.groups.read:own_groups","dal.attendance.read:own_groups","dal.attendance.write:own_groups","dal.sen.read:own_groups","dal.medical.read:own_groups","dal.safeguarding.create"]`,
 		},
+		{
+			"SUPPORT", "STAFF", "School Office & Pastoral Support", "SUP", "Attendance officer and administrative support",
+			`["dal.pupils.read:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.safeguarding.create"]`,
+		},
 	}
 	for _, r := range roles {
 		if _, err := tx.ExecContext(
@@ -585,6 +591,7 @@ func (d *CoreDAL) SeedPersonaTestFixtures(ctx context.Context, academicYearID st
 		{out.DSLStaffID, "per_dsl_" + fxID, "sso_dsl_" + fxID, "DSL" + fxID[:3], "Mr", "Marcus", "Thorne", "LEADERSHIP", "Designated Safeguarding Lead", "DSL", 1, nil},
 		{out.HoDStaffID, "per_hod_" + fxID, "sso_hod_" + fxID, "HOD" + fxID[:3], "Mr", "David", "Sterling", "TEACHING", "Head of Mathematics", "HOD", 0, nil},
 		{out.TeacherStaffID, "per_tch_" + fxID, "sso_tch_" + fxID, "TCH" + fxID[:3], "Ms", "Hannah", "Abbott", "TEACHING", "Teacher of Mathematics", "TEACHER", 0, nil},
+		{out.AttendanceOfficerStaffID, "per_att_" + fxID, "sso_att_" + fxID, "ATT" + fxID[:3], "Mrs", "Clara", "Oswald", "SUPPORT", "Attendance Officer", "SUPPORT", 0, nil},
 		{out.TerminatedStaffID, "per_trm_" + fxID, "sso_trm_" + fxID, "TRM" + fxID[:3], "Mr", "Former", "Staff", "TEACHING", "Former Teacher", "TEACHER", 0, "2026-08-31"},
 	}
 
@@ -714,6 +721,7 @@ func (d *CoreDAL) DeletePersonaTestFixtures(ctx context.Context, fixtureID strin
 		{"stf_dsl_" + fxID, "per_dsl_" + fxID},
 		{"stf_hod_" + fxID, "per_hod_" + fxID},
 		{"stf_tch_" + fxID, "per_tch_" + fxID},
+		{"stf_att_" + fxID, "per_att_" + fxID},
 		{"stf_term_" + fxID, "per_trm_" + fxID},
 	}
 

@@ -225,7 +225,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     expect(pageErrors).toEqual([]);
   });
 
-  test('transferPupilBetweenSets_hodUpsertsPupilMembership_firesCoreGroupMembershipChangedWorkerSyncsGoogleClassroomAndLogsStatus_test', async ({
+  test('transferPupilBetweenSets_adminUpsertsPupilMembership_firesCoreGroupMembershipChangedWorkerSyncsGoogleClassroomAndLogsStatus_test', async ({
     page,
     request,
   }) => {
@@ -243,17 +243,17 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     expect(pluginSub.state).toBe('ACTIVE');
     expect(pluginSub.workers?.on_membership_changed?.events).toContain('core.group.membership_changed');
 
-    // 2. Authenticate as Head of Department (HoD) who holds dal.groups.write:all & dal.groups.read:all
-    const switchHodRes = await request.post('/api/auth/persona', {
-      data: { staff_id: personaSeeded.hod_staff_id },
+    // 2. Authenticate as Admin (who holds dal.groups.write:all & dal.groups.read:all)
+    const switchAdminRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeeded.admin_staff_id },
     });
-    expect(switchHodRes.ok()).toBe(true);
-    const hodSessionBody = await switchHodRes.json();
+    expect(switchAdminRes.ok()).toBe(true);
+    const adminSessionBody = await switchAdminRes.json();
 
     await page.context().addCookies([
       {
         name: 'mis_session',
-        value: hodSessionBody.session_token,
+        value: adminSessionBody.session_token,
         url: 'http://127.0.0.1:18080',
         sameSite: 'Strict',
       },
@@ -266,7 +266,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
       other_group_id: m1Seeded.other_group_id,
       reference_date: m1Seeded.reference_date,
       academic_year_id: m1Seeded.academic_year_id,
-      staff_id: personaSeeded.hod_staff_id,
+      staff_id: personaSeeded.admin_staff_id,
     });
     await page.goto(`/?${params.toString()}`);
     await expect(page.getByTestId('host-shell')).toBeVisible();

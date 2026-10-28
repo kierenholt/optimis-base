@@ -1,0 +1,34 @@
+{
+  "id": "uk.org.optimis.timetable.attendance",
+  "title": "Timetable & Statutory Attendance",
+  "version": "0.1.0",
+  "core_dal_version": "~1.0",
+  "egress": {
+    "allowed_domains": []
+  },
+  "endpoints": {
+    "load_staff_timetable": {
+      "scopes": [
+        "dal.groups.read:own_groups"
+      ],
+      "mutates": false
+    },
+    "load_slot_roster_with_flags": {
+      "scopes": [
+        "dal.groups.read:own_groups",
+        "dal.pupils.read:own_groups",
+        "dal.attendance.read:own_groups"
+      ],
+      "mutates": false
+    },
+    "submit_session_attendance_batch": {
+      "scopes": [
+        "dal.groups.read:own_groups",
+        "dal.pupils.read:own_groups",
+        "dal.attendance.read:own_groups",
+        "dal.attendance.write:own_groups"
+      ],
+      "mutates": true
+    }
+  }
+}

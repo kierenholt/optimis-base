@@ -1,0 +1,65 @@
+{
+  "id": "uk.org.optimis.parent.dmz",
+  "title": "Parent Portal DMZ Sync",
+  "version": "0.1.0",
+  "core_dal_version": "~1.0",
+  "max_concurrency": 4,
+  "max_memory_mb": 32,
+  "database": {
+    "alias": "plugin_parent_dmz",
+    "max_db_size_mb": 128
+  },
+  "gdpr_hooks": {
+    "export_pupil_data": "export_pupil_data",
+    "purge_pupil_data": "purge_pupil_data"
+  },
+  "egress": {
+    "allowed_domains": [
+      "https://dmz.parent.optimis.org.uk"
+    ],
+    "timeout_ms": 5000
+  },
+  "endpoints": {
+    "pull_dmz_inbox": {
+      "scopes": [
+        "dal.pupils.read:all",
+        "dal.guardians.read:all",
+        "dal.attendance.read:all"
+      ],
+      "mutates": true,
+      "timeout_ms": 5000
+    },
+    "push_sanitized_projection": {
+      "scopes": [
+        "dal.pupils.read:all",
+        "dal.guardians.read:all",
+        "dal.attendance.read:all"
+      ],
+      "mutates": true,
+      "timeout_ms": 5000
+    },
+    "list_dmz_sync_history": {
+      "scopes": [
+        "dal.pupils.read:all",
+        "dal.guardians.read:all",
+        "dal.attendance.read:all"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "export_pupil_data": {
+      "scopes": [
+        "dal.pupils.read:all"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "purge_pupil_data": {
+      "scopes": [
+        "dal.pupils.read:all"
+      ],
+      "mutates": true,
+      "timeout_ms": 2500
+    }
+  }
+}

@@ -10,8 +10,9 @@ import (
 )
 
 type Milestone1SeedInput struct {
-	AcademicYearID string `json:"academic_year_id"`
-	ReferenceDate  string `json:"reference_date"`
+	AcademicYearID           string `json:"academic_year_id"`
+	ReferenceDate            string `json:"reference_date"`
+	IncludeSecondActivePupil bool   `json:"include_second_active_pupil,omitempty"`
 }
 
 type Milestone1SeedResult struct {
@@ -24,12 +25,15 @@ type Milestone1SeedResult struct {
 	OwnGroupID                 string `json:"own_group_id"`
 	OtherGroupID               string `json:"other_group_id"`
 	ActivePupilID              string `json:"active_pupil_id"`
+	SecondActivePupilID        string `json:"second_active_pupil_id,omitempty"`
 	TransferredPupilID         string `json:"transferred_pupil_id"`
 	OtherGroupPupilID          string `json:"other_group_pupil_id"`
 	UnrestrictedMotherPersonID string `json:"unrestricted_mother_person_id"`
 	RestrictedFatherPersonID   string `json:"restricted_father_person_id"`
 	SafeHouseholdID            string `json:"safe_household_id"`
 	ConfidentialHouseholdID    string `json:"confidential_household_id"`
+	TimetableSlotAMID          string `json:"timetable_slot_am_id"`
+	TimetableSlotPMID          string `json:"timetable_slot_pm_id"`
 }
 
 func (d *CoreDAL) SeedMilestone1Fixtures(ctx context.Context, in Milestone1SeedInput) (*Milestone1SeedResult, error) {
@@ -59,6 +63,11 @@ func (d *CoreDAL) SeedMilestone1Fixtures(ctx context.Context, in Milestone1SeedI
 		RestrictedFatherPersonID:   "per_dad_" + sfx,
 		SafeHouseholdID:            "hh_safe_" + sfx,
 		ConfidentialHouseholdID:    "hh_conf_" + sfx,
+		TimetableSlotAMID:          "slot_wk1_am_" + sfx,
+		TimetableSlotPMID:          "slot_wk2_pm_" + sfx,
+	}
+	if in.IncludeSecondActivePupil {
+		res.SecondActivePupilID = "pup_act2_" + sfx
 	}
 
 	tx, err := d.writeDB.BeginTx(ctx, nil)
@@ -80,13 +89,19 @@ func (d *CoreDAL) SeedMilestone1Fixtures(ctx context.Context, in Milestone1SeedI
 			args: []any{ayID},
 		},
 		{
+			sql: `INSERT INTO days_of_week (id, name, name_short, is_school_day, school_open_time, am_register_time, pm_register_time, school_close_time)
+			      VALUES (1, 'Monday', 'Mon', 1, '08:00', '08:45', '13:30', '15:30')
+			      ON CONFLICT(id) DO NOTHING`,
+		},
+		{
 			sql: `INSERT INTO alert_levels (id, name, name_short, color_hex, bg_color_hex, description, sequence_number)
 			      VALUES ('HIGH', 'High Priority', 'HI', '#FFFFFF', '#D32F2F', 'Critical alert', 1)
 			      ON CONFLICT(id) DO NOTHING`,
 		},
 		{
 			sql: `INSERT INTO sen_need_types (code, name, broad_area, sequence_number)
-			      VALUES ('ASD', 'Autistic Spectrum Disorder', 'COMMUNICATION_AND_INTERACTION', 1)
+			      VALUES ('ASD', 'Autistic Spectrum Disorder', 'COMMUNICATION_AND_INTERACTION', 1),
+			             ('SPLD', 'Specific Learning Difficulty', 'COGNITION_AND_LEARNING', 2)
 			      ON CONFLICT(code) DO NOTHING`,
 		},
 		{
@@ -153,11 +168,16 @@ func (d *CoreDAL) SeedMilestone1Fixtures(ctx context.Context, in Milestone1SeedI
 			},
 		},
 		{
-			sql: `INSERT INTO groups (id, academic_year_id, group_type, code, name, takes_attendance, effective_from, effective_to)
-			      VALUES (?, ?, 'TEACHING_CLASS', ?, 'Year 10 Maths Set 1', 1, '2026-09-01', NULL),
-			             (?, ?, 'TEACHING_CLASS', ?, 'Year 10 Maths Set 2', 1, '2026-09-01', NULL)`,
+			sql: `INSERT INTO rooms (id, code, name, room_type, capacity, is_active)
+			      VALUES (?, ?, ?, 'CLASSROOM', 30, 1)`,
+			args: []any{"rm_ma1_" + sfx, "MA1_" + sfx[:4], "Maths Room 1 (" + sfx[:4] + ")"},
+		},
+		{
+			sql: `INSERT INTO groups (id, academic_year_id, group_type, code, name, default_room_id, takes_attendance, effective_from, effective_to)
+			      VALUES (?, ?, 'TEACHING_CLASS', ?, 'Year 10 Maths Set 1', ?, 1, '2026-09-01', NULL),
+			             (?, ?, 'TEACHING_CLASS', ?, 'Year 10 Maths Set 2', NULL, 1, '2026-09-01', NULL)`,
 			args: []any{
-				res.OwnGroupID, ayID, "10Ma1_" + sfx[:4],
+				res.OwnGroupID, ayID, "10Ma1_" + sfx[:4], "rm_ma1_" + sfx,
 				res.OtherGroupID, ayID, "10Ma2_" + sfx[:4],
 			},
 		},
@@ -168,6 +188,29 @@ func (d *CoreDAL) SeedMilestone1Fixtures(ctx context.Context, in Milestone1SeedI
 			args: []any{
 				"gsa_1_" + sfx, res.OwnGroupID, res.TeacherStaffID, ayID,
 				"gsa_2_" + sfx, res.OtherGroupID, res.OtherTeacherStaffID, ayID,
+			},
+		},
+		{
+			sql: `INSERT INTO timetable_periods (
+				id, academic_year_id, cycle_week, day_of_week_id, period_code, name,
+				start_time, end_time, period_type, maps_to_statutory_session, sequence_number
+			) VALUES
+				(?, ?, 1, 1, ?, 'Period 1 (AM Statutory Roll)', '09:00', '10:00', 'LESSON', 'AM', 1),
+				(?, ?, 2, 1, ?, 'Period 4 (PM Statutory Roll)', '13:30', '14:30', 'LESSON', 'PM', 4)`,
+			args: []any{
+				"ttp_wk1_am_" + sfx, ayID, "P1_AM_" + sfx[:4],
+				"ttp_wk2_pm_" + sfx, ayID, "P4_PM_" + sfx[:4],
+			},
+		},
+		{
+			sql: `INSERT INTO timetable_slots (
+				id, timetable_period_id, group_id, staff_id, room_id, effective_from, effective_to
+			) VALUES
+				(?, ?, ?, ?, ?, '2026-09-01', NULL),
+				(?, ?, ?, ?, ?, '2026-09-01', NULL)`,
+			args: []any{
+				res.TimetableSlotAMID, "ttp_wk1_am_" + sfx, res.OwnGroupID, res.TeacherStaffID, "rm_ma1_" + sfx,
+				res.TimetableSlotPMID, "ttp_wk2_pm_" + sfx, res.OwnGroupID, res.TeacherStaffID, "rm_ma1_" + sfx,
 			},
 		},
 		{
@@ -236,6 +279,84 @@ func (d *CoreDAL) SeedMilestone1Fixtures(ctx context.Context, in Milestone1SeedI
 		},
 	}
 
+	if in.IncludeSecondActivePupil {
+		stmts = append(stmts,
+			struct {
+				sql  string
+				args []any
+			}{
+				sql: `INSERT INTO roles (id, category, name, name_short, description, default_scopes_json)
+				      VALUES ('TEACHER', 'STAFF', 'Classroom Teacher', 'TCH', 'Scoped access to assigned teaching and registration groups',
+				              '["dal.pupils.read:own_groups","dal.groups.read:own_groups","dal.attendance.read:own_groups","dal.attendance.write:own_groups","dal.sen.read:own_groups","dal.medical.read:own_groups","dal.safeguarding.create"]'),
+				             ('DSL', 'STAFF', 'Designated Safeguarding Lead', 'DSL', 'KCSIE Safeguarding Vault read & triage authority',
+				              '["dal.safeguarding.create","dal.safeguarding.read","dal.pupils.read:all","dal.guardians.read:all","dal.attendance.read:all","dal.sen.read:all","dal.medical.read:all"]')
+				      ON CONFLICT(id) DO UPDATE SET default_scopes_json = excluded.default_scopes_json`,
+			},
+			struct {
+				sql  string
+				args []any
+			}{
+				sql: `INSERT INTO person_roles (person_id, role_id, is_primary, effective_from)
+				      VALUES (?, 'TEACHER', 1, '2026-09-01'),
+				             (?, 'TEACHER', 1, '2026-09-01'),
+				             (?, 'DSL', 1, '2026-09-01')`,
+				args: []any{
+					"per_t1_" + sfx,
+					"per_t2_" + sfx,
+					"per_dsl_" + sfx,
+				},
+			},
+			struct {
+				sql  string
+				args []any
+			}{
+				sql: `INSERT INTO persons (id, legal_first_name, legal_last_name, sex, dob, phone_primary, status)
+				      VALUES (?, 'Grace', 'Turing', 'F', '2012-08-19', '', 'ACTIVE')`,
+				args: []any{"per_p4_" + sfx},
+			},
+			struct {
+				sql  string
+				args []any
+			}{
+				sql: `INSERT INTO pupils (id, person_id, upn, ethnicity_code, first_language_code)
+				      VALUES (?, ?, ?, 'WBRI', 'ENG')`,
+				args: []any{res.SecondActivePupilID, "per_p4_" + sfx, "U4" + strings.ToUpper(sfx) + "004"},
+			},
+			struct {
+				sql  string
+				args []any
+			}{
+				sql: `INSERT INTO pupil_year_enrolments (id, pupil_id, academic_year_id, nc_year_group, enrolment_status, effective_from, effective_to)
+				      VALUES (?, ?, ?, '10', 'C', '2026-09-01', NULL)`,
+				args: []any{"enr_4_" + sfx, res.SecondActivePupilID, ayID},
+			},
+			struct {
+				sql  string
+				args []any
+			}{
+				sql: `INSERT INTO group_pupil_memberships (id, group_id, pupil_id, academic_year_id, effective_from, effective_to)
+				      VALUES (?, ?, ?, ?, '2026-09-01', NULL)`,
+				args: []any{"gpm_act2_" + sfx, res.OwnGroupID, res.SecondActivePupilID, ayID},
+			},
+			struct {
+				sql  string
+				args []any
+			}{
+				sql: `INSERT INTO pupil_sen_records (id, pupil_id, provision_code, ehcp_start_date, teaching_strategies, effective_from, effective_to)
+				      VALUES (?, ?, 'K', NULL, 'Provide extra processing time and tinted overlays', '2026-09-01', NULL)`,
+				args: []any{"sen2_" + sfx, res.SecondActivePupilID},
+			},
+			struct {
+				sql  string
+				args []any
+			}{
+				sql: `INSERT INTO pupil_sen_needs (id, pupil_id, sen_need_code, ranking, alert_level_id, effective_from, effective_to)
+				      VALUES (?, ?, 'SPLD', 1, 'HIGH', '2026-09-01', NULL)`,
+				args: []any{"sneed2_" + sfx, res.SecondActivePupilID},
+			},
+		)
+	}
+
 	for _, stmt := range stmts {
 		if _, err := tx.ExecContext(ctx, stmt.sql, stmt.args...); err != nil {
 			return nil, fmt.Errorf("failed to execute Milestone 1 seed statement: %w", err)
@@ -255,6 +376,7 @@ func (d *CoreDAL) DeleteMilestone1Fixtures(ctx context.Context, fixtureID string
 	}
 
 	activePupilID := "pup_act_" + sfx
+	secondActivePupilID := "pup_act2_" + sfx
 	transPupilID := "pup_trn_" + sfx
 	otherPupilID := "pup_oth_" + sfx
 	ownGroupID := "grp_own_" + sfx
@@ -270,8 +392,8 @@ func (d *CoreDAL) DeleteMilestone1Fixtures(ctx context.Context, fixtureID string
 
 	if _, err := tx.ExecContext(
 		ctx,
-		`UPDATE safeguarding_notes SET retention_purge_eligible = 1 WHERE pupil_id IN (?, ?, ?)`,
-		activePupilID, transPupilID, otherPupilID,
+		`UPDATE safeguarding_notes SET retention_purge_eligible = 1 WHERE pupil_id IN (?, ?, ?, ?)`,
+		activePupilID, secondActivePupilID, transPupilID, otherPupilID,
 	); err != nil {
 		return fmt.Errorf("failed to mark fixture safeguarding_notes purge eligible: %w", err)
 	}
@@ -280,8 +402,8 @@ func (d *CoreDAL) DeleteMilestone1Fixtures(ctx context.Context, fixtureID string
 	}
 	if _, err := tx.ExecContext(
 		ctx,
-		`DELETE FROM safeguarding_audit_logs WHERE pupil_id IN (?, ?, ?)`,
-		activePupilID, transPupilID, otherPupilID,
+		`DELETE FROM safeguarding_audit_logs WHERE pupil_id IN (?, ?, ?, ?)`,
+		activePupilID, secondActivePupilID, transPupilID, otherPupilID,
 	); err != nil {
 		return fmt.Errorf("failed to delete fixture safeguarding_audit_logs: %w", err)
 	}
@@ -297,8 +419,8 @@ func (d *CoreDAL) DeleteMilestone1Fixtures(ctx context.Context, fixtureID string
 	}
 	if _, err := tx.ExecContext(
 		ctx,
-		`DELETE FROM safeguarding_notes WHERE pupil_id IN (?, ?, ?)`,
-		activePupilID, transPupilID, otherPupilID,
+		`DELETE FROM safeguarding_notes WHERE pupil_id IN (?, ?, ?, ?)`,
+		activePupilID, secondActivePupilID, transPupilID, otherPupilID,
 	); err != nil {
 		return fmt.Errorf("failed to delete fixture safeguarding_notes: %w", err)
 	}
@@ -308,16 +430,24 @@ func (d *CoreDAL) DeleteMilestone1Fixtures(ctx context.Context, fixtureID string
 		args []any
 	}{
 		{
-			sql:  `DELETE FROM attendance_session_marks WHERE pupil_id IN (?, ?, ?)`,
-			args: []any{activePupilID, transPupilID, otherPupilID},
+			sql:  `DELETE FROM attendance_session_marks WHERE pupil_id IN (?, ?, ?, ?)`,
+			args: []any{activePupilID, secondActivePupilID, transPupilID, otherPupilID},
 		},
 		{
 			sql:  `DELETE FROM attendance_register_submissions WHERE group_id IN (?, ?)`,
 			args: []any{ownGroupID, otherGroupID},
 		},
 		{
-			sql:  `DELETE FROM guardian_relationships WHERE pupil_id IN (?, ?, ?)`,
-			args: []any{activePupilID, transPupilID, otherPupilID},
+			sql:  `DELETE FROM timetable_slots WHERE id IN (?, ?)`,
+			args: []any{"slot_wk1_am_" + sfx, "slot_wk2_pm_" + sfx},
+		},
+		{
+			sql:  `DELETE FROM timetable_periods WHERE id IN (?, ?)`,
+			args: []any{"ttp_wk1_am_" + sfx, "ttp_wk2_pm_" + sfx},
+		},
+		{
+			sql:  `DELETE FROM guardian_relationships WHERE pupil_id IN (?, ?, ?, ?)`,
+			args: []any{activePupilID, secondActivePupilID, transPupilID, otherPupilID},
 		},
 		{
 			sql:  `DELETE FROM household_memberships WHERE household_id IN (?, ?)`,
@@ -328,16 +458,16 @@ func (d *CoreDAL) DeleteMilestone1Fixtures(ctx context.Context, fixtureID string
 			args: []any{"hh_safe_" + sfx, "hh_conf_" + sfx},
 		},
 		{
-			sql:  `DELETE FROM pupil_medical_conditions WHERE pupil_id IN (?, ?, ?)`,
-			args: []any{activePupilID, transPupilID, otherPupilID},
+			sql:  `DELETE FROM pupil_medical_conditions WHERE pupil_id IN (?, ?, ?, ?)`,
+			args: []any{activePupilID, secondActivePupilID, transPupilID, otherPupilID},
 		},
 		{
-			sql:  `DELETE FROM pupil_sen_needs WHERE pupil_id IN (?, ?, ?)`,
-			args: []any{activePupilID, transPupilID, otherPupilID},
+			sql:  `DELETE FROM pupil_sen_needs WHERE pupil_id IN (?, ?, ?, ?)`,
+			args: []any{activePupilID, secondActivePupilID, transPupilID, otherPupilID},
 		},
 		{
-			sql:  `DELETE FROM pupil_sen_records WHERE pupil_id IN (?, ?, ?)`,
-			args: []any{activePupilID, transPupilID, otherPupilID},
+			sql:  `DELETE FROM pupil_sen_records WHERE pupil_id IN (?, ?, ?, ?)`,
+			args: []any{activePupilID, secondActivePupilID, transPupilID, otherPupilID},
 		},
 		{
 			sql:  `DELETE FROM group_pupil_memberships WHERE group_id IN (?, ?)`,
@@ -352,23 +482,32 @@ func (d *CoreDAL) DeleteMilestone1Fixtures(ctx context.Context, fixtureID string
 			args: []any{ownGroupID, otherGroupID},
 		},
 		{
+			sql:  `DELETE FROM rooms WHERE id = ?`,
+			args: []any{"rm_ma1_" + sfx},
+		},
+		{
 			sql:  `DELETE FROM staff WHERE id IN (?, ?, ?)`,
 			args: []any{"stf_t1_" + sfx, "stf_t2_" + sfx, "stf_dsl_" + sfx},
 		},
 		{
-			sql:  `DELETE FROM pupil_year_enrolments WHERE pupil_id IN (?, ?, ?)`,
-			args: []any{activePupilID, transPupilID, otherPupilID},
+			sql:  `DELETE FROM person_roles WHERE person_id IN (?, ?, ?)`,
+			args: []any{"per_t1_" + sfx, "per_t2_" + sfx, "per_dsl_" + sfx},
 		},
 		{
-			sql:  `DELETE FROM pupils WHERE id IN (?, ?, ?)`,
-			args: []any{activePupilID, transPupilID, otherPupilID},
+			sql:  `DELETE FROM pupil_year_enrolments WHERE pupil_id IN (?, ?, ?, ?)`,
+			args: []any{activePupilID, secondActivePupilID, transPupilID, otherPupilID},
 		},
 		{
-			sql: `DELETE FROM persons WHERE id IN (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			sql:  `DELETE FROM pupils WHERE id IN (?, ?, ?, ?)`,
+			args: []any{activePupilID, secondActivePupilID, transPupilID, otherPupilID},
+		},
+		{
+			sql: `DELETE FROM persons WHERE id IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			args: []any{
 				"per_p1_" + sfx,
 				"per_p2_" + sfx,
 				"per_p3_" + sfx,
+				"per_p4_" + sfx,
 				"per_t1_" + sfx,
 				"per_t2_" + sfx,
 				"per_dsl_" + sfx,

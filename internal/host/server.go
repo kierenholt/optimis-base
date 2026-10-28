@@ -190,7 +190,7 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 		res, err := h.ExecuteRPC(r.Context(), pluginID, method, caller, body.Args)
 		if err != nil {
 			status := http.StatusBadRequest
-			if pluginID == "uk.gov.dfe.census" && strings.Contains(err.Error(), "caller lacks required DAL scopes") {
+			if (pluginID == "uk.gov.dfe.census" || pluginID == "uk.org.optimis.parent.dmz") && strings.Contains(err.Error(), "caller lacks required DAL scopes") {
 				status = http.StatusForbidden
 			}
 			writeJSON(w, status, RPCResponse{

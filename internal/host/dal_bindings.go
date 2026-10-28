@@ -388,6 +388,38 @@ func (h *Host) buildLuaDALTable(
 				L.Push(arrTbl)
 				return 1
 			}))
+
+			L.SetField(attTbl, "get_pupil_summary", L.NewFunction(func(L *lua.LState) int {
+				pupilID := strings.TrimSpace(L.OptString(1, ""))
+				if pupilID == "" {
+					L.RaiseError("missing mandatory parameter: pupil_id")
+					return 0
+				}
+				var optsTbl *lua.LTable
+				if L.GetTop() >= 2 {
+					optsTbl, _ = L.Get(2).(*lua.LTable)
+				}
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, attReadMode, caller.StaffID, optsTbl)
+				if sErr != nil {
+					L.RaiseError("dal.attendance.get_pupil_summary scope error: %s", sErr.Error())
+					return 0
+				}
+				summary, err := h.coreDAL.GetPupilAttendanceSummaryScoped(execCtx, scope, pupilID)
+				if err != nil {
+					L.RaiseError("dal.attendance.get_pupil_summary failed: %s", err.Error())
+					return 0
+				}
+				sTbl := L.NewTable()
+				L.SetField(sTbl, "pupil_id", lua.LString(summary.PupilID))
+				L.SetField(sTbl, "academic_year_id", lua.LString(summary.AcademicYearID))
+				L.SetField(sTbl, "reference_date", lua.LString(summary.ReferenceDate))
+				L.SetField(sTbl, "total_sessions", lua.LNumber(summary.TotalSessions))
+				L.SetField(sTbl, "present_sessions", lua.LNumber(summary.PresentSessions))
+				L.SetField(sTbl, "am_present_sessions", lua.LNumber(summary.AMPresentSessions))
+				L.SetField(sTbl, "pm_present_sessions", lua.LNumber(summary.PMPresentSessions))
+				L.Push(sTbl)
+				return 1
+			}))
 		}
 
 		if hasAttWrite {
