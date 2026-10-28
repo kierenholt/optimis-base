@@ -30,7 +30,24 @@ test.describe('Optimis Core Schema (45 Tables) End-to-End Functional Invariants'
     }
     logCursor = (await cursorRes.json()).cursor;
 
-    // 3. Seed required test pupil fixture explicitly in setup
+    // 3. Install and activate test_plugin at runtime for this test
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    const installRes = await request.post('/api/admin/plugins/install', {
+      data: { folder: 'test_plugin' },
+    });
+    if (!installRes.ok()) {
+      throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
+    }
+    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+      data: {},
+    });
+    if (!activateRes.ok()) {
+      throw new Error(`Failed to activate uk.org.optimis.test: ${activateRes.status()}`);
+    }
+
+    // 4. Seed required test pupil fixture explicitly in setup
     const seedRes = await request.post('/api/test/seed-pupil', {
       data: {
         upn: 'H823400026001',
@@ -68,7 +85,13 @@ test.describe('Optimis Core Schema (45 Tables) End-to-End Functional Invariants'
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 3. Clean up seeded test data at the end of the test
+    // 3. Remove runtime-installed plugin
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    await request.delete('/api/admin/plugins/uk.org.optimis.test');
+
+    // 4. Clean up seeded test data at the end of the test
     if (seededPupilId) {
       const delRes = await request.delete(`/api/test/seed-pupil/${seededPupilId}`);
       if (!delRes.ok()) {

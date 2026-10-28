@@ -142,6 +142,7 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 	h.RegisterCensusTestRoutes(mux)
 	h.RegisterUISDKAndConfigRoutes(mux)
 	h.RegisterExternalSyncAndTestRoutes(mux)
+	h.RegisterPluginLifecycleRoutes(mux)
 
 	mux.HandleFunc("POST /api/plugins/{plugin_id}/rpc/{method}", func(w http.ResponseWriter, r *http.Request) {
 		pluginID := strings.TrimSpace(r.PathValue("plugin_id"))

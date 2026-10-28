@@ -101,6 +101,25 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
       throw new Error('Seeded census fixture response missing mandatory identifiers');
     }
     seeded = body;
+
+    // 5. Install and activate dfe_census_plugin (uk.gov.dfe.census) at runtime
+    const installRes = await request.post('/api/admin/plugins/install', {
+      data: {
+        folder: 'dfe_census_plugin',
+        staff_id: seeded.admin_staff_id,
+      },
+    });
+    if (!installRes.ok()) {
+      throw new Error(`Failed to install dfe_census_plugin: ${installRes.status()}`);
+    }
+    const activateRes = await request.post('/api/admin/plugins/uk.gov.dfe.census/activate', {
+      data: {
+        staff_id: seeded.admin_staff_id,
+      },
+    });
+    if (!activateRes.ok()) {
+      throw new Error(`Failed to activate uk.gov.dfe.census: ${activateRes.status()}`);
+    }
   });
 
   test.afterEach(async ({ request }, testInfo) => {
@@ -110,7 +129,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     });
     await request.delete('/api/test/census-submissions');
 
-    // 2. Purge plugin census snapshots and delete seeded Core fixtures
+    // 2. Purge plugin census snapshots
     if (seeded) {
       await request.post('/api/auth/persona', {
         data: { staff_id: seeded.admin_staff_id },
@@ -144,7 +163,13 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 5. Clean up seeded census fixtures in core.db
+    // 5. Remove runtime-installed dfe_census_plugin
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    await request.delete('/api/admin/plugins/uk.gov.dfe.census');
+
+    // 6. Clean up seeded census fixtures in core.db
     if (seeded?.fixture_id) {
       const delRes = await request.delete(
         `/api/test/seed-census-fixtures/${encodeURIComponent(seeded.fixture_id)}`

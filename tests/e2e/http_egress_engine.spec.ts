@@ -42,7 +42,23 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
     }
     logCursor = (await cursorRes.json()).cursor;
 
-    // 3. Ensure mock egress mode is active for local tests and clear any prior mock rules
+    // 3. Ensure dev persona switcher, mock egress mode, and runtime-installed test_plugin are active
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    const installRes = await request.post('/api/admin/plugins/install', {
+      data: { folder: 'test_plugin' },
+    });
+    if (!installRes.ok()) {
+      throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
+    }
+    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+      data: {},
+    });
+    if (!activateRes.ok()) {
+      throw new Error(`Failed to activate uk.org.optimis.test: ${activateRes.status()}`);
+    }
+
     const modeRes = await request.post('/api/test/egress-mode', {
       data: { enable_real_http_egress: false },
     });
@@ -68,11 +84,16 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
   });
 
   test.afterEach(async ({ request }, testInfo) => {
-    // 1. Restore mock egress mode and clear mock rules
+    // 1. Restore mock egress mode, clear mock rules, and purge plugin data
     await request.post('/api/test/egress-mode', {
       data: { enable_real_http_egress: false },
     });
     await request.delete('/api/test/egress-mock');
+    if (seeded?.active_pupil_id) {
+      await request.post('/api/plugins/uk.org.optimis.test/rpc/purge_pupil_data', {
+        data: { args: { pupil_id: seeded.active_pupil_id } },
+      });
+    }
 
     // 2. Fetch Backend Service Logs emitted during this test
     if (logCursor) {
@@ -91,11 +112,14 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 4. Clean up seeded fixtures
+    // 4. Remove runtime-installed plugin
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    await request.delete('/api/admin/plugins/uk.org.optimis.test');
+
+    // 5. Clean up seeded fixtures
     if (seeded?.fixture_id) {
-      await request.post('/api/plugins/uk.org.optimis.test/rpc/purge_pupil_data', {
-        data: { args: { pupil_id: seeded.active_pupil_id } },
-      });
       const delRes = await request.delete(
         `/api/test/seed-milestone1-fixtures/${encodeURIComponent(seeded.fixture_id)}`
       );

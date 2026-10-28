@@ -41,10 +41,22 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     }
     logCursor = (await cursorRes.json()).cursor;
 
-    // 3. Ensure dev persona switcher is enabled
+    // 3. Ensure dev persona switcher is enabled and install + activate test_plugin
     await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
     });
+    const installRes = await request.post('/api/admin/plugins/install', {
+      data: { folder: 'test_plugin' },
+    });
+    if (!installRes.ok()) {
+      throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
+    }
+    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+      data: {},
+    });
+    if (!activateRes.ok()) {
+      throw new Error(`Failed to activate uk.org.optimis.test: ${activateRes.status()}`);
+    }
 
     // 4. Seed two isolated test pupils for RPC and deep-link verification across LRU pool and widgets
     const res1 = await request.post('/api/test/seed-pupil', {
@@ -112,8 +124,12 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 3. Clean up synthetic LRU plugins
+    // 3. Clean up synthetic LRU plugins and remove runtime-installed test_plugin
     await request.delete('/api/test/seed-lru-plugins');
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    await request.delete('/api/admin/plugins/uk.org.optimis.test');
 
     // 4. Clean up seeded pupil records
     if (seededPupilId) {

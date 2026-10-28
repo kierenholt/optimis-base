@@ -57,31 +57,17 @@ export function App() {
     group: PLUGIN_ID,
     staff: PLUGIN_ID,
   });
-  const [installedPlugins, setInstalledPlugins] = useState<PluginNavEntry[]>([
-    {
-      id: PLUGIN_ID,
-      title: 'Pupil & Classroom Workspace',
-      version: '0.2.0',
-      entry_url: `/plugins/${PLUGIN_ID}/ui/index.html`,
-      permitted_methods: DEFAULT_PERMITTED_METHODS,
-      widgets: DEFAULT_PLUGIN_WIDGETS,
-    },
-  ]);
+  const hasInitializedPluginsRef = useRef<boolean>(false);
+  const [installedPlugins, setInstalledPlugins] = useState<PluginNavEntry[]>([]);
 
   // Cached Keep-Alive LRU Pool state (Section 9A: N=5 max mounted plugin iframes)
-  const [activePluginId, setActivePluginId] = useState<string>(PLUGIN_ID);
-  const [lruPluginOrder, setLruPluginOrder] = useState<string[]>([PLUGIN_ID]);
-  const [mountedPluginIds, setMountedPluginIds] = useState<string[]>([PLUGIN_ID]);
+  const [activePluginId, setActivePluginId] = useState<string>('');
+  const [lruPluginOrder, setLruPluginOrder] = useState<string[]>([]);
+  const [mountedPluginIds, setMountedPluginIds] = useState<string[]>([]);
 
   // Editable NxM Mini-Iframe Widget Grid state (Section 9B)
   const [isDashboardEditMode, setIsDashboardEditMode] = useState<boolean>(false);
-  const [placedWidgets, setPlacedWidgets] = useState<PlacedDashboardWidget[]>([
-    {
-      ...DEFAULT_PLUGIN_WIDGETS[0],
-      colSpan: 2,
-      rowSpan: 1,
-    },
-  ]);
+  const [placedWidgets, setPlacedWidgets] = useState<PlacedDashboardWidget[]>([]);
 
   // Active Entity Deep-Linking Context state (Section 9C)
   const [activePupilId, setActivePupilId] = useState<string>(initialPupilId);
@@ -126,8 +112,54 @@ export function App() {
         }
       }
     }
-    return list.length > 0 ? list : DEFAULT_PLUGIN_WIDGETS;
+    return list;
   }, [installedPlugins]);
+
+  const applyInstalledPluginsState = useCallback((plugins: PluginNavEntry[]) => {
+    const isInitialLoad = !hasInitializedPluginsRef.current;
+    hasInitializedPluginsRef.current = true;
+    setInstalledPlugins(plugins);
+
+    if (plugins.length === 0) {
+      setActivePluginId('');
+      setLruPluginOrder([]);
+      setMountedPluginIds([]);
+      setPlacedWidgets([]);
+      return;
+    }
+
+    const validIds = new Set(plugins.map((p) => p.id));
+    const defaultId = validIds.has(PLUGIN_ID) ? PLUGIN_ID : plugins[0].id;
+    setActivePluginId((prev) => (prev && validIds.has(prev) ? prev : defaultId));
+    setLruPluginOrder((prev) => {
+      const filtered = prev.filter((id) => validIds.has(id));
+      return filtered.length > 0 ? filtered : [defaultId];
+    });
+    setMountedPluginIds((prev) => {
+      const filtered = prev.filter((id) => validIds.has(id));
+      return filtered.length > 0 ? filtered : [defaultId];
+    });
+
+    if (isInitialLoad) {
+      const declaredWidgets: PluginWidgetDescriptor[] = [];
+      for (const p of plugins) {
+        if (Array.isArray(p.widgets)) {
+          for (const w of p.widgets) {
+            declaredWidgets.push(w);
+          }
+        }
+      }
+      setPlacedWidgets((prev) => {
+        const filtered = prev.filter((w) => validIds.has(w.plugin_id));
+        if (filtered.length > 0) {
+          return filtered;
+        }
+        return declaredWidgets.length > 0 ? [{ ...declaredWidgets[0], colSpan: 2, rowSpan: 1 }] : [];
+      });
+    } else {
+      setPlacedWidgets((prev) => prev.filter((w) => validIds.has(w.plugin_id)));
+    }
+  }, []);
 
   const activatePluginInKeepAlivePool = useCallback((targetPluginId: string) => {
     setActivePluginId(targetPluginId);
@@ -200,14 +232,14 @@ export function App() {
           setEntityLinkHandlers((prev) => ({ ...prev, ...body.entity_link_handlers }));
         }
         if (Array.isArray(body.plugins)) {
-          setInstalledPlugins(body.plugins);
+          applyInstalledPluginsState(body.plugins);
         }
       } catch {
         // Keep default tokens if ui-config endpoint is unreachable
       }
     };
     void loadUIConfig();
-  }, [initialAcademicYearId, activeStaffId]);
+  }, [initialAcademicYearId, activeStaffId, applyInstalledPluginsState]);
 
   useEffect(() => {
     applyHostThemeToRoot(themeMode, themeCatalog);
@@ -461,7 +493,7 @@ export function App() {
     if (uiRes.ok) {
       const uiBody = await uiRes.json();
       if (uiBody && uiBody.ok && Array.isArray(uiBody.plugins)) {
-        setInstalledPlugins(uiBody.plugins);
+        applyInstalledPluginsState(uiBody.plugins);
         broadcastInitToMountedIframes(
           { staff_id: resolvedStaffId },
           undefined,

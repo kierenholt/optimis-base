@@ -39,7 +39,24 @@ test.describe('Backend Session & Persona Resolution (Section 8A & Auth Flag)', (
     }
     logCursor = (await cursorRes.json()).cursor;
 
-    // 3. Seed isolated staff personas & pupil fixture explicitly in setup
+    // 3. Install and activate test_plugin at runtime for this test
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    const installRes = await request.post('/api/admin/plugins/install', {
+      data: { folder: 'test_plugin' },
+    });
+    if (!installRes.ok()) {
+      throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
+    }
+    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+      data: {},
+    });
+    if (!activateRes.ok()) {
+      throw new Error(`Failed to activate uk.org.optimis.test: ${activateRes.status()}`);
+    }
+
+    // 4. Seed isolated staff personas & pupil fixture explicitly in setup
     const seedRes = await request.post('/api/test/seed-personas', {
       data: {
         academic_year_id: 'ay_2026_2027',
@@ -64,12 +81,7 @@ test.describe('Backend Session & Persona Resolution (Section 8A & Auth Flag)', (
   });
 
   test.afterEach(async ({ request }, testInfo) => {
-    // 1. Ensure dev persona switcher mode is restored to true after test
-    await request.post('/api/test/auth-mode', {
-      data: { enable_dev_persona_switcher: true },
-    });
-
-    // 2. Fetch Backend Service Logs emitted during this test
+    // 1. Fetch Backend Service Logs emitted during this test
     if (logCursor) {
       const logsRes = await request.get(`/api/test/logs?since=${encodeURIComponent(logCursor)}`);
       if (logsRes.ok()) {
@@ -80,11 +92,17 @@ test.describe('Backend Session & Persona Resolution (Section 8A & Auth Flag)', (
       }
     }
 
-    // 3. Dump tapped Browser Console logs on failure or error
+    // 2. Dump tapped Browser Console logs on failure or error
     if (testInfo.status !== testInfo.expectedStatus || pageErrors.length > 0) {
       console.log('--- TAPPED BROWSER CONSOLE ---\n' + browserLogs.join('\n'));
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
+
+    // 3. Ensure dev persona switcher mode is restored to true and remove runtime-installed plugin
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    await request.delete('/api/admin/plugins/uk.org.optimis.test');
 
     // 4. Clean up seeded persona & pupil fixtures at the end of the test
     if (seeded?.fixture_id) {

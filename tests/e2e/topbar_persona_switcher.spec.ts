@@ -40,12 +40,24 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
     }
     logCursor = (await cursorRes.json()).cursor;
 
-    // 3. Ensure dev persona switcher mode is enabled and test plugin is ACTIVE
+    // 3. Ensure dev persona switcher mode is enabled and install + activate test_plugin
     const modeRes = await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
     });
     if (!modeRes.ok()) {
       throw new Error(`Failed to enable dev persona switcher: ${modeRes.status()}`);
+    }
+    const installRes = await request.post('/api/admin/plugins/install', {
+      data: { folder: 'test_plugin' },
+    });
+    if (!installRes.ok()) {
+      throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
+    }
+    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+      data: {},
+    });
+    if (!activateRes.ok()) {
+      throw new Error(`Failed to activate uk.org.optimis.test: ${activateRes.status()}`);
     }
 
     // 4. Seed isolated staff personas (Admin/DPO, DSL, HoD, Teacher, Terminated) & pupil fixture
@@ -98,12 +110,7 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
   });
 
   test.afterEach(async ({ request }, testInfo) => {
-    // 1. Restore dev persona switcher mode to true after test
-    await request.post('/api/test/auth-mode', {
-      data: { enable_dev_persona_switcher: true },
-    });
-
-    // 2. Fetch Backend Service Logs emitted during this test
+    // 1. Fetch Backend Service Logs emitted during this test
     if (logCursor) {
       const logsRes = await request.get(`/api/test/logs?since=${encodeURIComponent(logCursor)}`);
       if (logsRes.ok()) {
@@ -114,11 +121,17 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
       }
     }
 
-    // 3. Dump tapped Browser Console logs on failure or error
+    // 2. Dump tapped Browser Console logs on failure or error
     if (testInfo.status !== testInfo.expectedStatus || pageErrors.length > 0) {
       console.log('--- TAPPED BROWSER CONSOLE ---\n' + browserLogs.join('\n'));
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
+
+    // 3. Restore dev persona switcher mode to true and remove runtime-installed plugin
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    await request.delete('/api/admin/plugins/uk.org.optimis.test');
 
     // 4. Clean up seeded persona, safeguarding, and pupil fixtures
     if (seeded?.fixture_id) {

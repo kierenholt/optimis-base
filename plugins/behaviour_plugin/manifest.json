@@ -1,0 +1,48 @@
+{
+  "id": "uk.org.optimis.behaviour",
+  "title": "Behaviour & Pastoral Points",
+  "version": "0.1.0",
+  "core_dal_version": "~1.0",
+  "max_concurrency": 4,
+  "max_memory_mb": 32,
+  "database": {
+    "alias": "plugin_behaviour",
+    "max_db_size_mb": 64
+  },
+  "gdpr_hooks": {
+    "export_pupil_data": "export_pupil_data",
+    "purge_pupil_data": "purge_pupil_data"
+  },
+  "egress": {
+    "allowed_domains": []
+  },
+  "endpoints": {
+    "log_behaviour_event": {
+      "scopes": ["dal.pupils.read:own_groups"],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "get_pupil_behaviour_summary": {
+      "scopes": ["dal.pupils.read:own_groups"],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "export_pupil_data": {
+      "scopes": ["dal.pupils.read:all"],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "purge_pupil_data": {
+      "scopes": ["dal.pupils.read:all"],
+      "mutates": true,
+      "timeout_ms": 2500
+    }
+  },
+  "widgets": [
+    {
+      "id": "behaviour_summary",
+      "title": "Behaviour & Merits Summary",
+      "entry": "ui/dist/widget.html"
+    }
+  ]
+}

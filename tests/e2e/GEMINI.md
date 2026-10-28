@@ -11,12 +11,16 @@ This directory contains the sequential Playwright E2E test suites verifying the 
 * **Dual Log Tapping**: Every `beforeEach` / `afterEach` taps both:
   1. Browser console (`page.on('console')`) and uncaught page exceptions (`page.on('pageerror')`).
   2. Backend Go Host service logs (`GET /api/test/logs/cursor` and `GET /api/test/logs?since=...`).
-* **Self-Contained Fixture Lifecycle**: Every test seeds its own isolated SQLite records in `beforeEach` and deletes them in `afterEach` so zero test state leaks across runs.
+* **Self-Contained Fixture & Plugin Lifecycle**: Every test seeds its own isolated SQLite records and runtime-installs/activates any required plugins (`POST /api/admin/plugins/install` -> `POST /api/admin/plugins/{id}/activate`) in `beforeEach`, and removes the plugin (`DELETE /api/admin/plugins/{id}`) and deletes seeded records in `afterEach` so zero test state leaks across runs.
 
 ---
 
 ## 2. E2E Spec Files
 
+* [`timetable_attendance_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/timetable_attendance_plugin_vertical.spec.ts):
+  * Verifies Vertical 1 Timetable & Statutory Session Attendance Plugin (`plugins/timetable_attendance_plugin`, `uk.org.optimis.timetable.attendance`, pure Core DAL with zero attached DB): runtime plugin installation and activation, 2-week rolling timetable loading (`ctx.dal.groups.get_staff_timetable_slots`) resolving `AM`/`PM` statutory sessions, class roster loading (`ctx.dal.pupils.list_by_group`) enriched with batch SEN (`E`/`K` + primary need) and Medical (`IHCP`) alerts (`ctx.dal.pupils.list_sen_and_medical_batch`) while excluding mid-year transferred pupils (`effective_to < reference_date`), atomic batch statutory session attendance submission (`ctx.dal.attendance.upsert_session_batch`), and fail-fast `:own_groups` RBAC isolation.
+* [`plugin_runtime_lifecycle.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/plugin_runtime_lifecycle.spec.ts):
+  * Verifies Runtime Plugin Lifecycle management (`GET /api/admin/plugins`, `POST /api/admin/plugins/install`, `POST /api/admin/plugins/{plugin_id}/activate`, and `DELETE /api/admin/plugins/{plugin_id}`): RBAC enforcement rejecting non-Admin/DPO personas (`403 UNAUTHORIZED_ADMIN_PLUGIN_SCOPE`), installing a plugin from `plugins/<folder>` into `UNINSTALLED_DORMANT` state with `plugin_<alias>.db` provisioned and attached, activating the plugin to expose its UI in `GET /api/system/ui-config` and enable RPC & Event Bus workers, and removing the plugin at runtime (stopping workers and detaching `plugin_<alias>.db`).
 * [`break_glass_config_cli.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/break_glass_config_cli.spec.ts):
   * Verifies Section 7C Local Break-Glass CLI (`./bin/mis-server config list`, `config get <key>`, `config set <key> <value>`, and `config repair-sso`): inspecting and mutating `__system_config` in `core.db` from the terminal (with updated `school_name` immediately reflected in the React Host UI Shell `host-school-name`), repairing misconfigured SSO settings (`sso_oidc_issuer_url`, `sso_oidc_client_id`, `sso_provider`, `sso_redirect_uri`) when `ENABLE_DEV_PERSONA_SWITCHER=false` to unblock `POST /api/test/auth-mode` and `GET /api/auth/sso/login`, and fail-fast non-zero exit code validation on missing/invalid CLI arguments.
 * [`admin_diagnostic_bundle_export.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/admin_diagnostic_bundle_export.spec.ts):

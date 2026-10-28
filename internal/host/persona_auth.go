@@ -75,10 +75,8 @@ func (h *Host) ConfigureAuthMode(ctx context.Context, enableDevPersonaSwitcher b
 	st.mu.Lock()
 	st.configured = true
 	st.enableDevPersonaSwitcher = enableDevPersonaSwitcher
-	if !enableDevPersonaSwitcher {
-		st.sessions = make(map[string]string)
-		st.activeDevStaffID = ""
-	}
+	st.sessions = make(map[string]string)
+	st.activeDevStaffID = ""
 	st.mu.Unlock()
 
 	if !enableDevPersonaSwitcher {
@@ -144,21 +142,20 @@ func (h *Host) ResolveRequestCaller(r *http.Request, explicitStaffID string) (Ca
 		st.mu.RLock()
 		staffID, exists := st.sessions[token]
 		st.mu.RUnlock()
-		if !exists || strings.TrimSpace(staffID) == "" {
-			return CallerContext{}, fmt.Errorf("INVALID_SESSION: session token not recognized")
+		if exists && strings.TrimSpace(staffID) != "" {
+			persona, pErr := h.coreDAL.ResolveStaffPersonaByID(r.Context(), staffID)
+			if pErr != nil {
+				return CallerContext{}, fmt.Errorf("INVALID_SESSION_PERSONA: %w", pErr)
+			}
+			return CallerContext{
+				Type:        "USER",
+				UserID:      persona.UserID,
+				StaffID:     persona.StaffID,
+				ActiveRoles: persona.ActiveRoles,
+				Scopes:      persona.Scopes,
+				RequestID:   "req_" + uuid.NewString(),
+			}, nil
 		}
-		persona, pErr := h.coreDAL.ResolveStaffPersonaByID(r.Context(), staffID)
-		if pErr != nil {
-			return CallerContext{}, fmt.Errorf("INVALID_SESSION_PERSONA: %w", pErr)
-		}
-		return CallerContext{
-			Type:        "USER",
-			UserID:      persona.UserID,
-			StaffID:     persona.StaffID,
-			ActiveRoles: persona.ActiveRoles,
-			Scopes:      persona.Scopes,
-			RequestID:   "req_" + uuid.NewString(),
-		}, nil
 	}
 
 	// 3. Check active switched dev persona on the Host

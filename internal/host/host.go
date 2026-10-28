@@ -414,26 +414,13 @@ func normalizeWidgetEntryRelPath(rawEntry string) (string, error) {
 }
 
 func (h *Host) LoadPlugin(pluginFolder string) error {
-	if strings.TrimSpace(pluginFolder) == "" {
-		return errors.New("missing mandatory parameter: pluginFolder")
-	}
-
-	dirPath := filepath.Join(h.cfg.PluginsDir, pluginFolder)
-	loaded, err := readPluginFromDisk(dirPath, pluginFolder)
+	loaded, err := h.InstallPlugin(context.Background(), pluginFolder)
 	if err != nil {
 		return err
 	}
-
-	if err := h.provisionAndMigratePluginDB(context.Background(), loaded); err != nil {
+	if err := h.ActivatePlugin(loaded.Manifest.ID); err != nil {
 		return err
 	}
-
-	h.mu.Lock()
-	h.plugins[loaded.Manifest.ID] = loaded
-	h.mu.Unlock()
-
-	h.startOrReplacePluginWorkerPool(loaded)
-
 	h.logInfo(fmt.Sprintf("Loaded plugin %s v%s", loaded.Manifest.ID, loaded.Manifest.Version))
 	return nil
 }
@@ -459,7 +446,9 @@ func (h *Host) GetLoadedPlugin(pluginID string) (*LoadedPlugin, bool) {
 					h.mu.Lock()
 					h.plugins[pluginID] = reloaded
 					h.mu.Unlock()
-					h.startOrReplacePluginWorkerPool(reloaded)
+					if reloaded.State == PluginStateActive {
+						h.startOrReplacePluginWorkerPool(reloaded)
+					}
 					h.logInfo(fmt.Sprintf("Hot-reloaded plugin %s v%s from disk", reloaded.Manifest.ID, reloaded.Manifest.Version))
 					return reloaded, true
 				}

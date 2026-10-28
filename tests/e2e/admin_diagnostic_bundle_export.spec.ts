@@ -101,20 +101,29 @@ test.describe('Admin-Exported PII-Scrubbed Diagnostic Bundle (Section 8 Gap 1, S
     }
     seeded = body;
 
-    // Ensure uk.org.optimis.test is ACTIVE
+    // Install and activate uk.org.optimis.test as Admin
     const switchAdminRes = await request.post('/api/auth/persona', {
       data: { staff_id: seeded.admin_staff_id },
     });
     if (!switchAdminRes.ok()) {
       throw new Error(`Failed to switch to Admin persona in setup: ${switchAdminRes.status()}`);
     }
-    await request.post('/api/admin/plugins/uk.org.optimis.test/state', {
-      data: { state: 'ACTIVE' },
+    const installRes = await request.post('/api/admin/plugins/install', {
+      data: { folder: 'test_plugin', staff_id: seeded.admin_staff_id },
     });
+    if (!installRes.ok()) {
+      throw new Error(`Failed to install test_plugin in setup: ${installRes.status()}`);
+    }
+    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+      data: { staff_id: seeded.admin_staff_id },
+    });
+    if (!activateRes.ok()) {
+      throw new Error(`Failed to activate uk.org.optimis.test in setup: ${activateRes.status()}`);
+    }
   });
 
   test.afterEach(async ({ request }, testInfo) => {
-    // 1. Restore default diagnostic ring buffer capacity & plugin state
+    // 1. Restore default diagnostic ring buffer capacity & purge plugin data
     await request.post('/api/test/diagnostics/reset', {
       data: { capacity: 100 },
     });
@@ -123,8 +132,8 @@ test.describe('Admin-Exported PII-Scrubbed Diagnostic Bundle (Section 8 Gap 1, S
       await request.post('/api/auth/persona', {
         data: { staff_id: seeded.admin_staff_id },
       });
-      await request.post('/api/admin/plugins/uk.org.optimis.test/state', {
-        data: { state: 'ACTIVE' },
+      await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+        data: { staff_id: seeded.admin_staff_id },
       });
       await request.post('/api/plugins/uk.org.optimis.test/rpc/purge_pupil_data', {
         data: { args: { pupil_id: seeded.pupil_id } },
@@ -148,7 +157,13 @@ test.describe('Admin-Exported PII-Scrubbed Diagnostic Bundle (Section 8 Gap 1, S
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 4. Clean up seeded fixtures in core.db
+    // 4. Remove runtime-installed plugin
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    await request.delete('/api/admin/plugins/uk.org.optimis.test');
+
+    // 5. Clean up seeded fixtures in core.db
     if (seeded?.fixture_id) {
       const delRes = await request.delete(`/api/test/seed-gdpr-fixtures/${encodeURIComponent(seeded.fixture_id)}`);
       if (!delRes.ok()) {

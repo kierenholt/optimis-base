@@ -43,7 +43,24 @@ test.describe('Native In-Memory Event Bus Router, Manifest Worker Subscriptions 
     }
     logCursor = (await cursorRes.json()).cursor;
 
-    // 3. Seed isolated test fixtures explicitly in setup
+    // 3. Install and activate test_plugin at runtime for this test
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    const installRes = await request.post('/api/admin/plugins/install', {
+      data: { folder: 'test_plugin' },
+    });
+    if (!installRes.ok()) {
+      throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
+    }
+    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+      data: {},
+    });
+    if (!activateRes.ok()) {
+      throw new Error(`Failed to activate uk.org.optimis.test: ${activateRes.status()}`);
+    }
+
+    // 4. Seed isolated test fixtures explicitly in setup
     const seedRes = await request.post('/api/test/seed-milestone1-fixtures', {
       data: {
         academic_year_id: 'ay_2026_2027',
@@ -95,7 +112,13 @@ test.describe('Native In-Memory Event Bus Router, Manifest Worker Subscriptions 
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 4. Clean up seeded fixtures in core.db
+    // 4. Remove runtime-installed plugin
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    await request.delete('/api/admin/plugins/uk.org.optimis.test');
+
+    // 5. Clean up seeded fixtures in core.db
     if (seeded?.fixture_id) {
       const delRes = await request.delete(
         `/api/test/seed-milestone1-fixtures/${encodeURIComponent(seeded.fixture_id)}`

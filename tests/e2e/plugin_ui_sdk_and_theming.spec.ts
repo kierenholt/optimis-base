@@ -34,10 +34,22 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     }
     logCursor = (await cursorRes.json()).cursor;
 
-    // 3. Ensure dev persona switcher is enabled and plugin uk.org.optimis.test is ACTIVE
+    // 3. Ensure dev persona switcher is enabled and install + activate plugin uk.org.optimis.test
     await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
     });
+    const installRes = await request.post('/api/admin/plugins/install', {
+      data: { folder: 'test_plugin' },
+    });
+    if (!installRes.ok()) {
+      throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
+    }
+    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+      data: {},
+    });
+    if (!activateRes.ok()) {
+      throw new Error(`Failed to activate uk.org.optimis.test: ${activateRes.status()}`);
+    }
 
     // 4. Seed two isolated test pupils for RPC and Entity Deep-Linking verification
     const res1 = await request.post('/api/test/seed-pupil', {
@@ -95,7 +107,7 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 3. Clean up seeded persona fixtures and reset dev persona sessions if used
+    // 3. Clean up seeded persona fixtures, reset dev persona sessions, and remove runtime-installed plugin
     if (seededPersonaFixtureId) {
       const delPersonaRes = await request.delete(
         `/api/test/seed-personas/${encodeURIComponent(seededPersonaFixtureId)}`
@@ -107,6 +119,7 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
     });
+    await request.delete('/api/admin/plugins/uk.org.optimis.test');
 
     // 4. Clean up seeded pupil records at the end of the test
     if (seededPupilId) {

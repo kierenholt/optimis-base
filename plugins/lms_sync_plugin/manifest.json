@@ -1,0 +1,77 @@
+{
+  "id": "uk.org.optimis.lms.classroom",
+  "title": "Google Classroom LMS Sync",
+  "version": "0.1.0",
+  "core_dal_version": "~1.0",
+  "max_concurrency": 4,
+  "max_memory_mb": 32,
+  "database": {
+    "alias": "plugin_lms_sync",
+    "max_db_size_mb": 128
+  },
+  "gdpr_hooks": {
+    "export_pupil_data": "export_pupil_data",
+    "purge_pupil_data": "purge_pupil_data"
+  },
+  "egress": {
+    "allowed_domains": [
+      "https://classroom.googleapis.com"
+    ],
+    "timeout_ms": 5000
+  },
+  "endpoints": {
+    "upsert_pupil_membership": {
+      "scopes": [
+        "dal.groups.write:all",
+        "dal.groups.read:all",
+        "dal.pupils.read:all"
+      ],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "get_group_roster": {
+      "scopes": [
+        "dal.groups.read:all",
+        "dal.pupils.read:all"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "list_sync_logs": {
+      "scopes": [
+        "dal.groups.read:all",
+        "dal.pupils.read:all"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "export_pupil_data": {
+      "scopes": [
+        "dal.pupils.read:all"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "purge_pupil_data": {
+      "scopes": [
+        "dal.pupils.read:all"
+      ],
+      "mutates": true,
+      "timeout_ms": 2500
+    }
+  },
+  "workers": {
+    "on_membership_changed": {
+      "events": [
+        "core.group.membership_changed"
+      ],
+      "scopes": [
+        "dal.pupils.read:all",
+        "dal.groups.read:all"
+      ],
+      "mutates": true,
+      "timeout_ms": 30000,
+      "max_concurrency": 2
+    }
+  }
+}

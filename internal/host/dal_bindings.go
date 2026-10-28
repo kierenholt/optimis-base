@@ -392,26 +392,52 @@ func (h *Host) buildLuaDALTable(
 
 		if hasAttWrite {
 			attWriteMode := resolveDomainScopeMode(endpointSpec.Scopes, "dal.attendance.write")
-			L.SetField(attTbl, "record_session_batch", L.NewFunction(func(L *lua.LState) int {
+			upsertSessionBatchFn := L.NewFunction(func(L *lua.LState) int {
 				if !endpointSpec.Mutates {
-					L.RaiseError("dal.attendance.record_session_batch is forbidden when endpoint mutates=false")
+					L.RaiseError("dal.attendance.upsert_session_batch is forbidden when endpoint mutates=false")
 					return 0
 				}
-				groupID := strings.TrimSpace(L.OptString(1, ""))
-				date := strings.TrimSpace(L.OptString(2, ""))
-				session := strings.TrimSpace(L.OptString(3, ""))
-				marksTbl, ok := L.Get(4).(*lua.LTable)
-				if !ok {
-					L.RaiseError("dal.attendance.record_session_batch requires a marks table as 4th argument")
-					return 0
+				var groupID, date, session string
+				var marksTbl, optsTbl *lua.LTable
+				if firstTbl, isTbl := L.Get(1).(*lua.LTable); isTbl {
+					if v := firstTbl.RawGetString("group_id"); v != lua.LNil {
+						groupID = strings.TrimSpace(v.String())
+					}
+					if v := firstTbl.RawGetString("date"); v != lua.LNil {
+						date = strings.TrimSpace(v.String())
+					}
+					if v := firstTbl.RawGetString("session"); v != lua.LNil {
+						session = strings.TrimSpace(v.String())
+					}
+					if m, ok := firstTbl.RawGetString("marks").(*lua.LTable); ok {
+						marksTbl = m
+					}
+					if L.GetTop() >= 2 {
+						optsTbl, _ = L.Get(2).(*lua.LTable)
+					} else {
+						optsTbl = firstTbl
+					}
+				} else {
+					groupID = strings.TrimSpace(L.OptString(1, ""))
+					date = strings.TrimSpace(L.OptString(2, ""))
+					session = strings.TrimSpace(L.OptString(3, ""))
+					var ok bool
+					marksTbl, ok = L.Get(4).(*lua.LTable)
+					if !ok {
+						L.RaiseError("dal.attendance.upsert_session_batch requires a marks table as 4th argument")
+						return 0
+					}
+					if L.GetTop() >= 5 {
+						optsTbl, _ = L.Get(5).(*lua.LTable)
+					}
 				}
-				var optsTbl *lua.LTable
-				if L.GetTop() >= 5 {
-					optsTbl, _ = L.Get(5).(*lua.LTable)
+				if marksTbl == nil {
+					L.RaiseError("dal.attendance.upsert_session_batch requires a marks table")
+					return 0
 				}
 				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, attWriteMode, caller.StaffID, optsTbl)
 				if sErr != nil {
-					L.RaiseError("dal.attendance.record_session_batch scope error: %s", sErr.Error())
+					L.RaiseError("dal.attendance.upsert_session_batch scope error: %s", sErr.Error())
 					return 0
 				}
 				if strings.TrimSpace(date) != "" && (optsTbl == nil || optsTbl.RawGetString("reference_date") == lua.LNil) {
@@ -455,7 +481,7 @@ func (h *Host) buildLuaDALTable(
 					Marks:   marks,
 				})
 				if err != nil {
-					L.RaiseError("dal.attendance.record_session_batch failed: %s", err.Error())
+					L.RaiseError("dal.attendance.upsert_session_batch failed: %s", err.Error())
 					return 0
 				}
 
@@ -467,7 +493,9 @@ func (h *Host) buildLuaDALTable(
 				L.SetField(resTbl, "session", lua.LString(res.Session))
 				L.Push(resTbl)
 				return 1
-			}))
+			})
+			L.SetField(attTbl, "record_session_batch", upsertSessionBatchFn)
+			L.SetField(attTbl, "upsert_session_batch", upsertSessionBatchFn)
 		}
 
 		L.SetField(dalTbl, "attendance", attTbl)

@@ -39,7 +39,24 @@ test.describe('Safeguarding Vault Envelope Encryption & DSL Cloud Key Unlock (Se
     }
     logCursor = (await cursorRes.json()).cursor;
 
-    // 3. Seed isolated staff personas (Teacher, DSL, Admin) & pupil fixture in setup
+    // 3. Install and activate test_plugin at runtime for this test
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    const installRes = await request.post('/api/admin/plugins/install', {
+      data: { folder: 'test_plugin' },
+    });
+    if (!installRes.ok()) {
+      throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
+    }
+    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+      data: {},
+    });
+    if (!activateRes.ok()) {
+      throw new Error(`Failed to activate uk.org.optimis.test: ${activateRes.status()}`);
+    }
+
+    // 4. Seed isolated staff personas (Teacher, DSL, Admin) & pupil fixture in setup
     const seedRes = await request.post('/api/test/seed-personas', {
       data: {
         academic_year_id: 'ay_2026_2027',
@@ -81,7 +98,13 @@ test.describe('Safeguarding Vault Envelope Encryption & DSL Cloud Key Unlock (Se
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 3. Clean up seeded persona, safeguarding notes, audit logs, & pupil fixtures at the end of the test
+    // 3. Reset auth mode and remove runtime-installed plugin
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    await request.delete('/api/admin/plugins/uk.org.optimis.test');
+
+    // 4. Clean up seeded persona, safeguarding notes, audit logs, & pupil fixtures at the end of the test
     if (seeded?.fixture_id) {
       const delRes = await request.delete(`/api/test/seed-personas/${encodeURIComponent(seeded.fixture_id)}`);
       if (!delRes.ok()) {

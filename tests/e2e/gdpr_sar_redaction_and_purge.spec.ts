@@ -72,7 +72,7 @@ test.describe('UK GDPR SAR Export, Retention Purge & Admin Redaction UI (Section
     }
     seeded = body;
 
-    // Switch to Admin so we can ensure uk.org.optimis.test is ACTIVE and seed a plugin note
+    // Switch to Admin so we can install and activate uk.org.optimis.test and seed a plugin note
     const switchAdminRes = await request.post('/api/auth/persona', {
       data: { staff_id: seeded.admin_staff_id },
     });
@@ -80,9 +80,19 @@ test.describe('UK GDPR SAR Export, Retention Purge & Admin Redaction UI (Section
       throw new Error(`Failed to switch to Admin persona in setup: ${switchAdminRes.status()}`);
     }
 
-    await request.post('/api/admin/plugins/uk.org.optimis.test/state', {
-      data: { state: 'ACTIVE' },
+    const installRes = await request.post('/api/admin/plugins/install', {
+      data: { folder: 'test_plugin', staff_id: seeded.admin_staff_id },
     });
+    if (!installRes.ok()) {
+      throw new Error(`Failed to install test_plugin in setup: ${installRes.status()}`);
+    }
+
+    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+      data: { staff_id: seeded.admin_staff_id },
+    });
+    if (!activateRes.ok()) {
+      throw new Error(`Failed to activate uk.org.optimis.test in setup: ${activateRes.status()}`);
+    }
 
     // Seed a plugin note containing a third-party pupil name in plugin_test.db for both pupils
     const saveNote1 = await request.post('/api/plugins/uk.org.optimis.test/rpc/save_pupil_note', {
@@ -118,8 +128,8 @@ test.describe('UK GDPR SAR Export, Retention Purge & Admin Redaction UI (Section
       await request.post('/api/auth/persona', {
         data: { staff_id: seeded.admin_staff_id },
       });
-      await request.post('/api/admin/plugins/uk.org.optimis.test/state', {
-        data: { state: 'ACTIVE' },
+      await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+        data: { staff_id: seeded.admin_staff_id },
       });
       await request.post('/api/plugins/uk.org.optimis.test/rpc/purge_pupil_data', {
         data: { args: { pupil_id: seeded.pupil_id } },
@@ -146,7 +156,13 @@ test.describe('UK GDPR SAR Export, Retention Purge & Admin Redaction UI (Section
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 4. Clean up seeded GDPR fixtures in core.db
+    // 4. Remove runtime-installed plugin
+    await request.post('/api/test/auth-mode', {
+      data: { enable_dev_persona_switcher: true },
+    });
+    await request.delete('/api/admin/plugins/uk.org.optimis.test');
+
+    // 5. Clean up seeded GDPR fixtures in core.db
     if (seeded?.fixture_id) {
       const delRes = await request.delete(`/api/test/seed-gdpr-fixtures/${encodeURIComponent(seeded.fixture_id)}`);
       if (!delRes.ok()) {

@@ -145,13 +145,6 @@ func run() error {
 		return err
 	}
 
-	if err := h.LoadPlugin("test_plugin"); err != nil {
-		return fmt.Errorf("failed to load test_plugin: %w", err)
-	}
-	if err := h.LoadPlugin("dfe_census_plugin"); err != nil {
-		return fmt.Errorf("failed to load dfe_census_plugin: %w", err)
-	}
-
 	handler, err := h.NewHTTPHandler()
 	if err != nil {
 		return err
