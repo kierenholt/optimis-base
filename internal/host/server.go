@@ -136,6 +136,9 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 	h.RegisterAuthAndPersonaRoutes(mux)
 	h.RegisterSafeguardingRoutes(mux)
 	h.RegisterGDPRRoutes(mux)
+	h.RegisterEventBusRoutes(mux)
+	h.RegisterEgressTestRoutes(mux)
+	h.RegisterUISDKAndConfigRoutes(mux)
 
 	mux.HandleFunc("POST /api/plugins/{plugin_id}/rpc/{method}", func(w http.ResponseWriter, r *http.Request) {
 		pluginID := strings.TrimSpace(r.PathValue("plugin_id"))
@@ -216,11 +219,23 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 		fullPath := filepath.Join(plugin.DirPath, "ui", "dist", cleanRel)
 		content, err := os.ReadFile(fullPath)
 		if err != nil {
+			if cleanRel == "mis-bridge.js" || cleanRel == "mis-theme.css" {
+				sdkBytes, sdkCT, sdkErr := readSDKUIAsset(cleanRel)
+				if sdkErr == nil {
+					w.Header().Set("Content-Security-Policy", pluginSandboxCSP)
+					w.Header().Set("Access-Control-Allow-Origin", "*")
+					w.Header().Set("Content-Type", sdkCT)
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write(sdkBytes)
+					return
+				}
+			}
 			http.Error(w, "asset not found", http.StatusNotFound)
 			return
 		}
 
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none';")
+		w.Header().Set("Content-Security-Policy", pluginSandboxCSP)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		if strings.HasSuffix(cleanRel, ".html") {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		} else if strings.HasSuffix(cleanRel, ".js") {

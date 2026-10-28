@@ -21,13 +21,18 @@ This package implements the **Optimis Core Data Access Layer (`CoreDAL`)** over 
 4. **UK GDPR Subject Access Request (SAR) Export & Statutory Retention Purge ([`gdpr.go`](file:///home/kieren/Documents/code/optimis/internal/dal/gdpr.go))**:
    * [`ExportCorePupilSAR`](file:///home/kieren/Documents/code/optimis/internal/dal/gdpr.go#L41): Exports structured `[]SARSection` tables (`title`, `records`, `redactable_fields`) across Core domains (`Core Pupil Profile & Enrolments`, `Core Guardians & Household Contacts` with `court_order_restricted = 0` & confidential refuge redaction, `Core Statutory Session Attendance`, `Core SEN & Medical Records`, and `Core Pastoral Notes`).
    * [`CheckPupilRetentionPurgeEligible`](file:///home/kieren/Documents/code/optimis/internal/dal/gdpr.go#L285) & [`PurgeCorePupilData`](file:///home/kieren/Documents/code/optimis/internal/dal/gdpr.go#L326): Enforces KCSIE safeguarding retention locks (`KCSIE_RETENTION_LOCK` when `safeguarding_notes.retention_purge_eligible = 0` or `safeguarding_audit_logs` exist) before atomically purging all pupil records across `core.db`.
+5. **Standard Core Domain Event Catalog & Post-Commit Dispatch ([`events.go`](file:///home/kieren/Documents/code/optimis/internal/dal/events.go))**:
+   * Defines the canonical Core Event Catalog (`core.pupil.enrolled`, `core.group.membership_changed`, `core.attendance.session_recorded`, `core.safeguarding.postbox_created`, and `core.gdpr.pupil_purged`) and fail-fast subscription validator [`ValidateEventSubscriptionName`](file:///home/kieren/Documents/code/optimis/internal/dal/events.go#L112).
+   * Dispatches Core domain events via [`emitPostCommitEvent`](file:///home/kieren/Documents/code/optimis/internal/dal/events.go#L168) strictly **after** `WriteDB` transactions commit (and never on rollback), propagating worker hop-count headers via [`WithEventHop`](file:///home/kieren/Documents/code/optimis/internal/dal/events.go#L139) and ensuring `core.safeguarding.postbox_created` never contains plaintext safeguarding notes.
 
 ---
 
 ## 2. Key Files
 
 * [`dal.go`](file:///home/kieren/Documents/code/optimis/internal/dal/dal.go): SQLite WAL pool initialization, `ConnectHook` `ATTACH`/`DETACH` synchronization, 45-table `schema/core/*.sql` bootstrap, and basic pupil seed helpers.
+* [`events.go`](file:///home/kieren/Documents/code/optimis/internal/dal/events.go): Standard Core Domain Event Catalog definitions, event subscription validation, context hop-count propagation (`WithEventHop` / `EventHopFromContext`), and post-commit hook dispatch.
 * [`persona_auth.go`](file:///home/kieren/Documents/code/optimis/internal/dal/persona_auth.go): Staff persona listing, single-staff role/scope resolution, `__system_config` lookups, and isolated persona test fixture seeding/cleanup.
 * [`domains.go`](file:///home/kieren/Documents/code/optimis/internal/dal/domains.go): Coarse-grained scoped Core DAL methods across `pupils`, `sen`, `medical`, `groups`, `attendance`, `guardians`, and `safeguarding`.
 * [`gdpr.go`](file:///home/kieren/Documents/code/optimis/internal/dal/gdpr.go): Core UK GDPR SAR export section builder, KCSIE retention pre-flight check, atomic Core pupil retention purge, and isolated GDPR test fixture seeding/teardown.
 * [`core_schema_functional_test.go`](file:///home/kieren/Documents/code/optimis/internal/dal/core_schema_functional_test.go) & [`core_dal_domains_test.go`](file:///home/kieren/Documents/code/optimis/internal/dal/core_dal_domains_test.go): Isolated SQLite WAL unit and functional tests covering all 45 core tables and domain scoping invariants.
+

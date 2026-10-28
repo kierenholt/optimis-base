@@ -85,13 +85,14 @@ func execDriverConn(ctx context.Context, conn driver.Conn, query string) error {
 }
 
 type CoreDAL struct {
-	writeDB     *sql.DB
-	readDB      *sql.DB
-	dbPath      string
-	numCPU      int
-	attachMu    sync.RWMutex
-	attachedDBs map[string]AttachedPluginDB
-	connectHook ConnectHook
+	writeDB             *sql.DB
+	readDB              *sql.DB
+	dbPath              string
+	numCPU              int
+	attachMu            sync.RWMutex
+	attachedDBs         map[string]AttachedPluginDB
+	connectHook         ConnectHook
+	postCommitEventHook PostCommitEventHook
 }
 
 func NewCoreDAL(dataDirPath string, schoolURN string) (*CoreDAL, error) {
@@ -424,6 +425,13 @@ func (d *CoreDAL) SeedPupil(ctx context.Context, in SeedPupilInput) (*Pupil, err
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit SeedPupil transaction: %w", err)
 	}
+
+	d.emitPostCommitEvent(ctx, EventCorePupilEnrolled, map[string]any{
+		"pupil_id":         pupilID,
+		"upn":              in.UPN,
+		"academic_year_id": in.AcademicYearID,
+		"effective_from":   in.EffectiveFrom,
+	})
 
 	return &Pupil{
 		ID:             pupilID,

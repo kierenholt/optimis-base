@@ -106,15 +106,29 @@ function export_pupil_data(ctx, args)
     { pupil_id }
   )
 
+  local sections = {
+    {
+      title = "Plugin Pupil Notes",
+      records = rows,
+      redactable_fields = { "note" }
+    }
+  }
+
+  local worker_rows = ctx.plugin_db.query(
+    "SELECT id, pupil_id, event_name, hop, caller_type, caller_staff_id FROM worker_event_logs WHERE pupil_id = ? ORDER BY id ASC",
+    { pupil_id }
+  )
+  if worker_rows and #worker_rows > 0 then
+    sections[#sections + 1] = {
+      title = "Plugin Worker Event Logs",
+      records = worker_rows,
+      redactable_fields = {}
+    }
+  end
+
   return {
     ok = true,
-    data = {
-      {
-        title = "Plugin Pupil Notes",
-        records = rows,
-        redactable_fields = { "note" }
-      }
-    }
+    data = sections
   }
 end
 
@@ -128,11 +142,15 @@ function purge_pupil_data(ctx, args)
     "DELETE FROM pupil_notes WHERE pupil_id = ?",
     { pupil_id }
   )
+  local res_workers = ctx.plugin_db.exec(
+    "DELETE FROM worker_event_logs WHERE pupil_id = ?",
+    { pupil_id }
+  )
 
   return {
     ok = true,
     data = {
-      purged_rows = res.rows_affected
+      purged_rows = res.rows_affected + res_workers.rows_affected
     }
   }
 end
@@ -272,4 +290,195 @@ function submit_safeguarding_postbox(ctx, args)
     }
   }
 end
+
+function sync_external_sparx_get(ctx, args)
+  if type(args) ~= "table" or type(args.pupil_id) ~= "string" or args.pupil_id == "" then
+    error("missing mandatory parameter: pupil_id")
+  end
+  if type(args.target_url) ~= "string" or args.target_url == "" then
+    error("missing mandatory parameter: target_url")
+  end
+
+  local res = ctx.http.get(args.target_url, {
+    ["X-School-URN"] = "100001",
+    ["X-Pupil-Ref"] = args.pupil_id
+  })
+
+  return {
+    ok = true,
+    data = {
+      status = res.status,
+      body = res.body,
+      final_url = res.final_url,
+      headers = res.headers
+    }
+  }
+end
+
+function push_external_sparx_post(ctx, args)
+  if type(args) ~= "table" or type(args.pupil_id) ~= "string" or args.pupil_id == "" then
+    error("missing mandatory parameter: pupil_id")
+  end
+  if type(args.target_url) ~= "string" or args.target_url == "" then
+    error("missing mandatory parameter: target_url")
+  end
+  if type(args.payload) ~= "string" or args.payload == "" then
+    error("missing mandatory parameter: payload")
+  end
+
+  local res = ctx.http.post(
+    args.target_url,
+    { ["Content-Type"] = "application/json" },
+    args.payload
+  )
+
+  return {
+    ok = true,
+    data = {
+      status = res.status,
+      body = res.body,
+      final_url = res.final_url,
+      headers = res.headers
+    }
+  }
+end
+
+function mutate_then_illegal_egress(ctx, args)
+  if type(args) ~= "table" or type(args.pupil_id) ~= "string" or args.pupil_id == "" then
+    error("missing mandatory parameter: pupil_id")
+  end
+  if type(args.note_id) ~= "string" or args.note_id == "" then
+    error("missing mandatory parameter: note_id")
+  end
+  if type(args.note) ~= "string" or args.note == "" then
+    error("missing mandatory parameter: note")
+  end
+  if type(args.target_url) ~= "string" or args.target_url == "" then
+    error("missing mandatory parameter: target_url")
+  end
+
+  ctx.plugin_db.exec(
+    "INSERT INTO pupil_notes (id, pupil_id, note, created_by) VALUES (?, ?, ?, ?)",
+    { args.note_id, args.pupil_id, args.note, ctx.caller.user_id }
+  )
+
+  local res = ctx.http.post(
+    args.target_url,
+    { ["Content-Type"] = "application/json" },
+    '{"note_id":"' .. args.note_id .. '"}'
+  )
+
+  return {
+    ok = true,
+    data = {
+      status = res.status
+    }
+  }
+end
+
+function trigger_loop_relay(ctx, args)
+  if type(args) ~= "table" or type(args.pupil_id) ~= "string" or args.pupil_id == "" then
+    error("missing mandatory parameter: pupil_id")
+  end
+
+  ctx.events.emit("test.loop_relay", {
+    pupil_id = args.pupil_id
+  })
+
+  return {
+    ok = true,
+    data = {
+      status = "LOOP_RELAY_EMITTED",
+      pupil_id = args.pupil_id
+    }
+  }
+end
+
+function list_worker_event_logs(ctx, args)
+  if type(args) ~= "table" or type(args.pupil_id) ~= "string" or args.pupil_id == "" then
+    error("missing mandatory parameter: pupil_id")
+  end
+
+  local rows = ctx.plugin_db.query(
+    "SELECT id, pupil_id, event_name, hop, caller_type, caller_staff_id FROM worker_event_logs WHERE pupil_id = ? ORDER BY hop ASC, id ASC",
+    { args.pupil_id }
+  )
+
+  return {
+    ok = true,
+    data = {
+      pupil_id = args.pupil_id,
+      count = #rows,
+      logs = rows
+    }
+  }
+end
+
+function on_core_event_audit(ctx, args)
+  if type(args) ~= "table" then
+    error("missing mandatory worker args table")
+  end
+
+  local pupil_id = args.pupil_id
+  if (type(pupil_id) ~= "string" or pupil_id == "") and type(args.payload) == "table" then
+    pupil_id = args.payload.pupil_id
+  end
+  if type(pupil_id) ~= "string" or pupil_id == "" then
+    return { ok = true, data = { skipped = true } }
+  end
+
+  local event_name = args.event_name or "unknown"
+  local hop = tonumber(args.hop) or 1
+  local log_id = "wlog_" .. event_name .. "_" .. pupil_id .. "_h" .. tostring(hop)
+
+  ctx.plugin_db.exec(
+    "INSERT INTO worker_event_logs (id, pupil_id, event_name, hop, caller_type, caller_staff_id) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET hop = excluded.hop",
+    { log_id, pupil_id, event_name, hop, ctx.caller.type, ctx.caller.staff_id }
+  )
+
+  return {
+    ok = true,
+    data = {
+      logged_id = log_id,
+      event_name = event_name,
+      hop = hop
+    }
+  }
+end
+
+function on_loop_relay(ctx, args)
+  if type(args) ~= "table" then
+    error("missing mandatory worker args table")
+  end
+
+  local pupil_id = args.pupil_id
+  if (type(pupil_id) ~= "string" or pupil_id == "") and type(args.payload) == "table" then
+    pupil_id = args.payload.pupil_id
+  end
+  if type(pupil_id) ~= "string" or pupil_id == "" then
+    error("missing mandatory parameter: pupil_id in loop relay")
+  end
+
+  local hop = tonumber(args.hop) or 1
+  local log_id = "wlog_test.loop_relay_" .. pupil_id .. "_h" .. tostring(hop)
+
+  ctx.plugin_db.exec(
+    "INSERT INTO worker_event_logs (id, pupil_id, event_name, hop, caller_type, caller_staff_id) VALUES (?, ?, 'test.loop_relay', ?, ?, ?) ON CONFLICT(id) DO UPDATE SET hop = excluded.hop",
+    { log_id, pupil_id, hop, ctx.caller.type, ctx.caller.staff_id }
+  )
+
+  -- Re-emit unconditionally; the Host Event Bus router must drop when Hop > 3 (i.e. Hop == 4)
+  ctx.events.emit("test.loop_relay", {
+    pupil_id = pupil_id
+  })
+
+  return {
+    ok = true,
+    data = {
+      logged_id = log_id,
+      hop = hop
+    }
+  }
+end
+
 

@@ -745,6 +745,110 @@ func (d *CoreDAL) GetStaffTimetableSlotsScoped(
 	return result, nil
 }
 
+type UpsertGroupPupilMembershipInput struct {
+	MembershipID   string `json:"membership_id,omitempty"`
+	GroupID        string `json:"group_id"`
+	PupilID        string `json:"pupil_id"`
+	AcademicYearID string `json:"academic_year_id"`
+	EffectiveFrom  string `json:"effective_from"`
+	EffectiveTo    string `json:"effective_to,omitempty"`
+}
+
+type UpsertGroupPupilMembershipResult struct {
+	MembershipID   string `json:"membership_id"`
+	GroupID        string `json:"group_id"`
+	PupilID        string `json:"pupil_id"`
+	AcademicYearID string `json:"academic_year_id"`
+	EffectiveFrom  string `json:"effective_from"`
+	EffectiveTo    string `json:"effective_to,omitempty"`
+}
+
+func (d *CoreDAL) UpsertGroupPupilMembershipScoped(
+	ctx context.Context,
+	scope DALQueryScope,
+	in UpsertGroupPupilMembershipInput,
+) (*UpsertGroupPupilMembershipResult, error) {
+	groupID := strings.TrimSpace(in.GroupID)
+	pupilID := strings.TrimSpace(in.PupilID)
+	ayID := strings.TrimSpace(in.AcademicYearID)
+	if ayID == "" {
+		ayID = strings.TrimSpace(scope.AcademicYearID)
+	}
+	effFrom := strings.TrimSpace(in.EffectiveFrom)
+	if effFrom == "" {
+		effFrom = strings.TrimSpace(scope.ReferenceDate)
+	}
+	if groupID == "" {
+		return nil, errors.New("missing mandatory parameter: group_id")
+	}
+	if pupilID == "" {
+		return nil, errors.New("missing mandatory parameter: pupil_id")
+	}
+	if ayID == "" {
+		return nil, errors.New("missing mandatory parameter: academic_year_id")
+	}
+	if effFrom == "" {
+		return nil, errors.New("missing mandatory parameter: effective_from")
+	}
+	if err := d.ensureGroupInOwnGroups(ctx, scope, groupID); err != nil {
+		return nil, err
+	}
+
+	membershipID := strings.TrimSpace(in.MembershipID)
+	if membershipID == "" {
+		membershipID = "gpm_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	}
+	var effToArg any
+	trimmedEffTo := strings.TrimSpace(in.EffectiveTo)
+	if trimmedEffTo != "" {
+		effToArg = trimmedEffTo
+	}
+
+	tx, err := d.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin group membership transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO group_pupil_memberships (
+			id, group_id, pupil_id, academic_year_id, effective_from, effective_to
+		) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			effective_from = excluded.effective_from,
+			effective_to = excluded.effective_to`,
+		membershipID, groupID, pupilID, ayID, effFrom, effToArg,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upsert group_pupil_memberships row: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit group membership transaction: %w", err)
+	}
+
+	d.emitPostCommitEvent(ctx, EventCoreGroupMembershipChanged, map[string]any{
+		"membership_id":    membershipID,
+		"group_id":         groupID,
+		"pupil_id":         pupilID,
+		"academic_year_id": ayID,
+		"effective_from":   effFrom,
+		"effective_to":     trimmedEffTo,
+	})
+
+	return &UpsertGroupPupilMembershipResult{
+		MembershipID:   membershipID,
+		GroupID:        groupID,
+		PupilID:        pupilID,
+		AcademicYearID: ayID,
+		EffectiveFrom:  effFrom,
+		EffectiveTo:    trimmedEffTo,
+	}, nil
+}
+
 // ============================================================================
 // 3. Statutory Attendance
 // ============================================================================
@@ -847,6 +951,7 @@ func (d *CoreDAL) UpsertSessionAttendanceBatchScoped(
 		_ = tx.Rollback()
 	}()
 
+	recordedPupilIDs := make([]string, 0, len(in.Marks))
 	for _, mark := range in.Marks {
 		pupilID := strings.TrimSpace(mark.PupilID)
 		code := strings.TrimSpace(mark.AttendanceCode)
@@ -899,6 +1004,7 @@ func (d *CoreDAL) UpsertSessionAttendanceBatchScoped(
 		if err != nil {
 			return nil, fmt.Errorf("failed to upsert attendance session mark: %w", err)
 		}
+		recordedPupilIDs = append(recordedPupilIDs, pupilID)
 	}
 
 	newSubID := "ars_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
@@ -928,6 +1034,22 @@ func (d *CoreDAL) UpsertSessionAttendanceBatchScoped(
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit attendance batch transaction: %w", err)
 	}
+
+	firstPupilID := ""
+	if len(recordedPupilIDs) > 0 {
+		firstPupilID = recordedPupilIDs[0]
+	}
+	d.emitPostCommitEvent(ctx, EventCoreAttendanceSessionRecorded, map[string]any{
+		"submission_id":        persistedSubID,
+		"group_id":             in.GroupID,
+		"date":                 in.Date,
+		"session":              in.Session,
+		"academic_year_id":     scope.AcademicYearID,
+		"upserted_count":       len(in.Marks),
+		"recorded_by_staff_id": scope.StaffID,
+		"pupil_id":             firstPupilID,
+		"pupil_ids":            recordedPupilIDs,
+	})
 
 	return &UpsertSessionAttendanceBatchResult{
 		SubmissionID:  persistedSubID,
@@ -1181,6 +1303,16 @@ func (d *CoreDAL) CreateSafeguardingPostboxNote(
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit safeguarding postbox transaction: %w", err)
 	}
+
+	d.emitPostCommitEvent(ctx, EventCoreSafeguardingPostboxCreated, map[string]any{
+		"note_id":               noteID,
+		"pupil_id":              in.PupilID,
+		"concern_category":      in.ConcernCategory,
+		"status":                "OPEN_TRIAGE",
+		"incident_date":         in.IncidentDate,
+		"reported_by_staff_id":  in.ReportedByStaffID,
+		"assigned_dsl_staff_id": strings.TrimSpace(in.AssignedDSLStaffID),
+	})
 
 	return &SafeguardingPostboxReceipt{
 		NoteID: noteID,

@@ -38,6 +38,7 @@ Follow this workflow and set of strict guardrails whenever authoring or updating
    - Design all tests to run **sequentially** (never rely on parallel execution state).
    - If a test relies on mock or seeded data, create/insert it explicitly during test setup (`beforeEach` / `t.Cleanup`) and **clean it up completely at the end** of the test so no orphaned state leaks across runs.
    - **Never** run `git` commands.
+10. any mock implementations of cloud services / external dependencies should sit behind an environment feature flag so that they never cross over into production tests or workflows 
 
 ---
 

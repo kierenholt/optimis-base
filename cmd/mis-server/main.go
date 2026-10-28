@@ -91,6 +91,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	enableRealHTTPEgress, err := parseStrictBoolEnv("ENABLE_REAL_HTTP_EGRESS")
+	if err != nil {
+		return err
+	}
 
 	h, err := host.NewHost(host.Config{
 		DataDirPath:      dataDirPath,
@@ -106,6 +110,7 @@ func run() error {
 	if err := h.ConfigureAuthMode(context.Background(), enableDevPersonaSwitcher); err != nil {
 		return err
 	}
+	h.ConfigureEgressMode(enableRealHTTPEgress)
 
 	if err := h.LoadPlugin("test_plugin"); err != nil {
 		return fmt.Errorf("failed to load test_plugin: %w", err)

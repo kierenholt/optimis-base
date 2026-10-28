@@ -421,7 +421,14 @@ func (d *CoreDAL) PurgeCorePupilData(ctx context.Context, pupilID string) error 
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	d.emitPostCommitEvent(ctx, EventCoreGDPRPupilPurged, map[string]any{
+		"pupil_id": trimmedPupilID,
+	})
+	return nil
 }
 
 func (d *CoreDAL) SeedGDPRTestFixtures(ctx context.Context, in GDPRTestFixtureInput) (*GDPRTestFixtureResult, error) {

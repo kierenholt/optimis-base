@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
@@ -36,9 +37,13 @@ type Config struct {
 }
 
 type EndpointSpec struct {
-	Scopes    []string `json:"scopes"`
-	Mutates   bool     `json:"mutates"`
-	TimeoutMS int      `json:"timeout_ms,omitempty"`
+	Scopes         []string `json:"scopes"`
+	Mutates        bool     `json:"mutates"`
+	TimeoutMS      int      `json:"timeout_ms,omitempty"`
+	Events         []string `json:"events,omitempty"`
+	Event          string   `json:"event,omitempty"`
+	Cron           string   `json:"cron,omitempty"`
+	MaxConcurrency int      `json:"max_concurrency,omitempty"`
 }
 
 type EgressSpec struct {
@@ -60,6 +65,8 @@ type Manifest struct {
 	ID             string                  `json:"id"`
 	Version        string                  `json:"version"`
 	CoreDALVersion string                  `json:"core_dal_version"`
+	MaxConcurrency int                     `json:"max_concurrency,omitempty"`
+	MaxMemoryMB    int                     `json:"max_memory_mb,omitempty"`
 	Database       *DatabaseSpec           `json:"database,omitempty"`
 	GDPRHooks      *GDPRHooksSpec          `json:"gdpr_hooks,omitempty"`
 	Egress         EgressSpec              `json:"egress"`
@@ -110,10 +117,16 @@ type Host struct {
 	coreDAL *dal.CoreDAL
 
 	mu          sync.RWMutex
+	closed      bool
 	plugins     map[string]*LoadedPlugin
 	serviceLogs []string
 	diagnostics []string
 	subscribers map[string][]chan Event
+	workerPools map[string]*pluginEventWorkerPool
+
+	eventsDispatchedTotal  atomic.Uint64
+	eventsDroppedTotal     atomic.Uint64
+	workerInvocationsTotal atomic.Uint64
 }
 
 func NewHost(cfg Config) (*Host, error) {
@@ -146,7 +159,19 @@ func NewHost(cfg Config) (*Host, error) {
 		serviceLogs: make([]string, 0, 128),
 		diagnostics: make([]string, 0, 64),
 		subscribers: make(map[string][]chan Event),
+		workerPools: make(map[string]*pluginEventWorkerPool),
 	}
+
+	coreDAL.SetPostCommitEventHook(func(evt dal.CoreDomainEvent) {
+		h.dispatchEvents([]Event{
+			{
+				Name:    evt.Name,
+				Payload: evt.Payload,
+				Hop:     evt.Hop,
+			},
+		})
+	})
+
 	h.logInfo(fmt.Sprintf("Host initialized for school URN %s", cfg.SchoolURN))
 	return h, nil
 }
@@ -156,6 +181,7 @@ func (h *Host) DAL() *dal.CoreDAL {
 }
 
 func (h *Host) Close() error {
+	h.stopAllPluginWorkerPools()
 	return h.coreDAL.Close()
 }
 
@@ -219,17 +245,48 @@ func (h *Host) SubscribeEvents(eventName string) <-chan Event {
 }
 
 func (h *Host) dispatchEvents(events []Event) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
 	for _, evt := range events {
-		if evt.Hop > 3 {
+		if evt.Hop == 0 {
+			evt.Hop = 1
+		}
+		if evt.Hop > maxEventHopLimit {
+			h.eventsDroppedTotal.Add(1)
+			h.logInfo(fmt.Sprintf("Dropped event %s exceeding max hop count (hop=%d > %d)", evt.Name, evt.Hop, maxEventHopLimit))
 			continue
 		}
-		subs := h.subscribers[evt.Name]
+
+		h.eventsDispatchedTotal.Add(1)
+
+		h.mu.RLock()
+		rawSubs := h.subscribers[evt.Name]
+		subs := make([]chan Event, len(rawSubs))
+		copy(subs, rawSubs)
+
+		var matchingPools []*pluginEventWorkerPool
+		for pluginID, pool := range h.workerPools {
+			if len(pool.subscribedEvents[evt.Name]) == 0 {
+				continue
+			}
+			if p, ok := h.plugins[pluginID]; ok && p.State == PluginStateUninstalledDormant {
+				continue
+			}
+			matchingPools = append(matchingPools, pool)
+		}
+		h.mu.RUnlock()
+
 		for _, ch := range subs {
 			select {
 			case ch <- evt:
 			default:
+			}
+		}
+
+		for _, pool := range matchingPools {
+			select {
+			case pool.queue <- evt:
+			default:
+				h.eventsDroppedTotal.Add(1)
+				h.logError(fmt.Sprintf("Dropped event %s for plugin %s: per-plugin buffered channel full", evt.Name, pool.pluginID))
 			}
 		}
 	}
@@ -287,9 +344,14 @@ func readPluginFromDisk(dirPath string, folder string) (*LoadedPlugin, error) {
 		return nil, fmt.Errorf("failed to read src/init.lua: %w", err)
 	}
 
+	luaSource := string(luaBytes)
+	if err := validateManifestWorkersAndLuaSource(manifest, luaSource); err != nil {
+		return nil, err
+	}
+
 	return &LoadedPlugin{
 		Manifest:        manifest,
-		LuaSource:       string(luaBytes),
+		LuaSource:       luaSource,
 		DirPath:         dirPath,
 		Folder:          folder,
 		State:           PluginStateActive,
@@ -540,6 +602,8 @@ func (h *Host) LoadPlugin(pluginFolder string) error {
 	h.plugins[loaded.Manifest.ID] = loaded
 	h.mu.Unlock()
 
+	h.startOrReplacePluginWorkerPool(loaded)
+
 	h.logInfo(fmt.Sprintf("Loaded plugin %s v%s", loaded.Manifest.ID, loaded.Manifest.Version))
 	return nil
 }
@@ -562,6 +626,7 @@ func (h *Host) GetLoadedPlugin(pluginID string) (*LoadedPlugin, bool) {
 					h.mu.Lock()
 					h.plugins[pluginID] = reloaded
 					h.mu.Unlock()
+					h.startOrReplacePluginWorkerPool(reloaded)
 					h.logInfo(fmt.Sprintf("Hot-reloaded plugin %s v%s from disk", reloaded.Manifest.ID, reloaded.Manifest.Version))
 					return reloaded, true
 				}
@@ -965,12 +1030,16 @@ func (h *Host) buildLuaCtxTable(
 	}
 	L.SetField(ctxTbl, "plugin_db", pluginDBTbl)
 
-	// 4. ctx.events (post-commit buffered emission)
+	// 4. ctx.events (post-commit buffered emission with hop-count increment)
 	eventsTbl := L.NewTable()
 	L.SetField(eventsTbl, "emit", L.NewFunction(func(L *lua.LState) int {
 		evtName := strings.TrimSpace(L.OptString(1, ""))
 		if evtName == "" {
 			L.RaiseError("ctx.events.emit requires a non-empty event_name")
+			return 0
+		}
+		if err := dal.ValidateEventSubscriptionName(evtName); err != nil {
+			L.RaiseError("ctx.events.emit invalid event_name: %s", err.Error())
 			return 0
 		}
 		var payload map[string]any
@@ -984,51 +1053,22 @@ func (h *Host) buildLuaCtxTable(
 		if payload == nil {
 			payload = map[string]any{}
 		}
+		parentHop := dal.EventHopFromContext(execCtx)
+		nextHop := parentHop + 1
+		if nextHop == 0 {
+			nextHop = 1
+		}
 		*bufferedEvents = append(*bufferedEvents, Event{
 			Name:    evtName,
 			Payload: payload,
-			Hop:     1,
+			Hop:     nextHop,
 		})
 		return 0
 	}))
 	L.SetField(ctxTbl, "events", eventsTbl)
 
-	// 5. ctx.http (default-deny domain check + disallowed inside write transactions)
-	httpTbl := L.NewTable()
-	L.SetField(httpTbl, "get", L.NewFunction(func(L *lua.LState) int {
-		if *writeTx != nil {
-			_ = (*writeTx).Rollback()
-			*writeTx = nil
-			L.RaiseError("ctx.http.get disallowed inside an open SQLite write transaction")
-			return 0
-		}
-		targetURL := strings.TrimSpace(L.OptString(1, ""))
-		if !isDomainAllowed(targetURL, plugin.Manifest.Egress.AllowedDomains) {
-			L.RaiseError("egress domain not permitted by manifest.json: %s", targetURL)
-			return 0
-		}
-		respTbl := L.NewTable()
-		L.SetField(respTbl, "status", lua.LNumber(200))
-		L.Push(respTbl)
-		return 1
-	}))
-	L.SetField(httpTbl, "post", L.NewFunction(func(L *lua.LState) int {
-		if *writeTx != nil {
-			_ = (*writeTx).Rollback()
-			*writeTx = nil
-			L.RaiseError("ctx.http.post disallowed inside an open SQLite write transaction")
-			return 0
-		}
-		targetURL := strings.TrimSpace(L.OptString(1, ""))
-		if !isDomainAllowed(targetURL, plugin.Manifest.Egress.AllowedDomains) {
-			L.RaiseError("egress domain not permitted by manifest.json: %s", targetURL)
-			return 0
-		}
-		respTbl := L.NewTable()
-		L.SetField(respTbl, "status", lua.LNumber(200))
-		L.Push(respTbl)
-		return 1
-	}))
+	// 5. ctx.http (egress.timeout_ms, CheckRedirect domain whitelist verification & open-write-tx halt)
+	httpTbl := h.buildLuaHTTPEgressTable(L, execCtx, plugin, writeTx)
 	L.SetField(ctxTbl, "http", httpTbl)
 
 	return ctxTbl
@@ -1063,17 +1103,6 @@ func hasDomainScope(scopes []string, prefix string) bool {
 	return false
 }
 
-func isDomainAllowed(targetURL string, allowed []string) bool {
-	if targetURL == "" {
-		return false
-	}
-	for _, origin := range allowed {
-		if origin != "" && strings.HasPrefix(targetURL, origin) {
-			return true
-		}
-	}
-	return false
-}
 
 func goMapToLuaTable(L *lua.LState, m map[string]any) *lua.LTable {
 	tbl := L.NewTable()
@@ -1094,10 +1123,26 @@ func goValueToLua(L *lua.LState, v any) lua.LValue {
 		return lua.LBool(val)
 	case int:
 		return lua.LNumber(val)
+	case uint8:
+		return lua.LNumber(val)
 	case int64:
 		return lua.LNumber(val)
 	case float64:
 		return lua.LNumber(val)
+	case []string:
+		arr := L.NewTable()
+		markLuaTableAsArray(L, arr)
+		for i, item := range val {
+			arr.RawSetInt(i+1, lua.LString(item))
+		}
+		return arr
+	case []any:
+		arr := L.NewTable()
+		markLuaTableAsArray(L, arr)
+		for i, item := range val {
+			arr.RawSetInt(i+1, goValueToLua(L, item))
+		}
+		return arr
 	case map[string]any:
 		return goMapToLuaTable(L, val)
 	default:

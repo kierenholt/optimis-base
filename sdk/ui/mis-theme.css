@@ -1,0 +1,137 @@
+/* ==========================================================================
+ * Optimis School MIS — Design Token & Theming System (--mis-*)
+ * Architecture Blueprint: Sections 6B, 9.4 & 9.5
+ * Supports Light (Default School Branding) & WCAG AAA High-Contrast Classroom Mode
+ * ========================================================================== */
+
+:root,
+[data-mis-theme="light"] {
+  /* School Brand & Accent Tokens */
+  --mis-brand-primary: #1d4ed8;
+  --mis-brand-primary-hover: #1e40af;
+  --mis-brand-primary-fg: #ffffff;
+  --mis-brand-accent: #0f766e;
+
+  /* Surface & Canvas Tokens */
+  --mis-bg-canvas: #f1f5f9;
+  --mis-bg-surface: #ffffff;
+  --mis-bg-elevated: #f8fafc;
+  --mis-bg-sidebar: #0f172a;
+  --mis-text-sidebar: #f8fafc;
+
+  /* Typography & Foreground Tokens */
+  --mis-text-primary: #0f172a;
+  --mis-text-secondary: #475569;
+  --mis-text-muted: #64748b;
+  --mis-text-inverse: #ffffff;
+
+  /* Border, Focus & Elevation Tokens */
+  --mis-border-subtle: #e2e8f0;
+  --mis-border-strong: #cbd5e1;
+  --mis-focus-ring: 0 0 0 3px rgba(29, 78, 216, 0.35);
+  --mis-shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px -1px rgba(15, 23, 42, 0.06);
+
+  /* Semantic Status Tokens (Attendance, SEN, Safeguarding) */
+  --mis-status-success: #15803d;
+  --mis-status-success-bg: #f0fdf4;
+  --mis-status-warning: #b45309;
+  --mis-status-warning-bg: #fffbeb;
+  --mis-status-danger: #b91c1c;
+  --mis-status-danger-bg: #fef2f2;
+  --mis-status-danger-border: #fca5a5;
+
+  /* Typography & Geometry Scale */
+  --mis-font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --mis-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --mis-radius-sm: 4px;
+  --mis-radius-md: 8px;
+  --mis-radius-lg: 12px;
+}
+
+[data-mis-theme="high-contrast"] {
+  /* High-Contrast Accessibility & Classroom Projector Palette (WCAG AAA) */
+  --mis-brand-primary: #facc15;
+  --mis-brand-primary-hover: #fde047;
+  --mis-brand-primary-fg: #000000;
+  --mis-brand-accent: #22d3ee;
+
+  --mis-bg-canvas: #000000;
+  --mis-bg-surface: #0a0a0a;
+  --mis-bg-elevated: #171717;
+  --mis-bg-sidebar: #000000;
+  --mis-text-sidebar: #ffffff;
+
+  --mis-text-primary: #ffffff;
+  --mis-text-secondary: #fef08a;
+  --mis-text-muted: #e2e8f0;
+  --mis-text-inverse: #000000;
+
+  --mis-border-subtle: #ffffff;
+  --mis-border-strong: #facc15;
+  --mis-focus-ring: 0 0 0 3px #facc15;
+  --mis-shadow-card: none;
+
+  --mis-status-success: #4ade80;
+  --mis-status-success-bg: #052e16;
+  --mis-status-warning: #facc15;
+  --mis-status-warning-bg: #422006;
+  --mis-status-danger: #ff6b6b;
+  --mis-status-danger-bg: #2a0000;
+  --mis-status-danger-border: #ff6b6b;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--mis-font-sans);
+  background-color: var(--mis-bg-canvas);
+  color: var(--mis-text-primary);
+  line-height: 1.5;
+}
+
+.mis-surface-card {
+  background-color: var(--mis-bg-surface);
+  color: var(--mis-text-primary);
+  border: 1px solid var(--mis-border-subtle);
+  border-radius: var(--mis-radius-md);
+  box-shadow: var(--mis-shadow-card);
+  padding: 16px;
+}
+
+.mis-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background-color: var(--mis-brand-primary);
+  color: var(--mis-brand-primary-fg);
+  border: 1px solid transparent;
+  border-radius: var(--mis-radius-sm);
+  font-family: var(--mis-font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.mis-btn:hover {
+  background-color: var(--mis-brand-primary-hover);
+}
+
+.mis-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--mis-focus-ring);
+}
+
+.mis-link {
+  color: var(--mis-brand-primary);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}

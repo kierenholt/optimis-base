@@ -198,90 +198,146 @@ func (h *Host) buildLuaDALTable(
 	}
 
 	// 2. ctx.dal.groups
-	if hasDomainScope(endpointSpec.Scopes, "dal.groups.read") {
-		groupsMode := resolveDomainScopeMode(endpointSpec.Scopes, "dal.groups.read")
+	hasGroupsRead := hasDomainScope(endpointSpec.Scopes, "dal.groups.read")
+	hasGroupsWrite := hasDomainScope(endpointSpec.Scopes, "dal.groups.write")
+	if hasGroupsRead || hasGroupsWrite {
 		groupsTbl := L.NewTable()
 
-		L.SetField(groupsTbl, "list_groups", L.NewFunction(func(L *lua.LState) int {
-			var optsTbl *lua.LTable
-			if L.GetTop() >= 1 {
-				optsTbl, _ = L.Get(1).(*lua.LTable)
-			}
-			var groupType string
-			if optsTbl != nil {
-				if gt := optsTbl.RawGetString("group_type"); gt != lua.LNil {
-					groupType = strings.TrimSpace(gt.String())
+		if hasGroupsRead {
+			groupsMode := resolveDomainScopeMode(endpointSpec.Scopes, "dal.groups.read")
+			L.SetField(groupsTbl, "list_groups", L.NewFunction(func(L *lua.LState) int {
+				var optsTbl *lua.LTable
+				if L.GetTop() >= 1 {
+					optsTbl, _ = L.Get(1).(*lua.LTable)
 				}
-			}
-			scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, groupsMode, caller.StaffID, optsTbl)
-			if sErr != nil {
-				L.RaiseError("dal.groups.list_groups scope error: %s", sErr.Error())
-				return 0
-			}
-			groups, err := h.coreDAL.ListGroupsScoped(execCtx, scope, groupType)
-			if err != nil {
-				L.RaiseError("dal.groups.list_groups failed: %s", err.Error())
-				return 0
-			}
-			arrTbl := L.NewTable()
-			markLuaTableAsArray(L, arrTbl)
-			for i, g := range groups {
-				gTbl := L.NewTable()
-				L.SetField(gTbl, "id", lua.LString(g.ID))
-				L.SetField(gTbl, "academic_year_id", lua.LString(g.AcademicYearID))
-				L.SetField(gTbl, "group_type", lua.LString(g.GroupType))
-				L.SetField(gTbl, "code", lua.LString(g.Code))
-				L.SetField(gTbl, "name", lua.LString(g.Name))
-				L.SetField(gTbl, "default_room_id", lua.LString(g.DefaultRoomID))
-				L.SetField(gTbl, "takes_attendance", lua.LBool(g.TakesAttendance))
-				L.SetField(gTbl, "effective_from", lua.LString(g.EffectiveFrom))
-				arrTbl.RawSetInt(i+1, gTbl)
-			}
-			L.Push(arrTbl)
-			return 1
-		}))
+				var groupType string
+				if optsTbl != nil {
+					if gt := optsTbl.RawGetString("group_type"); gt != lua.LNil {
+						groupType = strings.TrimSpace(gt.String())
+					}
+				}
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, groupsMode, caller.StaffID, optsTbl)
+				if sErr != nil {
+					L.RaiseError("dal.groups.list_groups scope error: %s", sErr.Error())
+					return 0
+				}
+				groups, err := h.coreDAL.ListGroupsScoped(execCtx, scope, groupType)
+				if err != nil {
+					L.RaiseError("dal.groups.list_groups failed: %s", err.Error())
+					return 0
+				}
+				arrTbl := L.NewTable()
+				markLuaTableAsArray(L, arrTbl)
+				for i, g := range groups {
+					gTbl := L.NewTable()
+					L.SetField(gTbl, "id", lua.LString(g.ID))
+					L.SetField(gTbl, "academic_year_id", lua.LString(g.AcademicYearID))
+					L.SetField(gTbl, "group_type", lua.LString(g.GroupType))
+					L.SetField(gTbl, "code", lua.LString(g.Code))
+					L.SetField(gTbl, "name", lua.LString(g.Name))
+					L.SetField(gTbl, "default_room_id", lua.LString(g.DefaultRoomID))
+					L.SetField(gTbl, "takes_attendance", lua.LBool(g.TakesAttendance))
+					L.SetField(gTbl, "effective_from", lua.LString(g.EffectiveFrom))
+					arrTbl.RawSetInt(i+1, gTbl)
+				}
+				L.Push(arrTbl)
+				return 1
+			}))
 
-		L.SetField(groupsTbl, "get_staff_timetable_slots", L.NewFunction(func(L *lua.LState) int {
-			staffID := strings.TrimSpace(L.OptString(1, ""))
-			cycleWeek := L.OptInt(2, 1)
-			dayOfWeekID := L.OptInt(3, 1)
-			var optsTbl *lua.LTable
-			if L.GetTop() >= 4 {
-				optsTbl, _ = L.Get(4).(*lua.LTable)
-			}
-			scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, groupsMode, caller.StaffID, optsTbl)
-			if sErr != nil {
-				L.RaiseError("dal.groups.get_staff_timetable_slots scope error: %s", sErr.Error())
-				return 0
-			}
-			slots, err := h.coreDAL.GetStaffTimetableSlotsScoped(execCtx, scope, staffID, cycleWeek, dayOfWeekID)
-			if err != nil {
-				L.RaiseError("dal.groups.get_staff_timetable_slots failed: %s", err.Error())
-				return 0
-			}
-			arrTbl := L.NewTable()
-			markLuaTableAsArray(L, arrTbl)
-			for i, s := range slots {
-				sTbl := L.NewTable()
-				L.SetField(sTbl, "slot_id", lua.LString(s.SlotID))
-				L.SetField(sTbl, "period_id", lua.LString(s.PeriodID))
-				L.SetField(sTbl, "period_code", lua.LString(s.PeriodCode))
-				L.SetField(sTbl, "period_name", lua.LString(s.PeriodName))
-				L.SetField(sTbl, "cycle_week", lua.LNumber(s.CycleWeek))
-				L.SetField(sTbl, "day_of_week_id", lua.LNumber(s.DayOfWeekID))
-				L.SetField(sTbl, "start_time", lua.LString(s.StartTime))
-				L.SetField(sTbl, "end_time", lua.LString(s.EndTime))
-				L.SetField(sTbl, "period_type", lua.LString(s.PeriodType))
-				L.SetField(sTbl, "maps_to_statutory_session", lua.LString(s.MapsToStatutorySession))
-				L.SetField(sTbl, "group_id", lua.LString(s.GroupID))
-				L.SetField(sTbl, "group_code", lua.LString(s.GroupCode))
-				L.SetField(sTbl, "staff_id", lua.LString(s.StaffID))
-				L.SetField(sTbl, "room_id", lua.LString(s.RoomID))
-				arrTbl.RawSetInt(i+1, sTbl)
-			}
-			L.Push(arrTbl)
-			return 1
-		}))
+			L.SetField(groupsTbl, "get_staff_timetable_slots", L.NewFunction(func(L *lua.LState) int {
+				staffID := strings.TrimSpace(L.OptString(1, ""))
+				cycleWeek := L.OptInt(2, 1)
+				dayOfWeekID := L.OptInt(3, 1)
+				var optsTbl *lua.LTable
+				if L.GetTop() >= 4 {
+					optsTbl, _ = L.Get(4).(*lua.LTable)
+				}
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, groupsMode, caller.StaffID, optsTbl)
+				if sErr != nil {
+					L.RaiseError("dal.groups.get_staff_timetable_slots scope error: %s", sErr.Error())
+					return 0
+				}
+				slots, err := h.coreDAL.GetStaffTimetableSlotsScoped(execCtx, scope, staffID, cycleWeek, dayOfWeekID)
+				if err != nil {
+					L.RaiseError("dal.groups.get_staff_timetable_slots failed: %s", err.Error())
+					return 0
+				}
+				arrTbl := L.NewTable()
+				markLuaTableAsArray(L, arrTbl)
+				for i, s := range slots {
+					sTbl := L.NewTable()
+					L.SetField(sTbl, "slot_id", lua.LString(s.SlotID))
+					L.SetField(sTbl, "period_id", lua.LString(s.PeriodID))
+					L.SetField(sTbl, "period_code", lua.LString(s.PeriodCode))
+					L.SetField(sTbl, "period_name", lua.LString(s.PeriodName))
+					L.SetField(sTbl, "cycle_week", lua.LNumber(s.CycleWeek))
+					L.SetField(sTbl, "day_of_week_id", lua.LNumber(s.DayOfWeekID))
+					L.SetField(sTbl, "start_time", lua.LString(s.StartTime))
+					L.SetField(sTbl, "end_time", lua.LString(s.EndTime))
+					L.SetField(sTbl, "period_type", lua.LString(s.PeriodType))
+					L.SetField(sTbl, "maps_to_statutory_session", lua.LString(s.MapsToStatutorySession))
+					L.SetField(sTbl, "group_id", lua.LString(s.GroupID))
+					L.SetField(sTbl, "group_code", lua.LString(s.GroupCode))
+					L.SetField(sTbl, "staff_id", lua.LString(s.StaffID))
+					L.SetField(sTbl, "room_id", lua.LString(s.RoomID))
+					arrTbl.RawSetInt(i+1, sTbl)
+				}
+				L.Push(arrTbl)
+				return 1
+			}))
+		}
+
+		if hasGroupsWrite {
+			groupsWriteMode := resolveDomainScopeMode(endpointSpec.Scopes, "dal.groups.write")
+			L.SetField(groupsTbl, "upsert_pupil_membership", L.NewFunction(func(L *lua.LState) int {
+				if !endpointSpec.Mutates {
+					L.RaiseError("dal.groups.upsert_pupil_membership is forbidden when endpoint mutates=false")
+					return 0
+				}
+				inTbl, ok := L.Get(1).(*lua.LTable)
+				if !ok {
+					L.RaiseError("dal.groups.upsert_pupil_membership requires an input table")
+					return 0
+				}
+				var optsTbl *lua.LTable
+				if L.GetTop() >= 2 {
+					optsTbl, _ = L.Get(2).(*lua.LTable)
+				}
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, groupsWriteMode, caller.StaffID, optsTbl)
+				if sErr != nil {
+					L.RaiseError("dal.groups.upsert_pupil_membership scope error: %s", sErr.Error())
+					return 0
+				}
+				getStr := func(key string) string {
+					v := inTbl.RawGetString(key)
+					if v == lua.LNil {
+						return ""
+					}
+					return strings.TrimSpace(v.String())
+				}
+				res, err := h.coreDAL.UpsertGroupPupilMembershipScoped(execCtx, scope, dal.UpsertGroupPupilMembershipInput{
+					MembershipID:   getStr("membership_id"),
+					GroupID:        getStr("group_id"),
+					PupilID:        getStr("pupil_id"),
+					AcademicYearID: getStr("academic_year_id"),
+					EffectiveFrom:  getStr("effective_from"),
+					EffectiveTo:    getStr("effective_to"),
+				})
+				if err != nil {
+					L.RaiseError("dal.groups.upsert_pupil_membership failed: %s", err.Error())
+					return 0
+				}
+				resTbl := L.NewTable()
+				L.SetField(resTbl, "membership_id", lua.LString(res.MembershipID))
+				L.SetField(resTbl, "group_id", lua.LString(res.GroupID))
+				L.SetField(resTbl, "pupil_id", lua.LString(res.PupilID))
+				L.SetField(resTbl, "academic_year_id", lua.LString(res.AcademicYearID))
+				L.SetField(resTbl, "effective_from", lua.LString(res.EffectiveFrom))
+				L.SetField(resTbl, "effective_to", lua.LString(res.EffectiveTo))
+				L.Push(resTbl)
+				return 1
+			}))
+		}
 
 		L.SetField(dalTbl, "groups", groupsTbl)
 	}

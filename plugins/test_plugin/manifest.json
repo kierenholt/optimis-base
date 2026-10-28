@@ -11,8 +11,8 @@
     "purge_pupil_data": "purge_pupil_data"
   },
   "egress": {
-    "allowed_domains": [],
-    "timeout_ms": 8000
+    "allowed_domains": ["https://sync.sparxmaths.uk", "https://api.dfe.gov.uk"],
+    "timeout_ms": 1500
   },
   "endpoints": {
     "get_pupil_record": {
@@ -59,6 +59,51 @@
       "scopes": ["dal.safeguarding.create"],
       "mutates": true,
       "timeout_ms": 2500
+    },
+    "sync_external_sparx_get": {
+      "scopes": ["dal.pupils.read:own_groups"],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "push_external_sparx_post": {
+      "scopes": ["dal.pupils.read:own_groups"],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "mutate_then_illegal_egress": {
+      "scopes": ["dal.pupils.read:own_groups"],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "trigger_loop_relay": {
+      "scopes": ["dal.pupils.read:own_groups"],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "list_worker_event_logs": {
+      "scopes": ["dal.pupils.read:own_groups"],
+      "mutates": false,
+      "timeout_ms": 2500
+    }
+  },
+  "workers": {
+    "on_core_event_audit": {
+      "events": [
+        "core.attendance.session_recorded",
+        "core.safeguarding.postbox_created",
+        "core.group.membership_changed"
+      ],
+      "scopes": ["dal.pupils.read:all"],
+      "mutates": true,
+      "timeout_ms": 30000,
+      "max_concurrency": 2
+    },
+    "on_loop_relay": {
+      "events": ["test.loop_relay"],
+      "scopes": ["dal.pupils.read:all"],
+      "mutates": true,
+      "timeout_ms": 30000,
+      "max_concurrency": 1
     }
   }
 }
