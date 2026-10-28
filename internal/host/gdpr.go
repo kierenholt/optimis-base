@@ -160,7 +160,7 @@ func (h *Host) invokePluginGDPRHook(
 	}()
 
 	hookSpec := EndpointSpec{
-		Scopes:    []string{"dal.pupils.read:all"},
+		Scopes:    []string{"dal.pupils.read:all", "dal.census.read:all"},
 		Mutates:   mutates,
 		TimeoutMS: 5000,
 	}
@@ -219,6 +219,11 @@ func (h *Host) invokePluginGDPRHook(
 
 func parsePluginSARSections(plugin *LoadedPlugin, rawData any) ([]dal.SARSection, error) {
 	rawArr, ok := rawData.([]any)
+	if !ok {
+		if m, mOk := rawData.(map[string]any); mOk {
+			rawArr, ok = m["sections"].([]any)
+		}
+	}
 	if !ok {
 		return nil, fmt.Errorf("plugin %s export_pupil_data must return an array of section tables", plugin.Manifest.ID)
 	}

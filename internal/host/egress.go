@@ -176,6 +176,10 @@ type mockEgressRoundTripper struct {
 }
 
 func (m *mockEgressRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL != nil && strings.EqualFold(req.URL.Host, "collect.dfe.gov.uk") {
+		return m.host.handleMockDfeCollectRoundTrip(req)
+	}
+
 	st := m.host.getEgressState()
 	key := mockRuleKey(req.Method, req.URL.String())
 

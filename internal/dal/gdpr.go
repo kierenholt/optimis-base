@@ -485,7 +485,7 @@ func (d *CoreDAL) SeedGDPRTestFixtures(ctx context.Context, in GDPRTestFixtureIn
 		{
 			sql: `INSERT INTO roles (id, category, name, name_short, description, default_scopes_json)
 			      VALUES
-			        ('ADMIN', 'STAFF', 'System Administrator / DPO', 'ADM', 'Full administrative & GDPR SAR/Purge authority', '["dal.pupils.read:all","dal.pupils.write:all","dal.staff.read:admin","dal.staff.write:admin","dal.groups.read:all","dal.groups.write:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.guardians.write:all","dal.sen.read:all","dal.medical.read:all"]'),
+			        ('ADMIN', 'STAFF', 'System Administrator / DPO', 'ADM', 'Full administrative & GDPR SAR/Purge authority', '["dal.census.read:all","dal.pupils.read:all","dal.pupils.write:all","dal.staff.read:admin","dal.staff.write:admin","dal.groups.read:all","dal.groups.write:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.guardians.write:all","dal.sen.read:all","dal.medical.read:all"]'),
 			        ('DSL', 'STAFF', 'Designated Safeguarding Lead', 'DSL', 'KCSIE Safeguarding Vault authority', '["dal.safeguarding.create","dal.safeguarding.read","dal.pupils.read:all","dal.guardians.read:all","dal.attendance.read:all","dal.sen.read:all","dal.medical.read:all"]'),
 			        ('TEACHER', 'STAFF', 'Classroom Teacher', 'TCH', 'Scoped classroom teacher access', '["dal.pupils.read:own_groups","dal.groups.read:own_groups","dal.attendance.read:own_groups","dal.attendance.write:own_groups","dal.sen.read:own_groups","dal.medical.read:own_groups","dal.safeguarding.create"]')
 			      ON CONFLICT(id) DO UPDATE SET default_scopes_json = excluded.default_scopes_json`,

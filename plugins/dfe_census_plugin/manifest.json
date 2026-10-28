@@ -1,0 +1,59 @@
+{
+  "id": "uk.gov.dfe.census",
+  "title": "DfE Statutory School Census",
+  "version": "0.1.0",
+  "core_dal_version": "~1.0",
+  "max_concurrency": 4,
+  "max_memory_mb": 32,
+  "database": {
+    "alias": "plugin_dfe_census",
+    "max_db_size_mb": 250
+  },
+  "gdpr_hooks": {
+    "export_pupil_data": "export_pupil_data",
+    "purge_pupil_data": "purge_pupil_data"
+  },
+  "egress": {
+    "allowed_domains": [
+      "https://collect.dfe.gov.uk"
+    ],
+    "timeout_ms": 5000
+  },
+  "endpoints": {
+    "generate_and_validate_census_return": {
+      "scopes": [
+        "dal.census.read:all"
+      ],
+      "mutates": true,
+      "timeout_ms": 5000
+    },
+    "submit_census_return": {
+      "scopes": [
+        "dal.census.read:all"
+      ],
+      "mutates": true,
+      "timeout_ms": 5000
+    },
+    "list_census_returns": {
+      "scopes": [
+        "dal.census.read:all"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "export_pupil_data": {
+      "scopes": [
+        "dal.census.read:all"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "purge_pupil_data": {
+      "scopes": [
+        "dal.census.read:all"
+      ],
+      "mutates": true,
+      "timeout_ms": 2500
+    }
+  }
+}

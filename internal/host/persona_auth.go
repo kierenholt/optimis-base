@@ -104,50 +104,7 @@ func (h *Host) ResolveRequestCaller(r *http.Request, explicitStaffID string) (Ca
 
 	st := h.getAuthState()
 
-	// 1. Check explicit mis_session cookie first
-	if cookie, err := r.Cookie(SessionCookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
-		token := strings.TrimSpace(cookie.Value)
-		st.mu.RLock()
-		staffID, exists := st.sessions[token]
-		st.mu.RUnlock()
-		if !exists || strings.TrimSpace(staffID) == "" {
-			return CallerContext{}, fmt.Errorf("INVALID_SESSION: session token not recognized")
-		}
-		persona, pErr := h.coreDAL.ResolveStaffPersonaByID(r.Context(), staffID)
-		if pErr != nil {
-			return CallerContext{}, fmt.Errorf("INVALID_SESSION_PERSONA: %w", pErr)
-		}
-		return CallerContext{
-			Type:        "USER",
-			UserID:      persona.UserID,
-			StaffID:     persona.StaffID,
-			ActiveRoles: persona.ActiveRoles,
-			Scopes:      persona.Scopes,
-			RequestID:   "req_" + uuid.NewString(),
-		}, nil
-	}
-
-	// 2. Check active switched dev persona on the Host
-	st.mu.RLock()
-	activeStaffID := st.activeDevStaffID
-	st.mu.RUnlock()
-
-	if strings.TrimSpace(activeStaffID) != "" {
-		persona, pErr := h.coreDAL.ResolveStaffPersonaByID(r.Context(), activeStaffID)
-		if pErr != nil {
-			return CallerContext{}, fmt.Errorf("INVALID_ACTIVE_PERSONA: %w", pErr)
-		}
-		return CallerContext{
-			Type:        "USER",
-			UserID:      persona.UserID,
-			StaffID:     persona.StaffID,
-			ActiveRoles: persona.ActiveRoles,
-			Scopes:      persona.Scopes,
-			RequestID:   "req_" + uuid.NewString(),
-		}, nil
-	}
-
-	// 3. If an explicit staff_id was provided in request/query and resolves to a full StaffPersona in core.db, use it
+	// 1. If an explicit staff_id was provided in request/query, resolve it directly
 	if trimmedStaff := strings.TrimSpace(explicitStaffID); trimmedStaff != "" {
 		if persona, pErr := h.coreDAL.ResolveStaffPersonaByID(r.Context(), trimmedStaff); pErr == nil {
 			return CallerContext{
@@ -176,6 +133,49 @@ func (h *Host) ResolveRequestCaller(r *http.Request, explicitStaffID string) (Ca
 				"dal.safeguarding.create",
 			},
 			RequestID: "req_" + uuid.NewString(),
+		}, nil
+	}
+
+	// 2. Check explicit mis_session cookie
+	if cookie, err := r.Cookie(SessionCookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
+		token := strings.TrimSpace(cookie.Value)
+		st.mu.RLock()
+		staffID, exists := st.sessions[token]
+		st.mu.RUnlock()
+		if !exists || strings.TrimSpace(staffID) == "" {
+			return CallerContext{}, fmt.Errorf("INVALID_SESSION: session token not recognized")
+		}
+		persona, pErr := h.coreDAL.ResolveStaffPersonaByID(r.Context(), staffID)
+		if pErr != nil {
+			return CallerContext{}, fmt.Errorf("INVALID_SESSION_PERSONA: %w", pErr)
+		}
+		return CallerContext{
+			Type:        "USER",
+			UserID:      persona.UserID,
+			StaffID:     persona.StaffID,
+			ActiveRoles: persona.ActiveRoles,
+			Scopes:      persona.Scopes,
+			RequestID:   "req_" + uuid.NewString(),
+		}, nil
+	}
+
+	// 3. Check active switched dev persona on the Host
+	st.mu.RLock()
+	activeStaffID := st.activeDevStaffID
+	st.mu.RUnlock()
+
+	if strings.TrimSpace(activeStaffID) != "" {
+		persona, pErr := h.coreDAL.ResolveStaffPersonaByID(r.Context(), activeStaffID)
+		if pErr != nil {
+			return CallerContext{}, fmt.Errorf("INVALID_ACTIVE_PERSONA: %w", pErr)
+		}
+		return CallerContext{
+			Type:        "USER",
+			UserID:      persona.UserID,
+			StaffID:     persona.StaffID,
+			ActiveRoles: persona.ActiveRoles,
+			Scopes:      persona.Scopes,
+			RequestID:   "req_" + uuid.NewString(),
 		}, nil
 	}
 

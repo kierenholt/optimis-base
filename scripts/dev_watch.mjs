@@ -23,6 +23,7 @@ let rebuildTimer = null;
 function startGoServer() {
   if (goServer) {
     goServer.kill('SIGTERM');
+    spawnSync('sleep', ['0.15']);
     goServer = null;
   }
   goServer = spawn('./bin/mis-server', [], {
@@ -47,7 +48,7 @@ for (const dir of ['cmd', 'internal']) {
   const targetDir = path.join(rootDir, dir);
   if (!fs.existsSync(targetDir)) continue;
 
-  fs.watch(targetDir, { recursive: true }, (_eventType, filename) => {
+  const watcher = fs.watch(targetDir, { recursive: true }, (_eventType, filename) => {
     if (!filename || !filename.endsWith('.go') || filename.endsWith('_test.go')) {
       return;
     }
@@ -55,6 +56,9 @@ for (const dir of ['cmd', 'internal']) {
       clearTimeout(rebuildTimer);
     }
     rebuildTimer = setTimeout(() => rebuildAndRestartGo(path.join(dir, filename)), 150);
+  });
+  watcher.on('error', (err) => {
+    console.warn(`[dev] Watcher warning on ${dir}:`, err.message);
   });
 }
 

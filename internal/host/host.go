@@ -904,6 +904,10 @@ func (h *Host) buildLuaCtxTable(
 	httpTbl := h.buildLuaHTTPEgressTable(L, execCtx, plugin, writeTx)
 	L.SetField(ctxTbl, "http", httpTbl)
 
+	// 6. ctx.xml (deterministic DfE CBDS XML builder & XSD schema validator)
+	xmlTbl := h.buildLuaXMLTable(L)
+	L.SetField(ctxTbl, "xml", xmlTbl)
+
 	return ctxTbl
 }
 

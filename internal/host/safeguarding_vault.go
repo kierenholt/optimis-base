@@ -59,6 +59,14 @@ func (h *Host) RegisterSafeguardingRoutes(mux *http.ServeMux) {
 			return
 		}
 
+		if kmsErr := h.ensureCloudKMSAvailable(r.Context()); kmsErr != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"ok":         false,
+				"error_code": kmsErr.Error(),
+			})
+			return
+		}
+
 		receipt, createErr := h.coreDAL.CreateSafeguardingPostboxNote(r.Context(), dal.CreateSafeguardingPostboxInput{
 			PupilID:            body.PupilID,
 			ReportedByStaffID:  caller.StaffID,
@@ -167,6 +175,14 @@ func (h *Host) RegisterSafeguardingRoutes(mux *http.ServeMux) {
 			return
 		}
 
+		if kmsErr := h.ensureCloudKMSAvailable(r.Context()); kmsErr != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"ok":         false,
+				"error_code": kmsErr.Error(),
+			})
+			return
+		}
+
 		ttl := 24 * time.Hour
 		if body.TTLSeconds != nil {
 			ttl = time.Duration(*body.TTLSeconds) * time.Second
@@ -226,6 +242,14 @@ func (h *Host) RegisterSafeguardingRoutes(mux *http.ServeMux) {
 			writeJSON(w, http.StatusForbidden, map[string]any{
 				"ok":         false,
 				"error_code": "UNAUTHORIZED_SCOPE: caller lacks required scope dal.safeguarding.read",
+			})
+			return
+		}
+
+		if kmsErr := h.ensureCloudKMSAvailable(r.Context()); kmsErr != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"ok":         false,
+				"error_code": kmsErr.Error(),
 			})
 			return
 		}

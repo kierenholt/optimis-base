@@ -95,6 +95,22 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	enableRealCloudKMS, err := parseStrictBoolEnv("ENABLE_REAL_CLOUD_KMS")
+	if err != nil {
+		return err
+	}
+	enableRealParentDMZSync, err := parseStrictBoolEnv("ENABLE_REAL_PARENT_DMZ_SYNC")
+	if err != nil {
+		return err
+	}
+	enableRealMATSync, err := parseStrictBoolEnv("ENABLE_REAL_MAT_SYNC")
+	if err != nil {
+		return err
+	}
+	enableMockDfeCensusService, err := parseStrictBoolEnv("ENABLE_MOCK_DFE_CENSUS_SERVICE")
+	if err != nil {
+		return err
+	}
 
 	h, err := host.NewHost(host.Config{
 		DataDirPath:      dataDirPath,
@@ -111,9 +127,23 @@ func run() error {
 		return err
 	}
 	h.ConfigureEgressMode(enableRealHTTPEgress)
+	// Configure mock DfE COLLECT census service feature flag.
+	h.ConfigureMockDfeCensusService(enableMockDfeCensusService)
+	if err := h.ConfigureCloudKMSMode(context.Background(), enableRealCloudKMS); err != nil {
+		return err
+	}
+	if err := h.ConfigureParentDMZMode(context.Background(), enableRealParentDMZSync); err != nil {
+		return err
+	}
+	if err := h.ConfigureMATSyncMode(context.Background(), enableRealMATSync); err != nil {
+		return err
+	}
 
 	if err := h.LoadPlugin("test_plugin"); err != nil {
 		return fmt.Errorf("failed to load test_plugin: %w", err)
+	}
+	if err := h.LoadPlugin("dfe_census_plugin"); err != nil {
+		return fmt.Errorf("failed to load dfe_census_plugin: %w", err)
 	}
 
 	handler, err := h.NewHTTPHandler()

@@ -138,7 +138,9 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 	h.RegisterGDPRRoutes(mux)
 	h.RegisterEventBusRoutes(mux)
 	h.RegisterEgressTestRoutes(mux)
+	h.RegisterCensusTestRoutes(mux)
 	h.RegisterUISDKAndConfigRoutes(mux)
+	h.RegisterExternalSyncAndTestRoutes(mux)
 
 	mux.HandleFunc("POST /api/plugins/{plugin_id}/rpc/{method}", func(w http.ResponseWriter, r *http.Request) {
 		pluginID := strings.TrimSpace(r.PathValue("plugin_id"))
@@ -185,7 +187,11 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 
 		res, err := h.ExecuteRPC(r.Context(), pluginID, method, caller, body.Args)
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, RPCResponse{
+			status := http.StatusBadRequest
+			if pluginID == "uk.gov.dfe.census" && strings.Contains(err.Error(), "caller lacks required DAL scopes") {
+				status = http.StatusForbidden
+			}
+			writeJSON(w, status, RPCResponse{
 				OK:        false,
 				ErrorCode: err.Error(),
 			})
