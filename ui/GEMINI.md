@@ -25,10 +25,13 @@ This directory contains the Vite + React Single-Page Application (SPA) compiled 
    - Renders the Host-level DSL Safeguarding Vault (`data-testid="dsl-safeguarding-vault-panel"`) exclusively when the active session holds `dal.safeguarding.read`.
 7. **Admin UK GDPR SAR Redaction UI & Statutory Retention Purge Console ([`src/GdprSarPanel.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/GdprSarPanel.tsx))**:
    - Renders the integrated Admin SAR Redaction & Retention Purge panel (`data-testid="sar-redaction-panel"`, Sections 5C, 7B & 9.3) exclusively when the active session holds `ADMIN`/`DPO` role or `dal.staff.write:admin`.
+8. **Admin-Exported PII-Scrubbed Plugin Diagnostic Bundle Console ([`src/AdminDiagnosticsPanel.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/AdminDiagnosticsPanel.tsx))**:
+   - Renders the Day-2 Operations diagnostic bundle export panel (`data-testid="admin-diagnostics-panel"`, Section 8 Gap 1, Section 9.3 & Section 10.3) with the `"Download Plugin Diagnostic Bundle"` control (`data-testid="download-plugin-diagnostic-bundle-btn"`) exclusively when the active session holds `ADMIN`/`DPO` role or `dal.staff.write:admin`.
 
 ## Key Files
 
-* [`src/App.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/App.tsx): Root Host Shell component managing the Default Dashboard Layout, Topbar Persona Switcher (Section 8A), Keep-Alive LRU Pool ($N = 5$), Editable $N \times M$ Widget Grid state, `--mis-*` theme switcher, source-aware `window.postMessage` RPC & deep-link coordinator, DSL Safeguarding Vault UI, and Admin UK GDPR SAR Redaction & Retention Purge UI.
+* [`src/App.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/App.tsx): Root Host Shell component managing the Default Dashboard Layout, Topbar Persona Switcher (Section 8A), Keep-Alive LRU Pool ($N = 5$), Editable $N \times M$ Widget Grid state, `--mis-*` theme switcher, source-aware `window.postMessage` RPC & deep-link coordinator, DSL Safeguarding Vault UI, Admin UK GDPR SAR Redaction & Retention Purge UI, and Admin Plugin Diagnostic Bundle export UI.
+* [`src/AdminDiagnosticsPanel.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/AdminDiagnosticsPanel.tsx): Admin-Exported PII-Scrubbed Diagnostic Bundle panel (`GET /api/admin/diagnostics/bundle`).
 * [`src/DashboardWidgetGridPanel.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/DashboardWidgetGridPanel.tsx): Editable $N \times M$ Mini-Iframe Widget Grid component (Section 9B).
 * [`src/main.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/main.tsx): React DOM entrypoint mounting `<App />`.
 * [`vite.config.ts`](file:///home/kieren/Documents/code/optimis/ui/vite.config.ts): Vite build configuration outputting static assets into `../internal/host/ui_dist`.

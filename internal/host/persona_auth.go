@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
 
 	"github.com/google/uuid"
+
+	"optimis/internal/dal"
 )
 
 const SessionCookieName = "mis_session"
@@ -53,19 +56,18 @@ func (h *Host) isDevPersonaSwitcherEnabled() bool {
 	return st.enableDevPersonaSwitcher
 }
 
-func (h *Host) loadRealSSOProvider(ctx context.Context) error {
-	issuerURL, err := h.coreDAL.GetSystemConfigValue(ctx, "sso_oidc_issuer_url")
+func (h *Host) validateRealSSOProvider(ctx context.Context) (*dal.SSOConfig, error) {
+	ssoCfg, err := h.coreDAL.ValidateAndLoadSSOConfig(ctx)
 	if err != nil {
 		h.logError(fmt.Sprintf("REAL_SSO_NOT_CONFIGURED: failed to load real federated SSO provider while ENABLE_DEV_PERSONA_SWITCHER=false: %v", err))
-		return fmt.Errorf("REAL_SSO_NOT_CONFIGURED: real federated SSO cannot be loaded when ENABLE_DEV_PERSONA_SWITCHER=false (%w)", err)
+		return nil, fmt.Errorf("REAL_SSO_NOT_CONFIGURED: real federated SSO cannot be loaded when ENABLE_DEV_PERSONA_SWITCHER=false (%w)", err)
 	}
-	clientID, err := h.coreDAL.GetSystemConfigValue(ctx, "sso_oidc_client_id")
-	if err != nil {
-		h.logError(fmt.Sprintf("REAL_SSO_NOT_CONFIGURED: missing sso_oidc_client_id while ENABLE_DEV_PERSONA_SWITCHER=false: %v", err))
-		return fmt.Errorf("REAL_SSO_NOT_CONFIGURED: real federated SSO client_id missing when ENABLE_DEV_PERSONA_SWITCHER=false (%w)", err)
-	}
-	h.logError(fmt.Sprintf("REAL_SSO_NOT_CONFIGURED: OIDC provider handshake not available for issuer %s (client %s)", issuerURL, clientID))
-	return fmt.Errorf("REAL_SSO_NOT_CONFIGURED: real OIDC SSO provider (%s) is not active in this build", issuerURL)
+	return ssoCfg, nil
+}
+
+func (h *Host) loadRealSSOProvider(ctx context.Context) error {
+	_, err := h.validateRealSSOProvider(ctx)
+	return err
 }
 
 func (h *Host) ConfigureAuthMode(ctx context.Context, enableDevPersonaSwitcher bool) error {
@@ -318,16 +320,58 @@ func (h *Host) RegisterAuthAndPersonaRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /api/auth/sso/login", func(w http.ResponseWriter, r *http.Request) {
 		if !h.isDevPersonaSwitcherEnabled() {
-			err := h.loadRealSSOProvider(r.Context())
-			writeJSON(w, http.StatusInternalServerError, map[string]any{
-				"ok":         false,
-				"error_code": err.Error(),
+			ssoCfg, err := h.validateRealSSOProvider(r.Context())
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]any{
+					"ok":         false,
+					"error_code": err.Error(),
+				})
+				return
+			}
+			authURL := fmt.Sprintf(
+				"%s/oauth2/v2.0/authorize?client_id=%s&response_type=code&scope=openid+profile+email",
+				strings.TrimRight(ssoCfg.IssuerURL, "/"),
+				url.QueryEscape(ssoCfg.ClientID),
+			)
+			if ssoCfg.RedirectURI != "" {
+				authURL += "&redirect_uri=" + url.QueryEscape(ssoCfg.RedirectURI)
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok":                true,
+				"status":            "SSO_CONFIGURED",
+				"provider":          ssoCfg.Provider,
+				"issuer_url":        ssoCfg.IssuerURL,
+				"client_id":         ssoCfg.ClientID,
+				"redirect_uri":      ssoCfg.RedirectURI,
+				"authorization_url": authURL,
 			})
 			return
 		}
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"ok":         false,
 			"error_code": "SSO_DISABLED_IN_DEV_PERSONA_MODE",
+		})
+	})
+
+	mux.HandleFunc("DELETE /api/test/system-config/{key}", func(w http.ResponseWriter, r *http.Request) {
+		key := strings.TrimSpace(r.PathValue("key"))
+		if key == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"ok":    false,
+				"error": "missing mandatory path parameter: key",
+			})
+			return
+		}
+		if err := h.coreDAL.DeleteSystemConfigKey(r.Context(), key); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"ok":    false,
+				"error": err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":      true,
+			"deleted": true,
 		})
 	})
 

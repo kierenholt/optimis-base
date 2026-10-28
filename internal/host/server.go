@@ -136,6 +136,7 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 	h.RegisterAuthAndPersonaRoutes(mux)
 	h.RegisterSafeguardingRoutes(mux)
 	h.RegisterGDPRRoutes(mux)
+	h.RegisterDiagnosticRoutes(mux)
 	h.RegisterEventBusRoutes(mux)
 	h.RegisterEgressTestRoutes(mux)
 	h.RegisterCensusTestRoutes(mux)

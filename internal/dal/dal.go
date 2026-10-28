@@ -332,8 +332,23 @@ func (d *CoreDAL) initSchema(schoolURN string) error {
 		}
 	}
 
+	var hasSysConfigUpdatedAt int
+	_ = d.writeDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('__system_config') WHERE name = 'updated_at'`).Scan(&hasSysConfigUpdatedAt)
+	if hasSysConfigUpdatedAt == 0 {
+		if _, err := d.writeDB.Exec(`ALTER TABLE __system_config ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';`); err != nil {
+			return fmt.Errorf("failed to add updated_at column to __system_config: %w", err)
+		}
+		if _, err := d.writeDB.Exec(`UPDATE __system_config SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE updated_at = '';`); err != nil {
+			return fmt.Errorf("failed to backfill updated_at on __system_config: %w", err)
+		}
+	}
+
 	_, err = d.writeDB.Exec(
-		`INSERT INTO __system_config (key, value) VALUES ('school_urn', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		`INSERT INTO __system_config (key, value, updated_at)
+		 VALUES ('school_urn', ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+		 ON CONFLICT(key) DO UPDATE SET
+		     value = excluded.value,
+		     updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
 		schoolURN,
 	)
 	if err != nil {

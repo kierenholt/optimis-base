@@ -67,15 +67,7 @@ func run() error {
 		return err
 	}
 
-	port, err := requireEnv("PORT")
-	if err != nil {
-		return err
-	}
 	dataDirPath, err := requireEnv("DATA_DIR_PATH")
-	if err != nil {
-		return err
-	}
-	pluginsDir, err := requireEnv("PLUGINS_DIR")
 	if err != nil {
 		return err
 	}
@@ -84,6 +76,20 @@ func run() error {
 		return err
 	}
 	kmsKeyHandle, err := requireEnv("HOST_KMS_KEY_HANDLE")
+	if err != nil {
+		return err
+	}
+
+	// Section 7C Local Break-Glass CLI (`./mis-server config ...`)
+	if len(os.Args) > 1 && strings.TrimSpace(os.Args[1]) == "config" {
+		return host.RunConfigCLI(context.Background(), dataDirPath, schoolURN, os.Args[2:], os.Stdout, os.Stderr)
+	}
+
+	port, err := requireEnv("PORT")
+	if err != nil {
+		return err
+	}
+	pluginsDir, err := requireEnv("PLUGINS_DIR")
 	if err != nil {
 		return err
 	}

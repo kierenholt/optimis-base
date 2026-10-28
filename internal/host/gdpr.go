@@ -153,9 +153,12 @@ func (h *Host) invokePluginGDPRHook(
 
 	var bufferedEvents []Event
 	var writeTx *sql.Tx
+	lockTracker := &sqlLockTracker{}
+	argSecrets := []string{pupilID}
 	defer func() {
 		if writeTx != nil {
 			_ = writeTx.Rollback()
+			lockTracker.finishHold()
 		}
 	}()
 
@@ -165,19 +168,19 @@ func (h *Host) invokePluginGDPRHook(
 		TimeoutMS: 5000,
 	}
 
-	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, hookSpec, caller, &bufferedEvents, &writeTx)
+	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, hookSpec, caller, &bufferedEvents, &writeTx, lockTracker)
 	argsTable := goMapToLuaTable(L, map[string]any{
 		"pupil_id": pupilID,
 	})
 
 	if err := L.DoString(plugin.LuaSource); err != nil {
-		h.recordDiagnostic(plugin.Manifest.ID, hookFnName, "LUA_LOAD_ERROR", time.Since(start))
+		h.recordDiagnosticDetailed(plugin.Manifest.ID, hookFnName, "LUA_LOAD_ERROR", err, time.Since(start), lockTracker, argSecrets)
 		return nil, fmt.Errorf("failed to load Lua source for GDPR hook %s.%s: %w", plugin.Manifest.ID, hookFnName, err)
 	}
 
 	fn := L.GetGlobal(hookFnName)
 	if fn.Type() != lua.LTFunction {
-		h.recordDiagnostic(plugin.Manifest.ID, hookFnName, "MISSING_GDPR_HOOK", time.Since(start))
+		h.recordDiagnosticDetailed(plugin.Manifest.ID, hookFnName, "MISSING_GDPR_HOOK", nil, time.Since(start), lockTracker, argSecrets)
 		return nil, fmt.Errorf("declared gdpr_hook %q is not a function in %s init.lua", hookFnName, plugin.Manifest.ID)
 	}
 
@@ -186,7 +189,7 @@ func (h *Host) invokePluginGDPRHook(
 		NRet:    1,
 		Protect: true,
 	}, ctxTable, argsTable); err != nil {
-		h.recordDiagnostic(plugin.Manifest.ID, hookFnName, "LUA_GDPR_HOOK_ERROR", time.Since(start))
+		h.recordDiagnosticDetailed(plugin.Manifest.ID, hookFnName, "LUA_GDPR_HOOK_ERROR", err, time.Since(start), lockTracker, argSecrets)
 		return nil, fmt.Errorf("GDPR hook %s.%s execution failed: %w", plugin.Manifest.ID, hookFnName, err)
 	}
 
@@ -201,17 +204,19 @@ func (h *Host) invokePluginGDPRHook(
 		if writeTx != nil {
 			_ = writeTx.Rollback()
 			writeTx = nil
+			lockTracker.finishHold()
 		}
 		errCode := L.GetField(retTbl, "error_code").String()
 		return nil, fmt.Errorf("GDPR hook %s.%s returned ok=false (%s)", plugin.Manifest.ID, hookFnName, errCode)
 	}
 
 	if writeTx != nil {
-		if err := writeTx.Commit(); err != nil {
-			writeTx = nil
-			return nil, fmt.Errorf("failed to commit GDPR hook %s.%s write transaction: %w", plugin.Manifest.ID, hookFnName, err)
-		}
+		commitErr := writeTx.Commit()
 		writeTx = nil
+		lockTracker.finishHold()
+		if commitErr != nil {
+			return nil, fmt.Errorf("failed to commit GDPR hook %s.%s write transaction: %w", plugin.Manifest.ID, hookFnName, commitErr)
+		}
 	}
 
 	return luaValueToGo(L.GetField(retTbl, "data")), nil

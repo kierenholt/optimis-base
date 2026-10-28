@@ -221,15 +221,16 @@ func (h *Host) buildLuaHTTPEgressTable(
 	execCtx context.Context,
 	plugin *LoadedPlugin,
 	writeTx **sql.Tx,
+	lockTracker *sqlLockTracker,
 ) *lua.LTable {
 	httpTbl := L.NewTable()
 
 	L.SetField(httpTbl, "get", L.NewFunction(func(L *lua.LState) int {
-		return h.executeLuaHTTPRequest(L, execCtx, plugin, writeTx, http.MethodGet, "ctx.http.get")
+		return h.executeLuaHTTPRequest(L, execCtx, plugin, writeTx, lockTracker, http.MethodGet, "ctx.http.get")
 	}))
 
 	L.SetField(httpTbl, "post", L.NewFunction(func(L *lua.LState) int {
-		return h.executeLuaHTTPRequest(L, execCtx, plugin, writeTx, http.MethodPost, "ctx.http.post")
+		return h.executeLuaHTTPRequest(L, execCtx, plugin, writeTx, lockTracker, http.MethodPost, "ctx.http.post")
 	}))
 
 	return httpTbl
@@ -240,6 +241,7 @@ func (h *Host) executeLuaHTTPRequest(
 	execCtx context.Context,
 	plugin *LoadedPlugin,
 	writeTx **sql.Tx,
+	lockTracker *sqlLockTracker,
 	httpMethod string,
 	methodLabel string,
 ) int {
@@ -247,7 +249,10 @@ func (h *Host) executeLuaHTTPRequest(
 	if *writeTx != nil {
 		_ = (*writeTx).Rollback()
 		*writeTx = nil
-		h.recordDiagnostic(plugin.Manifest.ID, methodLabel, "EGRESS_WRITE_TX_HALT", 0)
+		if lockTracker != nil {
+			lockTracker.finishHold()
+		}
+		h.recordDiagnosticDetailed(plugin.Manifest.ID, methodLabel, "EGRESS_WRITE_TX_HALT", nil, 0, lockTracker, nil)
 		h.logError(fmt.Sprintf("Halted open WriteDB transaction in %s: %s disallowed inside an open SQLite write transaction", plugin.Manifest.ID, methodLabel))
 		L.RaiseError("%s disallowed inside an open SQLite write transaction", methodLabel)
 		return 0

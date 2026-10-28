@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AdminDiagnosticsPanel } from './AdminDiagnosticsPanel';
 import { DashboardWidgetGridPanel } from './DashboardWidgetGridPanel';
 import { GdprSarPanel } from './GdprSarPanel';
 import { SafeguardingVaultPanel } from './SafeguardingVaultPanel';
@@ -110,6 +111,11 @@ export function App() {
   const [sarExportStatus, setSarExportStatus] = useState<string>('');
   const [sarFinalizedJson, setSarFinalizedJson] = useState<string>('');
   const [sarPurgeStatus, setSarPurgeStatus] = useState<string>('');
+
+  // Day-2 Operations: Admin-Exported PII-Scrubbed Diagnostic Bundle state (Section 8 Gap 1)
+  const [diagnosticBundleStatus, setDiagnosticBundleStatus] = useState<string>('');
+  const [diagnosticBundleJson, setDiagnosticBundleJson] = useState<string>('');
+  const [diagnosticBundleLog, setDiagnosticBundleLog] = useState<string>('');
 
   const availableWidgets = useMemo<PluginWidgetDescriptor[]>(() => {
     const list: PluginWidgetDescriptor[] = [];
@@ -427,6 +433,9 @@ export function App() {
       setSarExportStatus('');
       setSarFinalizedJson('');
       setSarPurgeStatus('');
+      setDiagnosticBundleStatus('');
+      setDiagnosticBundleJson('');
+      setDiagnosticBundleLog('');
     }
 
     if (scopes.includes('dal.safeguarding.read')) {
@@ -738,6 +747,20 @@ export function App() {
     }
     setSarPurgeStatus(body.result.status || 'RETENTION_PURGE_COMPLETED');
     setSarSections([]);
+  };
+
+  const handleDownloadDiagnosticBundle = async () => {
+    const query = activeStaffId ? `?staff_id=${encodeURIComponent(activeStaffId)}` : '';
+    const res = await fetch(`/api/admin/diagnostics/bundle${query}`);
+    const body = await res.json();
+    if (!res.ok || !body.ok || !body.bundle) {
+      setDiagnosticBundleStatus(`ERROR:${body?.error_code || res.status}`);
+      return;
+    }
+    const formattedJson = JSON.stringify(body.bundle, null, 2);
+    setDiagnosticBundleJson(formattedJson);
+    setDiagnosticBundleLog(typeof body.bundle.log_archive === 'string' ? body.bundle.log_archive : '');
+    setDiagnosticBundleStatus('DIAGNOSTIC_BUNDLE_EXPORTED');
   };
 
   return (
@@ -1136,6 +1159,15 @@ export function App() {
               onFinalizeSarExport={handleFinalizeSarExport}
               onPurgePupilData={handlePurgePupilData}
               onUpdateRedactableField={handleUpdateRedactableField}
+            />
+          )}
+
+          {hasAdminOrDpoAccess && (
+            <AdminDiagnosticsPanel
+              diagnosticBundleStatus={diagnosticBundleStatus}
+              diagnosticBundleJson={diagnosticBundleJson}
+              diagnosticBundleLog={diagnosticBundleLog}
+              onDownloadDiagnosticBundle={handleDownloadDiagnosticBundle}
             />
           )}
         </main>

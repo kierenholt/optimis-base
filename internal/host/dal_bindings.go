@@ -781,23 +781,26 @@ func (h *Host) ExecuteWorker(
 
 	var bufferedEvents []Event
 	var writeTx *sql.Tx
+	lockTracker := &sqlLockTracker{}
+	argSecrets := collectArgSecretStrings(args)
 	defer func() {
 		if writeTx != nil {
 			_ = writeTx.Rollback()
+			lockTracker.finishHold()
 		}
 	}()
 
-	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, workerSpec, caller, &bufferedEvents, &writeTx)
+	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, workerSpec, caller, &bufferedEvents, &writeTx, lockTracker)
 	argsTable := goMapToLuaTable(L, args)
 
 	if err := L.DoString(plugin.LuaSource); err != nil {
-		h.recordDiagnostic(pluginID, workerName, "LUA_LOAD_ERROR", time.Since(start))
+		h.recordDiagnosticDetailed(pluginID, workerName, "LUA_LOAD_ERROR", err, time.Since(start), lockTracker, argSecrets)
 		return nil, fmt.Errorf("failed to load plugin Lua script: %w", err)
 	}
 
 	fn := L.GetGlobal(workerName)
 	if fn.Type() != lua.LTFunction {
-		h.recordDiagnostic(pluginID, workerName, "MISSING_LUA_FUNCTION", time.Since(start))
+		h.recordDiagnosticDetailed(pluginID, workerName, "MISSING_LUA_FUNCTION", nil, time.Since(start), lockTracker, argSecrets)
 		return nil, fmt.Errorf("declared worker %q is not a function in init.lua", workerName)
 	}
 
@@ -806,7 +809,7 @@ func (h *Host) ExecuteWorker(
 		NRet:    1,
 		Protect: true,
 	}, ctxTable, argsTable); err != nil {
-		h.recordDiagnostic(pluginID, workerName, "LUA_RUNTIME_ERROR", time.Since(start))
+		h.recordDiagnosticDetailed(pluginID, workerName, "LUA_RUNTIME_ERROR", err, time.Since(start), lockTracker, argSecrets)
 		return nil, fmt.Errorf("lua worker execution error in %s.%s: %w", pluginID, workerName, err)
 	}
 
@@ -815,7 +818,7 @@ func (h *Host) ExecuteWorker(
 
 	retTbl, ok := ret.(*lua.LTable)
 	if !ok {
-		h.recordDiagnostic(pluginID, workerName, "INVALID_RETURN_TYPE", time.Since(start))
+		h.recordDiagnosticDetailed(pluginID, workerName, "INVALID_RETURN_TYPE", nil, time.Since(start), lockTracker, argSecrets)
 		return nil, fmt.Errorf("worker %s.%s must return a table", pluginID, workerName)
 	}
 
@@ -824,6 +827,7 @@ func (h *Host) ExecuteWorker(
 		if writeTx != nil {
 			_ = writeTx.Rollback()
 			writeTx = nil
+			lockTracker.finishHold()
 		}
 		errCode := L.GetField(retTbl, "error_code").String()
 		return &RPCResponse{
@@ -833,12 +837,13 @@ func (h *Host) ExecuteWorker(
 	}
 
 	if writeTx != nil {
-		if err := writeTx.Commit(); err != nil {
-			writeTx = nil
-			h.recordDiagnostic(pluginID, workerName, "SQLITE_COMMIT_ERROR", time.Since(start))
-			return nil, fmt.Errorf("failed to commit plugin_db write transaction in worker: %w", err)
-		}
+		commitErr := writeTx.Commit()
 		writeTx = nil
+		lockTracker.finishHold()
+		if commitErr != nil {
+			h.recordDiagnosticDetailed(pluginID, workerName, "SQLITE_COMMIT_ERROR", commitErr, time.Since(start), lockTracker, argSecrets)
+			return nil, fmt.Errorf("failed to commit plugin_db write transaction in worker: %w", commitErr)
+		}
 	}
 
 	dataVal := luaValueToGo(L.GetField(retTbl, "data"))

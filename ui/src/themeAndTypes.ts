@@ -193,4 +193,28 @@ export interface ActiveCallerIdentity {
   scopes: string[];
 }
 
+export interface DiagnosticBundleEntry {
+  timestamp: string;
+  plugin_id: string;
+  method: string;
+  error_class: string;
+  file: string;
+  line: number;
+  stack_trace: string;
+  duration_ms: number;
+  sqlite_lock_wait_ms: number;
+  sqlite_write_hold_ms: number;
+}
 
+export interface DiagnosticBundlePayload {
+  schema_version: string;
+  school_urn: string;
+  generated_at: string;
+  generated_by_staff_id: string;
+  telemetry_mode: string;
+  ring_buffer_capacity: number;
+  entry_count: number;
+  pii_scrubbed: boolean;
+  entries: DiagnosticBundleEntry[];
+  log_archive: string;
+}

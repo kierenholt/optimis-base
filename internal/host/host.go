@@ -123,13 +123,15 @@ type Host struct {
 	cfg     Config
 	coreDAL *dal.CoreDAL
 
-	mu          sync.RWMutex
-	closed      bool
-	plugins     map[string]*LoadedPlugin
-	serviceLogs []string
-	diagnostics []string
-	subscribers map[string][]chan Event
-	workerPools map[string]*pluginEventWorkerPool
+	mu                sync.RWMutex
+	closed            bool
+	plugins           map[string]*LoadedPlugin
+	serviceLogs       []string
+	diagnostics       []string
+	diagnosticEntries []DiagnosticEntry
+	diagnosticCap     int
+	subscribers       map[string][]chan Event
+	workerPools       map[string]*pluginEventWorkerPool
 
 	eventsDispatchedTotal  atomic.Uint64
 	eventsDroppedTotal     atomic.Uint64
@@ -160,13 +162,15 @@ func NewHost(cfg Config) (*Host, error) {
 	}
 
 	h := &Host{
-		cfg:         cfg,
-		coreDAL:     coreDAL,
-		plugins:     make(map[string]*LoadedPlugin),
-		serviceLogs: make([]string, 0, 128),
-		diagnostics: make([]string, 0, 64),
-		subscribers: make(map[string][]chan Event),
-		workerPools: make(map[string]*pluginEventWorkerPool),
+		cfg:               cfg,
+		coreDAL:           coreDAL,
+		plugins:           make(map[string]*LoadedPlugin),
+		serviceLogs:       make([]string, 0, 128),
+		diagnostics:       make([]string, 0, DefaultDiagnosticRingBufferCapacity),
+		diagnosticEntries: make([]DiagnosticEntry, 0, DefaultDiagnosticRingBufferCapacity),
+		diagnosticCap:     DefaultDiagnosticRingBufferCapacity,
+		subscribers:       make(map[string][]chan Event),
+		workerPools:       make(map[string]*pluginEventWorkerPool),
 	}
 
 	coreDAL.SetPostCommitEventHook(func(evt dal.CoreDomainEvent) {
@@ -207,11 +211,7 @@ func (h *Host) logError(msg string) {
 }
 
 func (h *Host) recordDiagnostic(pluginID string, method string, errClass string, duration time.Duration) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	safeClass := scrubDiagnosticToken(errClass)
-	entry := fmt.Sprintf("plugin=%s method=%s error_class=%s duration_ms=%d", pluginID, method, safeClass, duration.Milliseconds())
-	h.diagnostics = append(h.diagnostics, entry)
+	h.recordDiagnosticDetailed(pluginID, method, errClass, nil, duration, nil, nil)
 }
 
 func (h *Host) LogCursor() string {
@@ -549,24 +549,27 @@ func (h *Host) ExecuteRPC(
 
 	var bufferedEvents []Event
 	var writeTx *sql.Tx
+	lockTracker := &sqlLockTracker{}
+	argSecrets := collectArgSecretStrings(args)
 	defer func() {
 		if writeTx != nil {
 			_ = writeTx.Rollback()
+			lockTracker.finishHold()
 		}
 	}()
 
-	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, endpointSpec, caller, &bufferedEvents, &writeTx)
+	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, endpointSpec, caller, &bufferedEvents, &writeTx, lockTracker)
 	argsTable := goMapToLuaTable(L, args)
 
 	if err := L.DoString(plugin.LuaSource); err != nil {
-		h.recordDiagnostic(pluginID, methodName, "LUA_LOAD_ERROR", time.Since(start))
+		h.recordDiagnosticDetailed(pluginID, methodName, "LUA_LOAD_ERROR", err, time.Since(start), lockTracker, argSecrets)
 		h.logError(fmt.Sprintf("Lua load error in %s: %v", pluginID, err))
 		return nil, fmt.Errorf("failed to load plugin Lua script: %w", err)
 	}
 
 	fn := L.GetGlobal(methodName)
 	if fn.Type() != lua.LTFunction {
-		h.recordDiagnostic(pluginID, methodName, "MISSING_LUA_FUNCTION", time.Since(start))
+		h.recordDiagnosticDetailed(pluginID, methodName, "MISSING_LUA_FUNCTION", nil, time.Since(start), lockTracker, argSecrets)
 		return nil, fmt.Errorf("declared endpoint %q is not a function in init.lua", methodName)
 	}
 
@@ -575,7 +578,7 @@ func (h *Host) ExecuteRPC(
 		NRet:    1,
 		Protect: true,
 	}, ctxTable, argsTable); err != nil {
-		h.recordDiagnostic(pluginID, methodName, "LUA_RUNTIME_ERROR", time.Since(start))
+		h.recordDiagnosticDetailed(pluginID, methodName, "LUA_RUNTIME_ERROR", err, time.Since(start), lockTracker, argSecrets)
 		h.logError(fmt.Sprintf("Lua runtime error in %s.%s", pluginID, methodName))
 		return nil, fmt.Errorf("lua execution error in %s.%s: %w", pluginID, methodName, err)
 	}
@@ -585,7 +588,7 @@ func (h *Host) ExecuteRPC(
 
 	retTbl, ok := ret.(*lua.LTable)
 	if !ok {
-		h.recordDiagnostic(pluginID, methodName, "INVALID_RETURN_TYPE", time.Since(start))
+		h.recordDiagnosticDetailed(pluginID, methodName, "INVALID_RETURN_TYPE", nil, time.Since(start), lockTracker, argSecrets)
 		return nil, fmt.Errorf("endpoint %s.%s must return a table", pluginID, methodName)
 	}
 
@@ -594,6 +597,7 @@ func (h *Host) ExecuteRPC(
 		if writeTx != nil {
 			_ = writeTx.Rollback()
 			writeTx = nil
+			lockTracker.finishHold()
 		}
 		errCode := L.GetField(retTbl, "error_code").String()
 		return &RPCResponse{
@@ -603,12 +607,13 @@ func (h *Host) ExecuteRPC(
 	}
 
 	if writeTx != nil {
-		if err := writeTx.Commit(); err != nil {
-			writeTx = nil
-			h.recordDiagnostic(pluginID, methodName, "SQLITE_COMMIT_ERROR", time.Since(start))
-			return nil, fmt.Errorf("failed to commit plugin_db write transaction: %w", err)
-		}
+		commitErr := writeTx.Commit()
 		writeTx = nil
+		lockTracker.finishHold()
+		if commitErr != nil {
+			h.recordDiagnosticDetailed(pluginID, methodName, "SQLITE_COMMIT_ERROR", commitErr, time.Since(start), lockTracker, argSecrets)
+			return nil, fmt.Errorf("failed to commit plugin_db write transaction: %w", commitErr)
+		}
 	}
 
 	dataVal := luaValueToGo(L.GetField(retTbl, "data"))
@@ -706,6 +711,7 @@ func (h *Host) buildLuaCtxTable(
 	caller CallerContext,
 	bufferedEvents *[]Event,
 	writeTx **sql.Tx,
+	lockTracker *sqlLockTracker,
 ) *lua.LTable {
 	ctxTbl := L.NewTable()
 
@@ -837,10 +843,17 @@ func (h *Host) buildLuaCtxTable(
 			}
 
 			if *writeTx == nil {
+				waitStart := time.Now()
 				tx, txErr := h.coreDAL.WriteDB().BeginTx(execCtx, nil)
+				if lockTracker != nil {
+					lockTracker.lockWaitDuration += time.Since(waitStart)
+				}
 				if txErr != nil {
 					L.RaiseError("plugin_db.exec failed to start WriteDB transaction: %s", txErr.Error())
 					return 0
+				}
+				if lockTracker != nil {
+					lockTracker.writeHoldStart = time.Now()
 				}
 				*writeTx = tx
 			}
@@ -901,7 +914,7 @@ func (h *Host) buildLuaCtxTable(
 	L.SetField(ctxTbl, "events", eventsTbl)
 
 	// 5. ctx.http (egress.timeout_ms, CheckRedirect domain whitelist verification & open-write-tx halt)
-	httpTbl := h.buildLuaHTTPEgressTable(L, execCtx, plugin, writeTx)
+	httpTbl := h.buildLuaHTTPEgressTable(L, execCtx, plugin, writeTx, lockTracker)
 	L.SetField(ctxTbl, "http", httpTbl)
 
 	// 6. ctx.xml (deterministic DfE CBDS XML builder & XSD schema validator)
