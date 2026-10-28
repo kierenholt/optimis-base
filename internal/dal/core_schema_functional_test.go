@@ -64,12 +64,12 @@ func setupCoreSchemaHarness(t *testing.T) *schemaTestHarness {
 	}
 	readDB.SetMaxOpenConns(numCPU)
 
-	schemaDir, err := filepath.Abs(filepath.Join("..", "..", "docs", "schema", "core"))
+	schemaDir, err := filepath.Abs(filepath.Join("..", "..", "schema", "core"))
 	if err != nil {
 		_ = readDB.Close()
 		_ = writeDB.Close()
 		os.RemoveAll(tempDir)
-		t.Fatalf("failed to resolve docs/schema/core path: %v", err)
+		t.Fatalf("failed to resolve schema/core path: %v", err)
 	}
 
 	entries, err := os.ReadDir(schemaDir)

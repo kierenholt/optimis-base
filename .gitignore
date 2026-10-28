@@ -41,3 +41,6 @@ Thumbs.db
 .idea/
 ignore
 user-stories
+
+
+.data/qa_core.db

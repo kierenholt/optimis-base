@@ -16,6 +16,7 @@
 * `npm run build`: Build the embedded React UI (`build:ui`) and compile the Go Host binary (`build:go`).
 * `npm run build:ui`: Build the Vite + React Host UI Shell into `internal/host/ui_dist`.
 * `npm run build:go`: Compile the Go Host server binary into `bin/mis-server`.
+* `npm run seed:qa`: Build and populate a comprehensive 45-table synthetic UK All-Through school QA database (`<DATA_DIR_PATH>/qa_core.db` by default, or `--overwrite-dev-db` / `--db <path>`) with ~1,108 pupils across 42 registration forms, 95 staff, 889 households, a 2-week rolling timetable, and 20 days of statutory `AM`/`PM` & lesson attendance (`go run ./cmd/mis-seed-qa`).
 * `npm test -- <test-name> local 1`: Run a single local test sequentially.
 * `npm run test:go -- [step-or-test-name]`: Run Go Host / Core DAL unit and integration tests.
 * `npm run test:e2e`: Run Playwright E2E test suite.

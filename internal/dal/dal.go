@@ -87,7 +87,7 @@ func resolveSchemaDir() (string, error) {
 	if !ok {
 		return "", errors.New("failed to resolve caller path for CoreDAL schema directory")
 	}
-	schemaDir := filepath.Clean(filepath.Join(filepath.Dir(callerFile), "..", "..", "docs", "schema", "core"))
+	schemaDir := filepath.Clean(filepath.Join(filepath.Dir(callerFile), "..", "..", "schema", "core"))
 	info, err := os.Stat(schemaDir)
 	if err != nil || !info.IsDir() {
 		return "", fmt.Errorf("mandatory schema directory not found at %s: %w", schemaDir, err)

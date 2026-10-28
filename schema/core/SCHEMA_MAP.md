@@ -1,6 +1,6 @@
 # Optimis `core.db` Schema Map — Agent Navigation Entrypoint
 
-> **Agent Instructions:** Always read this file **first** before inspecting or modifying database tables. Every domain SQL file in [`docs/schema/core/`](./) is under **235 lines** so you can read any domain in a single `view_file` call.
+> **Agent Instructions:** Always read this file **first** before inspecting or modifying database tables. Every domain SQL file in [`schema/core/`](./) is under **235 lines** so you can read any domain in a single `view_file` call.
 
 ---
 
