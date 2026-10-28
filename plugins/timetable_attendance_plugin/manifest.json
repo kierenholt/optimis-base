@@ -17,6 +17,8 @@
       "scopes": [
         "dal.groups.read:own_groups",
         "dal.pupils.read:own_groups",
+        "dal.sen.read:own_groups",
+        "dal.medical.read:own_groups",
         "dal.attendance.read:own_groups"
       ],
       "mutates": false

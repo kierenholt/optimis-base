@@ -247,7 +247,25 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
 
     await expect(page.getByTestId('host-shell')).toBeVisible();
 
-    // 3. Switch to the Behaviour plugin workspace tab and log a Merit (+3) and an Incident (-2, containing a third-party pupil name in incident_notes)
+    // 3. Place the `behaviour_summary` Mini-Iframe Widget onto the Home Dashboard Grid FIRST so it is mounted before logging events (verifying 1H `mis:plugin:invalidated` live auto-refresh)
+    const editModeToggleBtn = page.getByTestId('dashboard-edit-mode-toggle-btn');
+    await expect(editModeToggleBtn).toBeVisible();
+    await editModeToggleBtn.click();
+
+    const placeBehaviourWidgetBtn = page.getByTestId('place-widget-btn-behaviour_summary');
+    await expect(placeBehaviourWidgetBtn).toBeVisible();
+    await placeBehaviourWidgetBtn.click();
+
+    await editModeToggleBtn.click();
+
+    const widgetIframeEl = page.getByTestId('widget-iframe-behaviour_summary');
+    await expect(widgetIframeEl).toBeVisible();
+    await expect(widgetIframeEl).toHaveAttribute('sandbox', 'allow-scripts');
+
+    const widgetFrame = page.frameLocator('[data-testid="widget-iframe-behaviour_summary"]');
+    await expect(widgetFrame.getByTestId('widget-behaviour-merits')).toHaveText('0');
+
+    // 4. Switch to the Behaviour plugin workspace tab and log a Merit (+3) and an Incident (-2, containing a third-party pupil name in incident_notes)
     const behaviourNavBtn = page.getByTestId('nav-item-plugin-uk.org.optimis.behaviour');
     await expect(behaviourNavBtn).toBeVisible();
     await behaviourNavBtn.click();
@@ -273,6 +291,11 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     await categoryInput.fill('Excellence in Mathematics');
     await pointsInput.fill('3');
     await notesInput.fill('Completed advanced polynomial factorisation extension independently.');
+
+    // Verify 1H: RPC args do not leak staff_id (identity is propagated via X-MIS-Staff-ID header by Host UI Shell)
+    const rawArgsAttr = (await logBtn.getAttribute('data-mis-args')) || '{}';
+    expect(JSON.parse(rawArgsAttr)).not.toHaveProperty('staff_id');
+
     await logBtn.click();
 
     await expect(behaviourFrame.getByTestId('behaviour-merit-total')).toHaveText('3');
@@ -294,26 +317,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
       'Argued loudly with third-party pupil Draco Malfoy'
     );
 
-    // 4. Place the `behaviour_summary` Mini-Iframe Widget onto the Home Dashboard Grid and verify live points + student deep-link
-    const editModeToggleBtn = page.getByTestId('dashboard-edit-mode-toggle-btn');
-    await expect(editModeToggleBtn).toBeVisible();
-    await editModeToggleBtn.click();
-
-    const placeBehaviourWidgetBtn = page.getByTestId('place-widget-btn-behaviour_summary');
-    await expect(placeBehaviourWidgetBtn).toBeVisible();
-    await placeBehaviourWidgetBtn.click();
-
-    await editModeToggleBtn.click();
-
-    const widgetIframeEl = page.getByTestId('widget-iframe-behaviour_summary');
-    await expect(widgetIframeEl).toBeVisible();
-    await expect(widgetIframeEl).toHaveAttribute('sandbox', 'allow-scripts');
-
-    const widgetFrame = page.frameLocator('[data-testid="widget-iframe-behaviour_summary"]');
-    const widgetRefreshBtn = widgetFrame.getByTestId('widget-behaviour-refresh-btn');
-    await expect(widgetRefreshBtn).toBeVisible();
-    await widgetRefreshBtn.click();
-
+    // 5. Verify 1H: The mounted `behaviour_summary` Mini-Iframe Widget automatically refreshed via `mis:plugin:invalidated` without clicking Refresh
     await expect(widgetFrame.getByTestId('widget-behaviour-merits')).toHaveText('3');
     await expect(widgetFrame.getByTestId('widget-behaviour-demerits')).toHaveText('-2');
     await expect(widgetFrame.getByTestId('widget-behaviour-net')).toHaveText('1');
@@ -336,7 +340,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
       `student:${m1Seed.active_pupil_id} -> uk.org.optimis.test`
     );
 
-    // 5. Switch to System Admin / DPO persona, run UK GDPR SAR Export, and redact third-party pupil name ("Draco Malfoy") in `incident_notes`
+    // 6. Switch to System Admin / DPO persona, run UK GDPR SAR Export, and redact third-party pupil name ("Draco Malfoy") in `incident_notes`
     const switchAdminRes = await request.post('/api/auth/persona', {
       data: { staff_id: personaSeed.admin_staff_id },
     });
@@ -400,7 +404,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
       throw new Error('Missing mandatory seeded state');
     }
 
-    // 1. Verify `:own_groups` scoping: Teacher (`m1Seed.teacher_staff_id`) attempting to log or read behaviour for a pupil in another teacher's group (`m1Seed.other_group_pupil_id`) MUST fail fast
+    // 1. Verify strict `:own_groups` scoping (`strict_own_groups: true`): Teacher (`m1Seed.teacher_staff_id`) attempting to log behaviour for a pupil in another teacher's group (`m1Seed.other_group_pupil_id`) under strict_own_groups MUST fail fast
     const unauthorizedLogRes = await request.post(
       `/api/plugins/uk.org.optimis.behaviour/rpc/log_behaviour_event?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
@@ -411,10 +415,11 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
             pupil_id: m1Seed.other_group_pupil_id,
             academic_year_id: m1Seed.academic_year_id,
             reference_date: m1Seed.reference_date,
+            strict_own_groups: true,
             event_type: 'INCIDENT',
             category: 'Homework Incomplete',
             points: -1,
-            incident_notes: 'Attempted cross-group write by teacher not teaching this pupil.',
+            incident_notes: 'Attempted cross-group write by teacher under strict_own_groups.',
           },
         },
       }
@@ -424,7 +429,33 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     expect(unauthorizedLogBody.ok).toBe(false);
     expect(unauthorizedLogBody.error_code).toContain('access denied under own_groups scope');
 
-    // Also verify transferred pupil (effective_to < reference_date) is blocked under `:own_groups`
+    // 1B: Verify Hierarchical Scope Subsumption: HoD (`personaSeed.hod_staff_id`, who holds `dal.pupils.read:all`) calling the `:own_groups` endpoint WITH `strict_own_groups: true` succeeds because `:all` subsumes `:own_groups`
+    const hodLogRes = await request.post(
+      `/api/plugins/uk.org.optimis.behaviour/rpc/log_behaviour_event?staff_id=${encodeURIComponent(
+        personaSeed.hod_staff_id
+      )}`,
+      {
+        data: {
+          args: {
+            pupil_id: m1Seed.other_group_pupil_id,
+            academic_year_id: m1Seed.academic_year_id,
+            reference_date: m1Seed.reference_date,
+            strict_own_groups: true,
+            event_type: 'INCIDENT',
+            category: 'Corridor Conduct',
+            points: -1,
+            incident_notes: 'HoD logged corridor conduct incident via :all scope subsumption.',
+          },
+        },
+      }
+    );
+    expect(hodLogRes.ok()).toBe(true);
+    const hodLogBody = await hodLogRes.json();
+    expect(hodLogBody.ok).toBe(true);
+    // 1F: Verify UUID v4 primary key generated via ctx.crypto.uuid()
+    expect(hodLogBody.data.logged_event_id).toMatch(/^bev_[0-9a-f-]{36}$/);
+
+    // Also verify group-transferred pupil (group_pupil_memberships.effective_to < reference_date) is blocked under `strict_own_groups: true`
     const transferredSummaryRes = await request.post(
       `/api/plugins/uk.org.optimis.behaviour/rpc/get_pupil_behaviour_summary?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
@@ -435,6 +466,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
             pupil_id: m1Seed.transferred_pupil_id,
             academic_year_id: m1Seed.academic_year_id,
             reference_date: m1Seed.reference_date,
+            strict_own_groups: true,
           },
         },
       }
@@ -444,7 +476,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     expect(transferredSummaryBody.ok).toBe(false);
     expect(transferredSummaryBody.error_code).toContain('access denied under own_groups scope');
 
-    // 2. Teacher logs two valid events for own-group `active_pupil_id`, then Admin executes `purge_pupil_data` and verifies 0 orphaned records remain
+    // 2. Teacher logs a valid event for own-group `active_pupil_id`, verifies batch rollup (`1E` `get_by_ids_batch`), then Admin executes auto-bound `export_pupil_data` & `purge_pupil_data` (`1G`) and verifies 0 orphaned records remain
     const logValidRes = await request.post(
       `/api/plugins/uk.org.optimis.behaviour/rpc/log_behaviour_event?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
@@ -464,6 +496,27 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
       }
     );
     expect(logValidRes.ok()).toBe(true);
+
+    // 1E: Verify batch pupil behaviour lookup using `ctx.dal.pupils.get_by_ids_batch`
+    const batchSummaryRes = await request.post(
+      `/api/plugins/uk.org.optimis.behaviour/rpc/get_pupil_behaviour_summary?staff_id=${encodeURIComponent(
+        m1Seed.teacher_staff_id
+      )}`,
+      {
+        data: {
+          args: {
+            pupil_ids: [m1Seed.active_pupil_id, m1Seed.other_group_pupil_id],
+            academic_year_id: m1Seed.academic_year_id,
+            reference_date: m1Seed.reference_date,
+          },
+        },
+      }
+    );
+    expect(batchSummaryRes.ok()).toBe(true);
+    const batchSummaryBody = await batchSummaryRes.json();
+    expect(batchSummaryBody.ok).toBe(true);
+    expect(Array.isArray(batchSummaryBody.data.pupils)).toBe(true);
+    expect(batchSummaryBody.data.pupils.length).toBe(2);
 
     const exportBeforePurgeRes = await request.post(
       `/api/plugins/uk.org.optimis.behaviour/rpc/export_pupil_data?staff_id=${encodeURIComponent(

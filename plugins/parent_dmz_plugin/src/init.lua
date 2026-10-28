@@ -1,79 +1,84 @@
-local function json_escape(str)
-  local s = tostring(str or "")
-  s = string.gsub(s, '\\', '\\\\')
-  s = string.gsub(s, '"', '\\"')
-  s = string.gsub(s, '\n', '\\n')
-  s = string.gsub(s, '\r', '\\r')
-  s = string.gsub(s, '\t', '\\t')
-  return '"' .. s .. '"'
-end
-
-local function parse_inbox_submissions_json(body, fallback_date)
-  local submissions = {}
-  local arr_str = string.match(body or "", '"submissions"%s*:%s*%[(.*)%]') or ""
-  for obj_str in string.gmatch(arr_str, "{([^{}]+)}") do
-    local sub_id = string.match(obj_str, '"submission_id"%s*:%s*"([^"]*)"') or ""
-    local pupil_id = string.match(obj_str, '"pupil_id"%s*:%s*"([^"]*)"') or ""
-    local guardian_id = string.match(obj_str, '"submitted_by_guardian_person_id"%s*:%s*"([^"]*)"') or ""
-    local sub_type = string.match(obj_str, '"submission_type"%s*:%s*"([^"]*)"') or "ABSENCE_NOTICE"
-    local sub_date = string.match(obj_str, '"date"%s*:%s*"([^"]*)"') or fallback_date
-    local session = string.match(obj_str, '"session"%s*:%s*"([^"]*)"') or "AM"
-    local reason = string.match(obj_str, '"reason"%s*:%s*"([^"]*)"') or ""
-    if sub_id ~= "" and pupil_id ~= "" then
-      table.insert(submissions, {
-        submission_id = sub_id,
-        pupil_id = pupil_id,
-        submitted_by_guardian_person_id = guardian_id,
-        submission_type = sub_type,
-        date = sub_date,
-        session = session,
-        reason = reason
-      })
-    end
-  end
-  return submissions
-end
-
 function pull_dmz_inbox(ctx, args)
-  local academic_year_id = args.academic_year_id or "ay_2026_2027"
-  local reference_date = args.reference_date or "2026-10-28"
+  local school_ctx = ctx.school or {}
+  local academic_year_id = args.academic_year_id or school_ctx.academic_year_id
+  local reference_date = args.reference_date or school_ctx.reference_date
+  if not academic_year_id or academic_year_id == "" then
+    error("missing mandatory parameter: academic_year_id")
+  end
+  if not reference_date or reference_date == "" then
+    error("missing mandatory parameter: reference_date")
+  end
 
   -- Structural Safety Invariant (§9.2 & §10.1): Outbound HTTP executes BEFORE opening any WriteDB transaction
   local resp = ctx.http.post(
     "https://dmz.parent.optimis.org.uk/v1/inbox/pull",
     { ["Content-Type"] = "application/json" },
-    "{}"
+    ctx.json.encode({})
   )
 
-  if resp.status < 200 or resp.status >= 300 then
-    error("DMZ_INBOX_PULL_FAILED: status " .. tostring(resp.status) .. " body=" .. tostring(resp.body))
+  if not resp.ok then
+    error(
+      "DMZ_INBOX_PULL_FAILED: status " ..
+        tostring(resp.status) ..
+        " error=" ..
+        tostring(resp.error_code or resp.error or resp.body)
+    )
   end
 
-  local raw_submissions = parse_inbox_submissions_json(resp.body, reference_date)
+  local decoded = ctx.json.decode(resp.body)
+  local raw_submissions = decoded.submissions or {}
+
+  -- Collect unique pupil IDs across the pulled inbox batch for coarse-grained O(1) DAL lookups (Item 1E)
+  local distinct_pupil_ids = {}
+  local seen_pupil_ids = {}
+  for _, sub in ipairs(raw_submissions) do
+    local pid = sub.pupil_id or ""
+    if pid ~= "" and not seen_pupil_ids[pid] then
+      seen_pupil_ids[pid] = true
+      table.insert(distinct_pupil_ids, pid)
+    end
+  end
+
+  local active_pupils_by_id = {}
+  local pr_guardians_by_pupil = {}
+
+  if #distinct_pupil_ids > 0 then
+    local pupils_batch = ctx.dal.pupils.get_by_ids_batch(distinct_pupil_ids, {
+      reference_date = reference_date,
+      academic_year_id = academic_year_id
+    })
+    for _, p in ipairs(pupils_batch) do
+      active_pupils_by_id[p.id] = p
+    end
+
+    pr_guardians_by_pupil = ctx.dal.guardians.list_for_pupils_batch(distinct_pupil_ids, {
+      reference_date = reference_date,
+      academic_year_id = academic_year_id,
+      require_parental_responsibility = true
+    })
+  end
+
   local processed = {}
   local accepted_count = 0
   local rejected_count = 0
+  local now_utc = ctx.clock.now_utc()
 
   for _, sub in ipairs(raw_submissions) do
-    local ok_pupil, _ = pcall(function()
-      return ctx.dal.pupils.get_by_id(sub.pupil_id, {
-        reference_date = sub.date,
-        academic_year_id = academic_year_id
-      })
-    end)
+    local sub_id = sub.submission_id or ctx.crypto.uuid()
+    local pupil_id = sub.pupil_id or ""
+    local guardian_id = sub.submitted_by_guardian_person_id or ""
+    local sub_type = sub.submission_type or "ABSENCE_NOTICE"
+    local sub_date = sub.date or reference_date
+    local session = sub.session or "AM"
+    local reason = sub.reason or ""
 
     local status = "REJECTED_SAFEGUARDING_BLOCK"
     local guardian_name = ""
 
-    if ok_pupil then
-      local pr_guardians = ctx.dal.guardians.list_for_pupil(sub.pupil_id, {
-        reference_date = sub.date,
-        academic_year_id = academic_year_id,
-        require_parental_responsibility = true
-      })
-
+    if active_pupils_by_id[pupil_id] ~= nil then
+      local pr_guardians = pr_guardians_by_pupil[pupil_id] or {}
       for _, g in ipairs(pr_guardians) do
-        if g.guardian_person_id == sub.submitted_by_guardian_person_id and g.has_parental_responsibility then
+        if g.guardian_person_id == guardian_id and g.has_parental_responsibility then
           status = "ACCEPTED"
           guardian_name = (g.first_name or "") .. " " .. (g.last_name or "")
           break
@@ -88,15 +93,16 @@ function pull_dmz_inbox(ctx, args)
     end
 
     table.insert(processed, {
-      submission_id = sub.submission_id,
-      pupil_id = sub.pupil_id,
-      submitted_by_guardian_person_id = sub.submitted_by_guardian_person_id,
+      submission_id = sub_id,
+      pupil_id = pupil_id,
+      submitted_by_guardian_person_id = guardian_id,
       guardian_name = guardian_name,
-      submission_type = sub.submission_type,
-      date = sub.date,
-      session = sub.session,
-      reason = sub.reason,
-      status = status
+      submission_type = sub_type,
+      date = sub_date,
+      session = session,
+      reason = reason,
+      status = status,
+      processed_at = now_utc
     })
   end
 
@@ -108,8 +114,8 @@ function pull_dmz_inbox(ctx, args)
     ctx.plugin_db.exec(
       [[INSERT INTO plugin_parent_dmz.dmz_inbox_submissions (
           submission_id, pupil_id, submitted_by_guardian_person_id, guardian_name,
-          submission_type, date, session, reason, status, processed_by_staff_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
+          submission_type, date, session, reason, status, processed_by_staff_id, processed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
       {
         item.submission_id,
         item.pupil_id,
@@ -120,7 +126,8 @@ function pull_dmz_inbox(ctx, args)
         item.session,
         item.reason,
         item.status,
-        ctx.caller.staff_id or ""
+        ctx.caller.staff_id or "",
+        item.processed_at
       }
     )
   end
@@ -140,8 +147,16 @@ function push_sanitized_projection(ctx, args)
   if not pupil_id or pupil_id == "" then
     error("missing mandatory parameter: pupil_id")
   end
-  local academic_year_id = args.academic_year_id or "ay_2026_2027"
-  local reference_date = args.reference_date or "2026-10-28"
+
+  local school_ctx = ctx.school or {}
+  local academic_year_id = args.academic_year_id or school_ctx.academic_year_id
+  local reference_date = args.reference_date or school_ctx.reference_date
+  if not academic_year_id or academic_year_id == "" then
+    error("missing mandatory parameter: academic_year_id")
+  end
+  if not reference_date or reference_date == "" then
+    error("missing mandatory parameter: reference_date")
+  end
 
   local pupil = ctx.dal.pupils.get_by_id(pupil_id, {
     reference_date = reference_date,
@@ -155,7 +170,6 @@ function push_sanitized_projection(ctx, args)
   })
 
   local authorized_ids = {}
-  local quoted_guardian_ids = {}
   local redacted_count = 0
 
   for _, g in ipairs(all_guardians) do
@@ -164,7 +178,6 @@ function push_sanitized_projection(ctx, args)
     end
     if g.has_parental_responsibility then
       table.insert(authorized_ids, g.guardian_person_id)
-      table.insert(quoted_guardian_ids, json_escape(g.guardian_person_id))
     end
   end
 
@@ -175,21 +188,24 @@ function push_sanitized_projection(ctx, args)
 
   local present_sessions = att.present_sessions or 0
   local total_sessions = att.total_sessions or 0
-  local authorized_guardians_json = "[" .. table.concat(quoted_guardian_ids, ",") .. "]"
+  local first_name = pupil.preferred_first_name or pupil.first_name
+  local last_name = pupil.preferred_last_name or pupil.last_name
 
-  -- Explicitly strip statutory UPN and confidential household addresses from the outbound DMZ read-projection
-  local sanitized_json = string.format(
-    '{"pupil_id":%s,"first_name":%s,"last_name":%s,"academic_year_id":%s,"reference_date":%s,"present_sessions":%d,"total_sessions":%d,"authorized_guardian_ids":%s,"redacted_confidential_address_count":%d}',
-    json_escape(pupil.id),
-    json_escape(pupil.first_name),
-    json_escape(pupil.last_name),
-    json_escape(academic_year_id),
-    json_escape(reference_date),
-    present_sessions,
-    total_sessions,
-    authorized_guardians_json,
-    redacted_count
-  )
+  -- Explicitly strip statutory UPN/ULN and confidential household addresses from the outbound DMZ read-projection
+  local projection_payload = {
+    pupil_id = pupil.id,
+    first_name = first_name,
+    last_name = last_name,
+    academic_year_id = academic_year_id,
+    reference_date = reference_date,
+    present_sessions = present_sessions,
+    total_sessions = total_sessions,
+    authorized_guardian_ids = authorized_ids,
+    redacted_confidential_address_count = redacted_count
+  }
+
+  local sanitized_json = ctx.json.encode(projection_payload)
+  local authorized_guardians_json = (#authorized_ids > 0) and ctx.json.encode(authorized_ids) or "[]"
 
   -- Structural Safety Invariant (§9.2 & §10.1): Outbound HTTP executes BEFORE opening any WriteDB transaction
   local resp = ctx.http.post(
@@ -198,11 +214,17 @@ function push_sanitized_projection(ctx, args)
     sanitized_json
   )
 
-  if resp.status < 200 or resp.status >= 300 then
-    error("DMZ_PROJECTION_PUSH_FAILED: status " .. tostring(resp.status) .. " body=" .. tostring(resp.body))
+  if not resp.ok then
+    error(
+      "DMZ_PROJECTION_PUSH_FAILED: status " ..
+        tostring(resp.status) ..
+        " error=" ..
+        tostring(resp.error_code or resp.error or resp.body)
+    )
   end
 
   local snap_id = "dmz_proj_" .. pupil.id .. "_" .. reference_date
+  local pushed_at = ctx.clock.now_utc()
   local note_text = "Sanitized DMZ read-projection pushed (UPN stripped; redacted_confidential_addresses=" .. tostring(redacted_count) .. ")"
 
   ctx.plugin_db.exec(
@@ -214,13 +236,13 @@ function push_sanitized_projection(ctx, args)
         id, pupil_id, first_name, last_name, academic_year_id, reference_date,
         present_sessions, total_sessions, authorized_guardian_ids_json,
         redacted_confidential_address_count, upn_stripped, sanitized_payload_json,
-        notes, pushed_by_staff_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)]],
+        notes, pushed_by_staff_id, pushed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)]],
     {
       snap_id,
       pupil.id,
-      pupil.first_name,
-      pupil.last_name,
+      first_name,
+      last_name,
       academic_year_id,
       reference_date,
       present_sessions,
@@ -229,24 +251,15 @@ function push_sanitized_projection(ctx, args)
       redacted_count,
       sanitized_json,
       note_text,
-      ctx.caller.staff_id or ""
+      ctx.caller.staff_id or "",
+      pushed_at
     }
   )
 
   return {
     ok = true,
     data = {
-      projection = {
-        pupil_id = pupil.id,
-        first_name = pupil.first_name,
-        last_name = pupil.last_name,
-        academic_year_id = academic_year_id,
-        reference_date = reference_date,
-        present_sessions = present_sessions,
-        total_sessions = total_sessions,
-        authorized_guardian_ids = authorized_ids,
-        redacted_confidential_address_count = redacted_count
-      },
+      projection = projection_payload,
       upn_stripped = true,
       sanitized_payload_json = sanitized_json
     }

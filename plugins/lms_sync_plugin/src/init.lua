@@ -111,21 +111,28 @@ function on_membership_changed(ctx, args)
     reference_date = effective_from
   })
 
-  local pupil_ids_json = {}
+  local pupil_ids = {}
+  local roster_pupils = {}
   for _, p in ipairs(roster) do
-    table.insert(pupil_ids_json, '"' .. tostring(p.id) .. '"')
+    table.insert(pupil_ids, tostring(p.id))
+    table.insert(roster_pupils, {
+      pupil_id = tostring(p.id),
+      preferred_first_name = tostring(p.preferred_first_name or p.first_name or ""),
+      preferred_last_name = tostring(p.preferred_last_name or p.last_name or ""),
+      nc_year_group = tostring(p.nc_year_group or "")
+    })
   end
 
-  local outbound_body = string.format(
-    '{"course_group_id":"%s","academic_year_id":"%s","triggered_by_pupil_id":"%s","membership_id":"%s","effective_from":"%s","roster_count":%d,"pupil_ids":[%s]}',
-    group_id,
-    academic_year_id,
-    pupil_id,
-    membership_id,
-    effective_from,
-    #roster,
-    table.concat(pupil_ids_json, ",")
-  )
+  local outbound_body = ctx.json.encode({
+    course_group_id = group_id,
+    academic_year_id = academic_year_id,
+    triggered_by_pupil_id = pupil_id,
+    membership_id = membership_id,
+    effective_from = effective_from,
+    roster_count = #roster,
+    pupil_ids = pupil_ids,
+    pupils = roster_pupils
+  })
 
   -- 2. Structural Safety Invariant (§9.2 & §10.1): Execute outbound HTTP BEFORE opening any SQLite write transaction
   local resp = ctx.http.post(
@@ -143,9 +150,17 @@ function on_membership_changed(ctx, args)
   local external_sync_id = ""
   local sync_notes = ""
 
-  if http_status >= 200 and http_status < 300 then
+  if resp.ok and http_status >= 200 and http_status < 300 then
     sync_status = "SYNCED"
-    external_sync_id = string.match(resp.body or "", '"sync_receipt_id"%s*:%s*"([^"]+)"') or "gclass_sync_ok"
+    if resp.body and resp.body ~= "" then
+      local decoded = ctx.json.decode(resp.body)
+      if type(decoded) == "table" and decoded.sync_receipt_id then
+        external_sync_id = tostring(decoded.sync_receipt_id)
+      end
+    end
+    if external_sync_id == "" then
+      external_sync_id = "gclass_sync_ok"
+    end
     sync_notes = string.format(
       "Google Classroom roster sync succeeded for group %s (pupil %s, roster_count=%d, receipt=%s)",
       group_id,
@@ -156,15 +171,27 @@ function on_membership_changed(ctx, args)
   else
     sync_status = "FAILED"
     external_sync_id = ""
-    sync_notes = string.format(
-      "Google Classroom roster sync failed for group %s (pupil %s, http_status=%d)",
-      group_id,
-      pupil_id,
-      http_status
-    )
+    local err_code = tostring(resp.error_code or "")
+    if err_code ~= "" then
+      sync_notes = string.format(
+        "Google Classroom roster sync failed for group %s (pupil %s, http_status=%d, error_code=%s)",
+        group_id,
+        pupil_id,
+        http_status,
+        err_code
+      )
+    else
+      sync_notes = string.format(
+        "Google Classroom roster sync failed for group %s (pupil %s, http_status=%d)",
+        group_id,
+        pupil_id,
+        http_status
+      )
+    end
   end
 
-  local log_id = "lms_log_" .. (ctx.caller.request_id or "wrk") .. "_" .. group_id .. "_" .. pupil_id
+  local log_id = "lms_log_" .. ctx.crypto.uuid()
+  local synced_at = ctx.clock.now_utc()
 
   -- 3. Persist sync status audit record into plugin_lms_sync.db
   ctx.plugin_db.exec(
@@ -172,8 +199,8 @@ function on_membership_changed(ctx, args)
         id, event_name, hop, membership_id, group_id, pupil_id,
         academic_year_id, effective_from, effective_to, roster_count,
         target_url, http_status, status, external_sync_id,
-        caller_type, caller_staff_id, sync_notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
+        caller_type, caller_staff_id, sync_notes, synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
     {
       log_id,
       event_name,
@@ -191,7 +218,8 @@ function on_membership_changed(ctx, args)
       external_sync_id,
       ctx.caller.type or "SYSTEM",
       ctx.caller.staff_id or "",
-      sync_notes
+      sync_notes,
+      synced_at
     }
   )
 
@@ -204,7 +232,8 @@ function on_membership_changed(ctx, args)
       external_sync_id = external_sync_id,
       group_id = group_id,
       pupil_id = pupil_id,
-      roster_count = #roster
+      roster_count = #roster,
+      synced_at = synced_at
     }
   }
 end

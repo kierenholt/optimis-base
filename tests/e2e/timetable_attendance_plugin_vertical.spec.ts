@@ -244,6 +244,7 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
     const rowPupil1 = pluginFrame.getByTestId(`roster-row-${seeded.active_pupil_id}`);
     await expect(rowPupil1).toBeVisible();
     await expect(rowPupil1).toContainText('Ada Lovelace');
+    await expect(rowPupil1).toContainText('[Y10]');
     await expect(pluginFrame.getByTestId(`sen-flag-${seeded.active_pupil_id}`)).toContainText('E (ASD)');
     await expect(pluginFrame.getByTestId(`medical-flag-${seeded.active_pupil_id}`)).toContainText(
       'Anaphylaxis (Peanut Allergy)'
@@ -254,6 +255,7 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
     const rowPupil2 = pluginFrame.getByTestId(`roster-row-${seeded.second_active_pupil_id}`);
     await expect(rowPupil2).toBeVisible();
     await expect(rowPupil2).toContainText('Grace Turing');
+    await expect(rowPupil2).toContainText('[Y10]');
     await expect(pluginFrame.getByTestId(`sen-flag-${seeded.second_active_pupil_id}`)).toContainText('K (SPLD)');
 
     // Transferred pupil (effective_to < reference_date) and other teacher's pupil MUST NOT appear
@@ -283,6 +285,7 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
     await expect(submissionReceipt).toContainText('BATCH_SAVED:AM');
     await expect(submissionReceipt).toContainText('Upserted: 2');
     await expect(submissionReceipt).toContainText('ars_');
+    await expect(submissionReceipt).toContainText('Timestamp:');
 
     // Verify persisted attendance marks are reflected on the roster rows
     await expect(pluginFrame.getByTestId(`persisted-mark-badge-${seeded.active_pupil_id}`)).toContainText('/');

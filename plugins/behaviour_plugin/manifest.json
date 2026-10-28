@@ -1,7 +1,7 @@
 {
   "id": "uk.org.optimis.behaviour",
   "title": "Behaviour & Pastoral Points",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "core_dal_version": "~1.0",
   "max_concurrency": 4,
   "max_memory_mb": 32,
@@ -25,16 +25,6 @@
     "get_pupil_behaviour_summary": {
       "scopes": ["dal.pupils.read:own_groups"],
       "mutates": false,
-      "timeout_ms": 2500
-    },
-    "export_pupil_data": {
-      "scopes": ["dal.pupils.read:all"],
-      "mutates": false,
-      "timeout_ms": 2500
-    },
-    "purge_pupil_data": {
-      "scopes": ["dal.pupils.read:all"],
-      "mutates": true,
       "timeout_ms": 2500
     }
   },

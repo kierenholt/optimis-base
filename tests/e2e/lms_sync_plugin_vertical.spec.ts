@@ -243,21 +243,35 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     expect(pluginSub.state).toBe('ACTIVE');
     expect(pluginSub.workers?.on_membership_changed?.events).toContain('core.group.membership_changed');
 
-    // 2. Authenticate as Admin (who holds dal.groups.write:all & dal.groups.read:all)
-    const switchAdminRes = await request.post('/api/auth/persona', {
-      data: { staff_id: personaSeeded.admin_staff_id },
+    // 2. Authenticate as HoD (who now holds dal.groups.write:all & dal.groups.read:all per 1C)
+    const switchHodRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeeded.hod_staff_id },
     });
-    expect(switchAdminRes.ok()).toBe(true);
-    const adminSessionBody = await switchAdminRes.json();
+    expect(switchHodRes.ok()).toBe(true);
+    const hodSessionBody = await switchHodRes.json();
 
     await page.context().addCookies([
       {
         name: 'mis_session',
-        value: adminSessionBody.session_token,
+        value: hodSessionBody.session_token,
         url: 'http://127.0.0.1:18080',
         sameSite: 'Strict',
       },
     ]);
+
+    // Verify 1G: manifest.json endpoints do not duplicate export_pupil_data / purge_pupil_data in UI config
+    const uiConfigRes = await request.get(
+      `/api/system/ui-config?staff_id=${encodeURIComponent(personaSeeded.hod_staff_id)}`
+    );
+    expect(uiConfigRes.ok()).toBe(true);
+    const uiConfigBody = await uiConfigRes.json();
+    const lmsPluginNav = uiConfigBody.plugins.find((p: { id: string }) => p.id === PLUGIN_ID);
+    expect(lmsPluginNav).toBeDefined();
+    expect(lmsPluginNav.permitted_methods).toEqual(
+      expect.arrayContaining(['upsert_pupil_membership', 'get_group_roster', 'list_sync_logs'])
+    );
+    expect(lmsPluginNav.permitted_methods).not.toContain('export_pupil_data');
+    expect(lmsPluginNav.permitted_methods).not.toContain('purge_pupil_data');
 
     // 3. Open Host UI Shell and navigate to the Google Classroom LMS Sync plugin
     const params = new URLSearchParams({
@@ -266,7 +280,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
       other_group_id: m1Seeded.other_group_id,
       reference_date: m1Seeded.reference_date,
       academic_year_id: m1Seeded.academic_year_id,
-      staff_id: personaSeeded.admin_staff_id,
+      staff_id: personaSeeded.hod_staff_id,
     });
     await page.goto(`/?${params.toString()}`);
     await expect(page.getByTestId('host-shell')).toBeVisible();

@@ -5,16 +5,33 @@ local function trim(s)
   return (s:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
-local function build_scope_opts(args, fallback_date)
-  local opts = {}
+local function resolve_school_defaults(ctx)
+  local school = (ctx and ctx.school) or {}
+  return {
+    urn = trim(school.urn),
+    academic_year_id = trim(school.academic_year_id),
+    reference_date = trim(school.reference_date)
+  }
+end
+
+local function build_scope_opts(ctx, args, fallback_date)
+  local school_defaults = resolve_school_defaults(ctx)
+  local opts = {
+    strict_own_groups = true
+  }
   if type(args) == "table" then
     if trim(args.academic_year_id) ~= "" then
       opts.academic_year_id = trim(args.academic_year_id)
+    elseif school_defaults.academic_year_id ~= "" then
+      opts.academic_year_id = school_defaults.academic_year_id
     end
+
     if trim(args.reference_date) ~= "" then
       opts.reference_date = trim(args.reference_date)
     elseif trim(fallback_date) ~= "" then
       opts.reference_date = trim(fallback_date)
+    elseif school_defaults.reference_date ~= "" then
+      opts.reference_date = school_defaults.reference_date
     end
   end
   return opts
@@ -53,7 +70,7 @@ function load_staff_timetable(ctx, args)
     error("missing mandatory parameter: day_of_week_id")
   end
 
-  local opts = build_scope_opts(args, args.date)
+  local opts = build_scope_opts(ctx, args, args.date)
   local slots = ctx.dal.groups.get_staff_timetable_slots(
     target_staff_id,
     cycle_week,
@@ -75,6 +92,8 @@ function load_staff_timetable(ctx, args)
       staff_id = target_staff_id,
       cycle_week = cycle_week,
       day_of_week_id = day_of_week_id,
+      academic_year_id = opts.academic_year_id or "",
+      reference_date = opts.reference_date or "",
       resolved_session = resolved_session,
       slots = slots
     }
@@ -91,22 +110,26 @@ function load_slot_roster_with_flags(ctx, args)
     error("missing mandatory parameter: group_id")
   end
 
+  local school_defaults = resolve_school_defaults(ctx)
   local date = trim(args.date)
   if date == "" then
     date = trim(args.reference_date)
+  end
+  if date == "" then
+    date = school_defaults.reference_date
   end
   if date == "" then
     error("missing mandatory parameter: date")
   end
 
   local session = validate_statutory_session(args.session)
-  local opts = build_scope_opts(args, date)
+  local opts = build_scope_opts(ctx, args, date)
 
   local pupils = ctx.dal.pupils.list_by_group(group_id, opts)
   local pupil_ids = {}
   if type(pupils) == "table" then
     for i = 1, #pupils do
-      pupil_ids[i] = pupils[i].id
+      pupil_ids[i] = pupils[i].pupil_id or pupils[i].id
     end
   end
 
@@ -130,23 +153,27 @@ function load_slot_roster_with_flags(ctx, args)
   if type(pupils) == "table" then
     for i = 1, #pupils do
       local p = pupils[i]
-      local pid = p.id
+      local pid = p.pupil_id or p.id
       local flag_info = flags_by_pupil[pid] or {}
       local med_list = flag_info.medical_conditions or {}
       local existing = marks_by_pupil[pid]
 
-      local first_name = p.first_name or p.legal_first_name or ""
-      local last_name = p.last_name or p.legal_last_name or ""
+      local legal_first = p.legal_first_name or p.first_name or ""
+      local legal_last = p.legal_last_name or p.last_name or ""
+      local pref_first = p.preferred_first_name or legal_first
+      local pref_last = p.preferred_last_name or legal_last
+
       local row = {
         pupil_id = pid,
         upn = p.upn or "",
-        first_name = first_name,
-        last_name = last_name,
-        legal_first_name = first_name,
-        legal_last_name = last_name,
-        preferred_first_name = p.preferred_first_name or first_name,
-        preferred_last_name = p.preferred_last_name or last_name,
+        first_name = legal_first,
+        last_name = legal_last,
+        legal_first_name = legal_first,
+        legal_last_name = legal_last,
+        preferred_first_name = pref_first,
+        preferred_last_name = pref_last,
         nc_year_group = p.nc_year_group or "",
+        enrolment_status = p.enrolment_status or "C",
         sen_provision_code = flag_info.sen_provision_code or "N",
         primary_sen_need_code = flag_info.primary_sen_need_code or "",
         teaching_strategies = flag_info.teaching_strategies or "",
@@ -170,6 +197,7 @@ function load_slot_roster_with_flags(ctx, args)
       group_id = group_id,
       date = date,
       session = session,
+      academic_year_id = opts.academic_year_id or "",
       roster = roster
     }
   }
@@ -185,9 +213,13 @@ function submit_session_attendance_batch(ctx, args)
     error("missing mandatory parameter: group_id")
   end
 
+  local school_defaults = resolve_school_defaults(ctx)
   local date = trim(args.date)
   if date == "" then
     date = trim(args.reference_date)
+  end
+  if date == "" then
+    date = school_defaults.reference_date
   end
   if date == "" then
     error("missing mandatory parameter: date")
@@ -198,7 +230,7 @@ function submit_session_attendance_batch(ctx, args)
     error("missing mandatory parameter: marks must be a non-empty array")
   end
 
-  local opts = build_scope_opts(args, date)
+  local opts = build_scope_opts(ctx, args, date)
   local upsert_res = ctx.dal.attendance.upsert_session_batch(
     group_id,
     date,
@@ -208,6 +240,10 @@ function submit_session_attendance_batch(ctx, args)
   )
 
   local persisted_marks = ctx.dal.attendance.get_group_session(group_id, date, session, opts)
+  local submitted_at_utc = ""
+  if ctx and ctx.clock and type(ctx.clock.now_utc) == "function" then
+    submitted_at_utc = ctx.clock.now_utc()
+  end
 
   return {
     ok = true,
@@ -218,6 +254,7 @@ function submit_session_attendance_batch(ctx, args)
       group_id = upsert_res.group_id,
       date = upsert_res.date,
       session = upsert_res.session,
+      submitted_at_utc = submitted_at_utc,
       persisted_marks = persisted_marks
     }
   }

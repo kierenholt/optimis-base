@@ -46,20 +46,6 @@
       ],
       "mutates": false,
       "timeout_ms": 2500
-    },
-    "export_pupil_data": {
-      "scopes": [
-        "dal.pupils.read:all"
-      ],
-      "mutates": false,
-      "timeout_ms": 2500
-    },
-    "purge_pupil_data": {
-      "scopes": [
-        "dal.pupils.read:all"
-      ],
-      "mutates": true,
-      "timeout_ms": 2500
     }
   }
 }
