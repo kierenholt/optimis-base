@@ -21,13 +21,20 @@ import (
 var pluginAliasPattern = regexp.MustCompile(`^plugin_[a-z0-9_]+$`)
 
 type Pupil struct {
-	ID             string  `json:"id"`
-	UPN            string  `json:"upn"`
-	FirstName      string  `json:"first_name"`
-	LastName       string  `json:"last_name"`
-	AcademicYearID string  `json:"academic_year_id"`
-	EffectiveFrom  string  `json:"effective_from"`
-	EffectiveTo    *string `json:"effective_to,omitempty"`
+	ID                 string  `json:"id"`
+	PupilID            string  `json:"pupil_id,omitempty"`
+	UPN                string  `json:"upn"`
+	FirstName          string  `json:"first_name"`
+	LastName           string  `json:"last_name"`
+	LegalFirstName     string  `json:"legal_first_name,omitempty"`
+	LegalLastName      string  `json:"legal_last_name,omitempty"`
+	PreferredFirstName string  `json:"preferred_first_name,omitempty"`
+	PreferredLastName  string  `json:"preferred_last_name,omitempty"`
+	NCYearGroup        string  `json:"nc_year_group,omitempty"`
+	EnrolmentStatus    string  `json:"enrolment_status,omitempty"`
+	AcademicYearID     string  `json:"academic_year_id"`
+	EffectiveFrom      string  `json:"effective_from"`
+	EffectiveTo        *string `json:"effective_to,omitempty"`
 }
 
 type SeedPupilInput struct {
@@ -449,12 +456,19 @@ func (d *CoreDAL) SeedPupil(ctx context.Context, in SeedPupilInput) (*Pupil, err
 	})
 
 	return &Pupil{
-		ID:             pupilID,
-		UPN:            in.UPN,
-		FirstName:      in.FirstName,
-		LastName:       in.LastName,
-		AcademicYearID: in.AcademicYearID,
-		EffectiveFrom:  in.EffectiveFrom,
+		ID:                 pupilID,
+		PupilID:            pupilID,
+		UPN:                in.UPN,
+		FirstName:          in.FirstName,
+		LastName:           in.LastName,
+		LegalFirstName:     in.FirstName,
+		LegalLastName:      in.LastName,
+		PreferredFirstName: in.FirstName,
+		PreferredLastName:  in.LastName,
+		NCYearGroup:        "7",
+		EnrolmentStatus:    "C",
+		AcademicYearID:     in.AcademicYearID,
+		EffectiveFrom:      in.EffectiveFrom,
 	}, nil
 }
 
@@ -499,7 +513,11 @@ func (d *CoreDAL) GetPupilByID(ctx context.Context, pupilID string) (*Pupil, err
 
 	row := d.readDB.QueryRowContext(
 		ctx,
-		`SELECT p.id, p.upn, per.legal_first_name, per.legal_last_name, enr.academic_year_id, enr.effective_from, enr.effective_to
+		`SELECT p.id, p.upn, per.legal_first_name, per.legal_last_name,
+		        COALESCE(NULLIF(TRIM(per.preferred_first_name), ''), per.legal_first_name),
+		        COALESCE(NULLIF(TRIM(per.preferred_last_name), ''), per.legal_last_name),
+		        COALESCE(enr.nc_year_group, ''), COALESCE(enr.enrolment_status, 'C'),
+		        enr.academic_year_id, enr.effective_from, enr.effective_to
 		 FROM pupils p
 		 JOIN persons per ON per.id = p.person_id
 		 JOIN pupil_year_enrolments enr ON enr.pupil_id = p.id
@@ -511,12 +529,20 @@ func (d *CoreDAL) GetPupilByID(ctx context.Context, pupilID string) (*Pupil, err
 
 	var p Pupil
 	var effTo sql.NullString
-	if err := row.Scan(&p.ID, &p.UPN, &p.FirstName, &p.LastName, &p.AcademicYearID, &p.EffectiveFrom, &effTo); err != nil {
+	if err := row.Scan(
+		&p.ID, &p.UPN, &p.FirstName, &p.LastName,
+		&p.PreferredFirstName, &p.PreferredLastName,
+		&p.NCYearGroup, &p.EnrolmentStatus,
+		&p.AcademicYearID, &p.EffectiveFrom, &effTo,
+	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("pupil not found: %s", pupilID)
 		}
 		return nil, fmt.Errorf("failed to query pupil: %w", err)
 	}
+	p.PupilID = p.ID
+	p.LegalFirstName = p.FirstName
+	p.LegalLastName = p.LastName
 	if effTo.Valid {
 		val := effTo.String
 		p.EffectiveTo = &val

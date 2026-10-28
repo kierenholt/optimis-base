@@ -174,6 +174,8 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 			explicitStaffID = strings.TrimSpace(s)
 		} else if s, ok := body.Args["__caller_staff_id"].(string); ok && strings.TrimSpace(s) != "" {
 			explicitStaffID = strings.TrimSpace(s)
+		} else if hStaff := strings.TrimSpace(r.Header.Get("X-MIS-Staff-ID")); hStaff != "" {
+			explicitStaffID = hStaff
 		} else if qStaff := strings.TrimSpace(r.URL.Query().Get("staff_id")); qStaff != "" {
 			explicitStaffID = qStaff
 		}

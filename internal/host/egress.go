@@ -352,8 +352,22 @@ func (h *Host) executeLuaHTTPRequest(
 			strings.Contains(err.Error(), "EGRESS_TIMEOUT") {
 			h.recordDiagnostic(plugin.Manifest.ID, methodLabel, "EGRESS_TIMEOUT", 0)
 			h.logError(fmt.Sprintf("Outbound %s in %s timed out after %dms: %v", httpMethod, plugin.Manifest.ID, timeoutMS, err))
-			L.RaiseError("EGRESS_TIMEOUT: %s timed out after %dms: %s", methodLabel, timeoutMS, err.Error())
-			return 0
+			errMsg := fmt.Sprintf("EGRESS_TIMEOUT: %s timed out after %dms: %s", methodLabel, timeoutMS, err.Error())
+			if execCtx.Err() != nil {
+				L.RaiseError("%s", errMsg)
+				return 0
+			}
+			errTbl := L.NewTable()
+			L.SetField(errTbl, "ok", lua.LFalse)
+			L.SetField(errTbl, "status", lua.LNumber(0))
+			L.SetField(errTbl, "error_code", lua.LString("EGRESS_TIMEOUT"))
+			L.SetField(errTbl, "error", lua.LString(errMsg))
+			L.SetField(errTbl, "body", lua.LString(""))
+			L.SetField(errTbl, "headers", L.NewTable())
+			L.SetField(errTbl, "final_url", lua.LString(targetURL))
+			L.SetField(errTbl, "__unhandled_egress_timeout", lua.LTrue)
+			L.Push(errTbl)
+			return 1
 		}
 		h.recordDiagnostic(plugin.Manifest.ID, methodLabel, "EGRESS_REQUEST_FAILED", 0)
 		h.logError(fmt.Sprintf("Outbound %s in %s failed: %v", httpMethod, plugin.Manifest.ID, err))
@@ -381,6 +395,7 @@ func (h *Host) executeLuaHTTPRequest(
 	}
 
 	respTbl := L.NewTable()
+	L.SetField(respTbl, "ok", lua.LBool(resp.StatusCode >= 200 && resp.StatusCode < 400))
 	L.SetField(respTbl, "status", lua.LNumber(resp.StatusCode))
 	L.SetField(respTbl, "body", lua.LString(string(bodyBytes)))
 	L.SetField(respTbl, "headers", respHeadersTbl)

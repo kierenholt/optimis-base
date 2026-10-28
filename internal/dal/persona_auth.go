@@ -550,7 +550,7 @@ func (d *CoreDAL) SeedPersonaTestFixtures(ctx context.Context, academicYearID st
 		},
 		{
 			"HOD", "STAFF", "Head of Department", "HOD", "Departmental curriculum and cohort lead",
-			`["dal.pupils.read:all","dal.groups.read:all","dal.attendance.read:all","dal.sen.read:all","dal.medical.read:all","dal.safeguarding.create"]`,
+			`["dal.pupils.read:all","dal.groups.read:all","dal.groups.write:all","dal.attendance.read:all","dal.sen.read:all","dal.medical.read:all","dal.safeguarding.create"]`,
 		},
 		{
 			"TEACHER", "STAFF", "Classroom Teacher", "TCH", "Scoped access to assigned teaching and registration groups",

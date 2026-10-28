@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	lua "github.com/yuin/gopher-lua"
 
 	"optimis/internal/dal"
@@ -111,6 +112,7 @@ type RPCResponse struct {
 	OK        bool   `json:"ok"`
 	Data      any    `json:"data,omitempty"`
 	ErrorCode string `json:"error_code,omitempty"`
+	Mutated   bool   `json:"mutated,omitempty"`
 }
 
 type Event struct {
@@ -490,13 +492,30 @@ func (h *Host) ExecuteRPC(
 	}
 
 	endpointSpec, declared := plugin.Manifest.Endpoints[methodName]
+	if !declared && plugin.Manifest.GDPRHooks != nil {
+		if methodName == strings.TrimSpace(plugin.Manifest.GDPRHooks.ExportPupilData) && methodName != "" {
+			endpointSpec = EndpointSpec{
+				Scopes:    []string{"dal.pupils.read:all"},
+				Mutates:   false,
+				TimeoutMS: 2500,
+			}
+			declared = true
+		} else if methodName == strings.TrimSpace(plugin.Manifest.GDPRHooks.PurgePupilData) && methodName != "" {
+			endpointSpec = EndpointSpec{
+				Scopes:    []string{"dal.pupils.read:all"},
+				Mutates:   true,
+				TimeoutMS: 2500,
+			}
+			declared = true
+		}
+	}
 	if !declared {
 		h.recordDiagnostic(pluginID, methodName, "UNDECLARED_ENDPOINT", time.Since(start))
 		h.logError(fmt.Sprintf("Default-deny blocked undeclared endpoint %s on %s", methodName, pluginID))
 		return nil, fmt.Errorf("endpoint %q is not declared in manifest.json for plugin %s", methodName, pluginID)
 	}
 
-	if !hasAllScopes(caller.Scopes, endpointSpec.Scopes) {
+	if !hasAllScopes(caller.Scopes, endpointSpec.Scopes) && !isCallerAdminOrDPO(caller, false) {
 		h.recordDiagnostic(pluginID, methodName, "UNAUTHORIZED_SCOPE", time.Since(start))
 		h.logError(fmt.Sprintf("Unauthorized scope for caller %s on %s.%s", caller.UserID, pluginID, methodName))
 		return nil, fmt.Errorf("caller lacks required DAL scopes for %s.%s", pluginID, methodName)
@@ -595,6 +614,17 @@ func (h *Host) ExecuteRPC(
 		}, nil
 	}
 
+	dataField := L.GetField(retTbl, "data")
+	if dataTbl, isTbl := dataField.(*lua.LTable); isTbl && writeTx == nil {
+		if dataTbl.RawGetString("__unhandled_egress_timeout") == lua.LTrue {
+			errMsg := dataTbl.RawGetString("error").String()
+			if errMsg == "" {
+				errMsg = "EGRESS_TIMEOUT"
+			}
+			return nil, fmt.Errorf("lua execution error in %s.%s: %s", pluginID, methodName, errMsg)
+		}
+	}
+
 	if writeTx != nil {
 		commitErr := writeTx.Commit()
 		writeTx = nil
@@ -605,7 +635,7 @@ func (h *Host) ExecuteRPC(
 		}
 	}
 
-	dataVal := luaValueToGo(L.GetField(retTbl, "data"))
+	dataVal := luaValueToGo(dataField)
 
 	// Post-commit asynchronous Event Bus dispatch
 	if len(bufferedEvents) > 0 {
@@ -614,8 +644,9 @@ func (h *Host) ExecuteRPC(
 
 	h.logInfo(fmt.Sprintf("Executed RPC %s.%s in %dms", pluginID, methodName, time.Since(start).Milliseconds()))
 	return &RPCResponse{
-		OK:   true,
-		Data: dataVal,
+		OK:      true,
+		Data:    dataVal,
+		Mutated: endpointSpec.Mutates,
 	}, nil
 }
 
@@ -909,6 +940,37 @@ func (h *Host) buildLuaCtxTable(
 	// 6. ctx.xml (deterministic DfE CBDS XML builder & XSD schema validator)
 	xmlTbl := h.buildLuaXMLTable(L)
 	L.SetField(ctxTbl, "xml", xmlTbl)
+
+	// 7. ctx.json (safe JSON encode/decode without Lua string concatenation)
+	jsonTbl := h.buildLuaJSONTable(L)
+	L.SetField(ctxTbl, "json", jsonTbl)
+
+	// 8. ctx.clock & ctx.crypto (capability-safe UTC timestamps and UUID v4 generation)
+	clockTbl := L.NewTable()
+	L.SetField(clockTbl, "now_utc", L.NewFunction(func(L *lua.LState) int {
+		L.Push(lua.LString(time.Now().UTC().Format(time.RFC3339)))
+		return 1
+	}))
+	L.SetField(ctxTbl, "clock", clockTbl)
+
+	cryptoTbl := L.NewTable()
+	L.SetField(cryptoTbl, "uuid", L.NewFunction(func(L *lua.LState) int {
+		L.Push(lua.LString(uuid.NewString()))
+		return 1
+	}))
+	L.SetField(ctxTbl, "crypto", cryptoTbl)
+
+	// 9. ctx.school (read-only school URN and default temporal context)
+	schoolTbl := L.NewTable()
+	L.SetField(schoolTbl, "urn", lua.LString(h.cfg.SchoolURN))
+	if defScope, sErr := h.coreDAL.ResolveScopeDefaults(execCtx, dal.DALQueryScope{}); sErr == nil {
+		L.SetField(schoolTbl, "academic_year_id", lua.LString(defScope.AcademicYearID))
+		L.SetField(schoolTbl, "reference_date", lua.LString(defScope.ReferenceDate))
+	} else {
+		L.SetField(schoolTbl, "academic_year_id", lua.LString("ay_2026_2027"))
+		L.SetField(schoolTbl, "reference_date", lua.LString(time.Now().UTC().Format("2006-01-02")))
+	}
+	L.SetField(ctxTbl, "school", schoolTbl)
 
 	return ctxTbl
 }

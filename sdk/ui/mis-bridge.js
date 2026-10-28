@@ -15,6 +15,7 @@
   var requestCounter = 0;
   var pendingRequests = Object.create(null);
   var initListeners = [];
+  var invalidationListeners = [];
   var readyResolved = false;
   var readyResolveFn = null;
 
@@ -209,6 +210,20 @@
       return;
     }
 
+    if (msg.type === 'mis:plugin:invalidated') {
+      for (var j = 0; j < invalidationListeners.length; j++) {
+        try {
+          invalidationListeners[j](msg);
+        } catch (err) {
+          console.error('[mis-bridge] Error in onInvalidated listener:', err);
+        }
+      }
+      if (typeof CustomEvent === 'function') {
+        global.dispatchEvent(new CustomEvent('mis:plugin:invalidated', { detail: msg }));
+      }
+      return;
+    }
+
     if (msg.type === 'mis:rpc:response') {
       var reqId = msg.request_id;
       var pending = reqId ? pendingRequests[reqId] : null;
@@ -346,6 +361,12 @@
       if (state.isReady) {
         callback(buildSnapshot());
       }
+    },
+    onInvalidated: function (callback) {
+      if (typeof callback !== 'function') {
+        throw new Error('window.mis.onInvalidated requires a function callback');
+      }
+      invalidationListeners.push(callback);
     },
     rpc: function (method, args) {
       return rpc(method, args, null);

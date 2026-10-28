@@ -21,6 +21,40 @@ func scrubDiagnosticToken(raw string) string {
 	return piiScrubPattern.ReplaceAllString(raw, "[REDACTED]")
 }
 
+func callerHasAllRole(activeRoles []string) bool {
+	for _, r := range activeRoles {
+		switch strings.ToUpper(strings.TrimSpace(r)) {
+		case "ADMIN", "HOD", "DSL", "SUPPORT", "LEADERSHIP", "DPO", "SYSTEM_ADMIN":
+			return true
+		}
+	}
+	return false
+}
+
+func resolveEffectiveDomainScopeMode(endpointScopes []string, caller CallerContext, domainPrefix string) dal.ScopeMode {
+	for _, s := range endpointScopes {
+		if s == domainPrefix+":all" {
+			return dal.ScopeAll
+		}
+	}
+	if caller.Type == "USER" {
+		hasAll := false
+		hasOwn := false
+		for _, s := range caller.Scopes {
+			if s == domainPrefix+":all" {
+				hasAll = true
+			}
+			if s == domainPrefix+":own_groups" {
+				hasOwn = true
+			}
+		}
+		if hasAll && (!hasOwn || callerHasAllRole(caller.ActiveRoles)) {
+			return dal.ScopeAll
+		}
+	}
+	return dal.ScopeOwnGroups
+}
+
 func resolveDomainScopeMode(scopes []string, domainPrefix string) dal.ScopeMode {
 	for _, s := range scopes {
 		if s == domainPrefix+":all" {
@@ -52,18 +86,114 @@ func extractScopeFromLuaOpts(
 	return d.ResolveScopeDefaults(ctx, scope)
 }
 
+func extractPupilIDsAndOptsFromLua(L *lua.LState) ([]string, *lua.LTable, error) {
+	firstTbl, ok := L.Get(1).(*lua.LTable)
+	if !ok {
+		return nil, nil, errors.New("requires a table of pupil_ids")
+	}
+
+	var optsTbl *lua.LTable
+	if L.GetTop() >= 2 {
+		optsTbl, _ = L.Get(2).(*lua.LTable)
+	}
+
+	idsSourceTbl := firstTbl
+	if nested, isTbl := firstTbl.RawGetString("pupil_ids").(*lua.LTable); isTbl {
+		idsSourceTbl = nested
+		if optsTbl == nil {
+			optsTbl = firstTbl
+		}
+	}
+
+	var pupilIDs []string
+	maxn := idsSourceTbl.MaxN()
+	for i := 1; i <= maxn; i++ {
+		val := strings.TrimSpace(idsSourceTbl.RawGetInt(i).String())
+		if val != "" {
+			pupilIDs = append(pupilIDs, val)
+		}
+	}
+	return pupilIDs, optsTbl, nil
+}
+
 func pupilToLuaTable(L *lua.LState, pupil dal.Pupil) *lua.LTable {
 	pTbl := L.NewTable()
 	L.SetField(pTbl, "id", lua.LString(pupil.ID))
+	L.SetField(pTbl, "pupil_id", lua.LString(pupil.ID))
 	L.SetField(pTbl, "upn", lua.LString(pupil.UPN))
 	L.SetField(pTbl, "first_name", lua.LString(pupil.FirstName))
 	L.SetField(pTbl, "last_name", lua.LString(pupil.LastName))
+	legFirst := pupil.LegalFirstName
+	if legFirst == "" {
+		legFirst = pupil.FirstName
+	}
+	legLast := pupil.LegalLastName
+	if legLast == "" {
+		legLast = pupil.LastName
+	}
+	prefFirst := pupil.PreferredFirstName
+	if prefFirst == "" {
+		prefFirst = legFirst
+	}
+	prefLast := pupil.PreferredLastName
+	if prefLast == "" {
+		prefLast = legLast
+	}
+	L.SetField(pTbl, "legal_first_name", lua.LString(legFirst))
+	L.SetField(pTbl, "legal_last_name", lua.LString(legLast))
+	L.SetField(pTbl, "preferred_first_name", lua.LString(prefFirst))
+	L.SetField(pTbl, "preferred_last_name", lua.LString(prefLast))
+	L.SetField(pTbl, "nc_year_group", lua.LString(pupil.NCYearGroup))
+	enrStatus := pupil.EnrolmentStatus
+	if enrStatus == "" {
+		enrStatus = "C"
+	}
+	L.SetField(pTbl, "enrolment_status", lua.LString(enrStatus))
 	L.SetField(pTbl, "academic_year_id", lua.LString(pupil.AcademicYearID))
 	L.SetField(pTbl, "effective_from", lua.LString(pupil.EffectiveFrom))
 	if pupil.EffectiveTo != nil {
 		L.SetField(pTbl, "effective_to", lua.LString(*pupil.EffectiveTo))
 	}
 	return pTbl
+}
+
+func guardianToLuaTable(L *lua.LState, g dal.GuardianContactSummary) *lua.LTable {
+	gTbl := L.NewTable()
+	L.SetField(gTbl, "relationship_id", lua.LString(g.RelationshipID))
+	L.SetField(gTbl, "pupil_id", lua.LString(g.PupilID))
+	L.SetField(gTbl, "guardian_person_id", lua.LString(g.GuardianPersonID))
+	L.SetField(gTbl, "relationship_code", lua.LString(g.RelationshipCode))
+	L.SetField(gTbl, "first_name", lua.LString(g.FirstName))
+	L.SetField(gTbl, "last_name", lua.LString(g.LastName))
+	L.SetField(gTbl, "email", lua.LString(g.Email))
+	L.SetField(gTbl, "phone_primary", lua.LString(g.PhonePrimary))
+	L.SetField(gTbl, "has_parental_responsibility", lua.LBool(g.HasParentalResponsibility))
+	L.SetField(gTbl, "contact_priority", lua.LNumber(g.ContactPriority))
+	L.SetField(gTbl, "is_emergency_contact", lua.LBool(g.IsEmergencyContact))
+	L.SetField(gTbl, "authorised_to_collect", lua.LBool(g.AuthorisedToCollect))
+	L.SetField(gTbl, "receive_reports", lua.LBool(g.ReceiveReports))
+	L.SetField(gTbl, "household_id", lua.LString(g.HouseholdID))
+	L.SetField(gTbl, "household_name", lua.LString(g.HouseholdName))
+	L.SetField(gTbl, "address_line_1", lua.LString(g.AddressLine1))
+	L.SetField(gTbl, "town_city", lua.LString(g.TownCity))
+	L.SetField(gTbl, "postcode", lua.LString(g.Postcode))
+	L.SetField(gTbl, "is_confidential_address_redacted", lua.LBool(g.IsConfidentialAddressRedacted))
+	return gTbl
+}
+
+func staffToLuaTable(L *lua.LState, st dal.StaffSummary) *lua.LTable {
+	sTbl := L.NewTable()
+	L.SetField(sTbl, "id", lua.LString(st.StaffID))
+	L.SetField(sTbl, "staff_id", lua.LString(st.StaffID))
+	L.SetField(sTbl, "person_id", lua.LString(st.PersonID))
+	L.SetField(sTbl, "staff_code", lua.LString(st.StaffCode))
+	L.SetField(sTbl, "display_name", lua.LString(st.DisplayName))
+	L.SetField(sTbl, "first_name", lua.LString(st.FirstName))
+	L.SetField(sTbl, "last_name", lua.LString(st.LastName))
+	L.SetField(sTbl, "job_title", lua.LString(st.JobTitle))
+	L.SetField(sTbl, "staff_type", lua.LString(st.StaffType))
+	L.SetField(sTbl, "is_dsl", lua.LBool(st.IsDSL))
+	return sTbl
 }
 
 func (h *Host) buildLuaDALTable(
@@ -74,90 +204,164 @@ func (h *Host) buildLuaDALTable(
 ) *lua.LTable {
 	dalTbl := L.NewTable()
 
-	// 1. ctx.dal.pupils
-	if hasDomainScope(endpointSpec.Scopes, "dal.pupils.read") {
-		pupilsMode := resolveDomainScopeMode(endpointSpec.Scopes, "dal.pupils.read")
+	hasPupilsRead := hasDomainScope(endpointSpec.Scopes, "dal.pupils.read")
+	hasSenRead := hasDomainScope(endpointSpec.Scopes, "dal.sen.read")
+	hasMedicalRead := hasDomainScope(endpointSpec.Scopes, "dal.medical.read")
+
+	// 1. ctx.dal.pupils (and SEN/Medical batch helper)
+	if hasPupilsRead || hasSenRead || hasMedicalRead {
+		pupilsMode := resolveEffectiveDomainScopeMode(endpointSpec.Scopes, caller, "dal.pupils.read")
 		pupilsTbl := L.NewTable()
 
-		L.SetField(pupilsTbl, "get_by_id", L.NewFunction(func(L *lua.LState) int {
-			pupilID := strings.TrimSpace(L.OptString(1, ""))
-			if pupilID == "" {
-				L.RaiseError("missing mandatory parameter: pupil_id")
-				return 0
-			}
-			var optsTbl *lua.LTable
-			if L.GetTop() >= 2 {
-				optsTbl, _ = L.Get(2).(*lua.LTable)
-			}
-
-			var pupil *dal.Pupil
-			var err error
-			if pupilsMode == dal.ScopeAll && optsTbl == nil {
-				pupil, err = h.coreDAL.GetPupilByID(execCtx, pupilID)
-			} else {
-				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, pupilsMode, caller.StaffID, optsTbl)
-				if sErr != nil {
-					L.RaiseError("dal.pupils.get_by_id scope error: %s", sErr.Error())
+		if hasPupilsRead {
+			L.SetField(pupilsTbl, "get_by_id", L.NewFunction(func(L *lua.LState) int {
+				var pupilID string
+				var optsTbl *lua.LTable
+				if firstTbl, isTbl := L.Get(1).(*lua.LTable); isTbl {
+					if v := firstTbl.RawGetString("pupil_id"); v != lua.LNil {
+						pupilID = strings.TrimSpace(v.String())
+					} else if v := firstTbl.RawGetString("id"); v != lua.LNil {
+						pupilID = strings.TrimSpace(v.String())
+					}
+					optsTbl = firstTbl
+				} else {
+					pupilID = strings.TrimSpace(L.OptString(1, ""))
+					if L.GetTop() >= 2 {
+						optsTbl, _ = L.Get(2).(*lua.LTable)
+					}
+				}
+				if pupilID == "" {
+					L.RaiseError("missing mandatory parameter: pupil_id")
 					return 0
 				}
-				pupil, err = h.coreDAL.GetPupilByIDScoped(execCtx, scope, pupilID)
-			}
-			if err != nil {
-				L.RaiseError("dal.pupils.get_by_id failed: %s", err.Error())
-				return 0
-			}
-			L.Push(pupilToLuaTable(L, *pupil))
-			return 1
-		}))
 
-		L.SetField(pupilsTbl, "list_by_group", L.NewFunction(func(L *lua.LState) int {
-			groupID := strings.TrimSpace(L.OptString(1, ""))
-			if groupID == "" {
-				L.RaiseError("missing mandatory parameter: group_id")
-				return 0
-			}
-			var optsTbl *lua.LTable
-			if L.GetTop() >= 2 {
-				optsTbl, _ = L.Get(2).(*lua.LTable)
-			}
-			scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, pupilsMode, caller.StaffID, optsTbl)
-			if sErr != nil {
-				L.RaiseError("dal.pupils.list_by_group scope error: %s", sErr.Error())
-				return 0
-			}
-			pupils, err := h.coreDAL.ListPupilsByGroupScoped(execCtx, scope, groupID)
-			if err != nil {
-				L.RaiseError("dal.pupils.list_by_group failed: %s", err.Error())
-				return 0
-			}
-			arrTbl := L.NewTable()
-			markLuaTableAsArray(L, arrTbl)
-			for i, p := range pupils {
-				arrTbl.RawSetInt(i+1, pupilToLuaTable(L, p))
-			}
-			L.Push(arrTbl)
-			return 1
-		}))
-
-		L.SetField(pupilsTbl, "list_sen_and_medical_batch", L.NewFunction(func(L *lua.LState) int {
-			idsTbl, ok := L.Get(1).(*lua.LTable)
-			if !ok {
-				L.RaiseError("dal.pupils.list_sen_and_medical_batch requires a table of pupil_ids")
-				return 0
-			}
-			var pupilIDs []string
-			maxn := idsTbl.MaxN()
-			for i := 1; i <= maxn; i++ {
-				val := strings.TrimSpace(idsTbl.RawGetInt(i).String())
-				if val != "" {
-					pupilIDs = append(pupilIDs, val)
+				// Relaxed student core profile visibility (1C): any teacher holding dal.pupils.read
+				// can look up any student's core profile across the school unless strict_own_groups=true.
+				effectiveMode := dal.ScopeAll
+				if optsTbl != nil && optsTbl.RawGetString("strict_own_groups") == lua.LTrue {
+					effectiveMode = pupilsMode
 				}
+
+				var pupil *dal.Pupil
+				var err error
+				if effectiveMode == dal.ScopeAll && optsTbl == nil {
+					pupil, err = h.coreDAL.GetPupilByID(execCtx, pupilID)
+				} else {
+					scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, effectiveMode, caller.StaffID, optsTbl)
+					if sErr != nil {
+						L.RaiseError("dal.pupils.get_by_id scope error: %s", sErr.Error())
+						return 0
+					}
+					pupil, err = h.coreDAL.GetPupilByIDScoped(execCtx, scope, pupilID)
+				}
+				if err != nil {
+					L.RaiseError("dal.pupils.get_by_id failed: %s", err.Error())
+					return 0
+				}
+				L.Push(pupilToLuaTable(L, *pupil))
+				return 1
+			}))
+
+			getByIDsBatchFn := L.NewFunction(func(L *lua.LState) int {
+				pupilIDs, optsTbl, argErr := extractPupilIDsAndOptsFromLua(L)
+				if argErr != nil {
+					L.RaiseError("dal.pupils.get_by_ids_batch %s", argErr.Error())
+					return 0
+				}
+				effectiveMode := dal.ScopeAll
+				if optsTbl != nil && optsTbl.RawGetString("strict_own_groups") == lua.LTrue {
+					effectiveMode = pupilsMode
+				}
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, effectiveMode, caller.StaffID, optsTbl)
+				if sErr != nil {
+					L.RaiseError("dal.pupils.get_by_ids_batch scope error: %s", sErr.Error())
+					return 0
+				}
+				pupils, err := h.coreDAL.GetPupilsByIDsBatchScoped(execCtx, scope, pupilIDs)
+				if err != nil {
+					L.RaiseError("dal.pupils.get_by_ids_batch failed: %s", err.Error())
+					return 0
+				}
+				arrTbl := L.NewTable()
+				markLuaTableAsArray(L, arrTbl)
+				for i, p := range pupils {
+					arrTbl.RawSetInt(i+1, pupilToLuaTable(L, p))
+				}
+				L.Push(arrTbl)
+				return 1
+			})
+			L.SetField(pupilsTbl, "get_by_ids_batch", getByIDsBatchFn)
+			L.SetField(pupilsTbl, "get_batch", getByIDsBatchFn)
+
+			L.SetField(pupilsTbl, "list_all", L.NewFunction(func(L *lua.LState) int {
+				var optsTbl *lua.LTable
+				if L.GetTop() >= 1 {
+					optsTbl, _ = L.Get(1).(*lua.LTable)
+				}
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, dal.ScopeAll, caller.StaffID, optsTbl)
+				if sErr != nil {
+					L.RaiseError("dal.pupils.list_all scope error: %s", sErr.Error())
+					return 0
+				}
+				pupils, err := h.coreDAL.ListAllPupilsScoped(execCtx, scope)
+				if err != nil {
+					L.RaiseError("dal.pupils.list_all failed: %s", err.Error())
+					return 0
+				}
+				arrTbl := L.NewTable()
+				markLuaTableAsArray(L, arrTbl)
+				for i, p := range pupils {
+					arrTbl.RawSetInt(i+1, pupilToLuaTable(L, p))
+				}
+				L.Push(arrTbl)
+				return 1
+			}))
+
+			L.SetField(pupilsTbl, "list_by_group", L.NewFunction(func(L *lua.LState) int {
+				groupID := strings.TrimSpace(L.OptString(1, ""))
+				if groupID == "" {
+					L.RaiseError("missing mandatory parameter: group_id")
+					return 0
+				}
+				var optsTbl *lua.LTable
+				if L.GetTop() >= 2 {
+					optsTbl, _ = L.Get(2).(*lua.LTable)
+				}
+				effectiveMode := pupilsMode
+				if optsTbl != nil && (optsTbl.RawGetString("include_all_classes") == lua.LTrue || optsTbl.RawGetString("scope").String() == "all") {
+					effectiveMode = dal.ScopeAll
+				}
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, effectiveMode, caller.StaffID, optsTbl)
+				if sErr != nil {
+					L.RaiseError("dal.pupils.list_by_group scope error: %s", sErr.Error())
+					return 0
+				}
+				pupils, err := h.coreDAL.ListPupilsByGroupScoped(execCtx, scope, groupID)
+				if err != nil {
+					L.RaiseError("dal.pupils.list_by_group failed: %s", err.Error())
+					return 0
+				}
+				arrTbl := L.NewTable()
+				markLuaTableAsArray(L, arrTbl)
+				for i, p := range pupils {
+					arrTbl.RawSetInt(i+1, pupilToLuaTable(L, p))
+				}
+				L.Push(arrTbl)
+				return 1
+			}))
+		}
+
+		senMedicalBatchFn := L.NewFunction(func(L *lua.LState) int {
+			pupilIDs, optsTbl, argErr := extractPupilIDsAndOptsFromLua(L)
+			if argErr != nil {
+				L.RaiseError("dal.pupils.list_sen_and_medical_batch %s", argErr.Error())
+				return 0
 			}
-			var optsTbl *lua.LTable
-			if L.GetTop() >= 2 {
-				optsTbl, _ = L.Get(2).(*lua.LTable)
+			effectiveMode := dal.ScopeAll
+			if optsTbl != nil && optsTbl.RawGetString("strict_own_groups") == lua.LTrue {
+				effectiveMode = pupilsMode
 			}
-			scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, pupilsMode, caller.StaffID, optsTbl)
+			scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, effectiveMode, caller.StaffID, optsTbl)
 			if sErr != nil {
 				L.RaiseError("dal.pupils.list_sen_and_medical_batch scope error: %s", sErr.Error())
 				return 0
@@ -167,34 +371,52 @@ func (h *Host) buildLuaDALTable(
 				L.RaiseError("dal.pupils.list_sen_and_medical_batch failed: %s", err.Error())
 				return 0
 			}
+			includeSen := hasPupilsRead || hasSenRead
+			includeMedical := hasPupilsRead || hasMedicalRead
+
 			resTbl := L.NewTable()
 			for pid, summary := range batch {
 				sTbl := L.NewTable()
 				L.SetField(sTbl, "pupil_id", lua.LString(summary.PupilID))
-				L.SetField(sTbl, "sen_provision_code", lua.LString(summary.SenProvisionCode))
-				L.SetField(sTbl, "primary_sen_need_code", lua.LString(summary.PrimarySenNeedCode))
-				L.SetField(sTbl, "teaching_strategies", lua.LString(summary.TeachingStrategies))
-
-				medsArr := L.NewTable()
-				markLuaTableAsArray(L, medsArr)
-				for idx, mc := range summary.MedicalConditions {
-					mTbl := L.NewTable()
-					L.SetField(mTbl, "id", lua.LString(mc.ID))
-					L.SetField(mTbl, "condition_name", lua.LString(mc.ConditionName))
-					L.SetField(mTbl, "condition_category", lua.LString(mc.ConditionCategory))
-					L.SetField(mTbl, "alert_level_id", lua.LString(mc.AlertLevelID))
-					L.SetField(mTbl, "has_ihcp", lua.LBool(mc.HasIHCP))
-					L.SetField(mTbl, "emergency_response_plan", lua.LString(mc.EmergencyResponsePlan))
-					medsArr.RawSetInt(idx+1, mTbl)
+				if includeSen {
+					L.SetField(sTbl, "sen_provision_code", lua.LString(summary.SenProvisionCode))
+					L.SetField(sTbl, "primary_sen_need_code", lua.LString(summary.PrimarySenNeedCode))
+					L.SetField(sTbl, "teaching_strategies", lua.LString(summary.TeachingStrategies))
 				}
-				L.SetField(sTbl, "medical_conditions", medsArr)
+				if includeMedical {
+					medsArr := L.NewTable()
+					markLuaTableAsArray(L, medsArr)
+					for idx, mc := range summary.MedicalConditions {
+						mTbl := L.NewTable()
+						L.SetField(mTbl, "id", lua.LString(mc.ID))
+						L.SetField(mTbl, "condition_name", lua.LString(mc.ConditionName))
+						L.SetField(mTbl, "condition_category", lua.LString(mc.ConditionCategory))
+						L.SetField(mTbl, "alert_level_id", lua.LString(mc.AlertLevelID))
+						L.SetField(mTbl, "has_ihcp", lua.LBool(mc.HasIHCP))
+						L.SetField(mTbl, "emergency_response_plan", lua.LString(mc.EmergencyResponsePlan))
+						medsArr.RawSetInt(idx+1, mTbl)
+					}
+					L.SetField(sTbl, "medical_conditions", medsArr)
+				}
 				L.SetField(resTbl, pid, sTbl)
 			}
 			L.Push(resTbl)
 			return 1
-		}))
+		})
 
+		L.SetField(pupilsTbl, "list_sen_and_medical_batch", senMedicalBatchFn)
 		L.SetField(dalTbl, "pupils", pupilsTbl)
+
+		if hasSenRead {
+			senTbl := L.NewTable()
+			L.SetField(senTbl, "list_batch", senMedicalBatchFn)
+			L.SetField(dalTbl, "sen", senTbl)
+		}
+		if hasMedicalRead {
+			medTbl := L.NewTable()
+			L.SetField(medTbl, "list_batch", senMedicalBatchFn)
+			L.SetField(dalTbl, "medical", medTbl)
+		}
 	}
 
 	// 2. ctx.dal.groups
@@ -204,41 +426,110 @@ func (h *Host) buildLuaDALTable(
 		groupsTbl := L.NewTable()
 
 		if hasGroupsRead {
-			groupsMode := resolveDomainScopeMode(endpointSpec.Scopes, "dal.groups.read")
-			L.SetField(groupsTbl, "list_groups", L.NewFunction(func(L *lua.LState) int {
+			groupsMode := resolveEffectiveDomainScopeMode(endpointSpec.Scopes, caller, "dal.groups.read")
+			listGroupsWithMode := func(forcedMode *dal.ScopeMode) *lua.LFunction {
+				return L.NewFunction(func(L *lua.LState) int {
+					var optsTbl *lua.LTable
+					if L.GetTop() >= 1 {
+						optsTbl, _ = L.Get(1).(*lua.LTable)
+					}
+					var groupType string
+					effectiveMode := groupsMode
+					if forcedMode != nil {
+						effectiveMode = *forcedMode
+					}
+					if optsTbl != nil {
+						if gt := optsTbl.RawGetString("group_type"); gt != lua.LNil {
+							groupType = strings.TrimSpace(gt.String())
+						}
+						if forcedMode == nil && (optsTbl.RawGetString("include_all") == lua.LTrue || optsTbl.RawGetString("scope").String() == "all") {
+							effectiveMode = dal.ScopeAll
+						}
+					}
+					scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, effectiveMode, caller.StaffID, optsTbl)
+					if sErr != nil {
+						L.RaiseError("dal.groups.list_groups scope error: %s", sErr.Error())
+						return 0
+					}
+					groups, err := h.coreDAL.ListGroupsScoped(execCtx, scope, groupType)
+					if err != nil {
+						L.RaiseError("dal.groups.list_groups failed: %s", err.Error())
+						return 0
+					}
+					arrTbl := L.NewTable()
+					markLuaTableAsArray(L, arrTbl)
+					for i, g := range groups {
+						gTbl := L.NewTable()
+						L.SetField(gTbl, "id", lua.LString(g.ID))
+						L.SetField(gTbl, "academic_year_id", lua.LString(g.AcademicYearID))
+						L.SetField(gTbl, "group_type", lua.LString(g.GroupType))
+						L.SetField(gTbl, "code", lua.LString(g.Code))
+						L.SetField(gTbl, "name", lua.LString(g.Name))
+						L.SetField(gTbl, "default_room_id", lua.LString(g.DefaultRoomID))
+						L.SetField(gTbl, "takes_attendance", lua.LBool(g.TakesAttendance))
+						L.SetField(gTbl, "effective_from", lua.LString(g.EffectiveFrom))
+						arrTbl.RawSetInt(i+1, gTbl)
+					}
+					L.Push(arrTbl)
+					return 1
+				})
+			}
+
+			ownMode := dal.ScopeOwnGroups
+			allMode := dal.ScopeAll
+			L.SetField(groupsTbl, "list_groups", listGroupsWithMode(nil))
+			L.SetField(groupsTbl, "list_my_groups", listGroupsWithMode(&ownMode))
+			L.SetField(groupsTbl, "list_all_groups", listGroupsWithMode(&allMode))
+
+			L.SetField(groupsTbl, "list_group_pupils", L.NewFunction(func(L *lua.LState) int {
+				var groupID string
 				var optsTbl *lua.LTable
-				if L.GetTop() >= 1 {
-					optsTbl, _ = L.Get(1).(*lua.LTable)
-				}
-				var groupType string
-				if optsTbl != nil {
-					if gt := optsTbl.RawGetString("group_type"); gt != lua.LNil {
-						groupType = strings.TrimSpace(gt.String())
+				if firstTbl, isTbl := L.Get(1).(*lua.LTable); isTbl {
+					if v := firstTbl.RawGetString("group_id"); v != lua.LNil {
+						groupID = strings.TrimSpace(v.String())
+					} else if v := firstTbl.RawGetString("id"); v != lua.LNil {
+						groupID = strings.TrimSpace(v.String())
+					}
+					optsTbl = firstTbl
+				} else {
+					groupID = strings.TrimSpace(L.OptString(1, ""))
+					if L.GetTop() >= 2 {
+						optsTbl, _ = L.Get(2).(*lua.LTable)
 					}
 				}
-				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, groupsMode, caller.StaffID, optsTbl)
-				if sErr != nil {
-					L.RaiseError("dal.groups.list_groups scope error: %s", sErr.Error())
+				if groupID == "" {
+					L.RaiseError("missing mandatory parameter: group_id")
 					return 0
 				}
-				groups, err := h.coreDAL.ListGroupsScoped(execCtx, scope, groupType)
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, dal.ScopeAll, caller.StaffID, optsTbl)
+				if sErr != nil {
+					L.RaiseError("dal.groups.list_group_pupils scope error: %s", sErr.Error())
+					return 0
+				}
+				pupils, err := h.coreDAL.ListPupilsByGroupScoped(execCtx, scope, groupID)
 				if err != nil {
-					L.RaiseError("dal.groups.list_groups failed: %s", err.Error())
+					L.RaiseError("dal.groups.list_group_pupils failed: %s", err.Error())
 					return 0
 				}
 				arrTbl := L.NewTable()
 				markLuaTableAsArray(L, arrTbl)
-				for i, g := range groups {
-					gTbl := L.NewTable()
-					L.SetField(gTbl, "id", lua.LString(g.ID))
-					L.SetField(gTbl, "academic_year_id", lua.LString(g.AcademicYearID))
-					L.SetField(gTbl, "group_type", lua.LString(g.GroupType))
-					L.SetField(gTbl, "code", lua.LString(g.Code))
-					L.SetField(gTbl, "name", lua.LString(g.Name))
-					L.SetField(gTbl, "default_room_id", lua.LString(g.DefaultRoomID))
-					L.SetField(gTbl, "takes_attendance", lua.LBool(g.TakesAttendance))
-					L.SetField(gTbl, "effective_from", lua.LString(g.EffectiveFrom))
-					arrTbl.RawSetInt(i+1, gTbl)
+				for i, p := range pupils {
+					arrTbl.RawSetInt(i+1, pupilToLuaTable(L, p))
+				}
+				L.Push(arrTbl)
+				return 1
+			}))
+
+			L.SetField(groupsTbl, "list_staff", L.NewFunction(func(L *lua.LState) int {
+				staffList, err := h.coreDAL.ListActiveStaff(execCtx)
+				if err != nil {
+					L.RaiseError("dal.groups.list_staff failed: %s", err.Error())
+					return 0
+				}
+				arrTbl := L.NewTable()
+				markLuaTableAsArray(L, arrTbl)
+				for i, st := range staffList {
+					arrTbl.RawSetInt(i+1, staffToLuaTable(L, st))
 				}
 				L.Push(arrTbl)
 				return 1
@@ -246,13 +537,20 @@ func (h *Host) buildLuaDALTable(
 
 			L.SetField(groupsTbl, "get_staff_timetable_slots", L.NewFunction(func(L *lua.LState) int {
 				staffID := strings.TrimSpace(L.OptString(1, ""))
+				if staffID == "" {
+					staffID = caller.StaffID
+				}
 				cycleWeek := L.OptInt(2, 1)
 				dayOfWeekID := L.OptInt(3, 1)
 				var optsTbl *lua.LTable
 				if L.GetTop() >= 4 {
 					optsTbl, _ = L.Get(4).(*lua.LTable)
 				}
-				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, groupsMode, caller.StaffID, optsTbl)
+				effectiveMode := dal.ScopeAll
+				if optsTbl != nil && optsTbl.RawGetString("strict_own_groups") == lua.LTrue {
+					effectiveMode = groupsMode
+				}
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, effectiveMode, caller.StaffID, optsTbl)
 				if sErr != nil {
 					L.RaiseError("dal.groups.get_staff_timetable_slots scope error: %s", sErr.Error())
 					return 0
@@ -288,7 +586,7 @@ func (h *Host) buildLuaDALTable(
 		}
 
 		if hasGroupsWrite {
-			groupsWriteMode := resolveDomainScopeMode(endpointSpec.Scopes, "dal.groups.write")
+			groupsWriteMode := resolveEffectiveDomainScopeMode(endpointSpec.Scopes, caller, "dal.groups.write")
 			L.SetField(groupsTbl, "upsert_pupil_membership", L.NewFunction(func(L *lua.LState) int {
 				if !endpointSpec.Mutates {
 					L.RaiseError("dal.groups.upsert_pupil_membership is forbidden when endpoint mutates=false")
@@ -342,6 +640,40 @@ func (h *Host) buildLuaDALTable(
 		L.SetField(dalTbl, "groups", groupsTbl)
 	}
 
+	// 2b. ctx.dal.staff (Staff directory read)
+	if hasDomainScope(endpointSpec.Scopes, "dal.staff.read") {
+		staffTbl := L.NewTable()
+		L.SetField(staffTbl, "list_active", L.NewFunction(func(L *lua.LState) int {
+			staffList, err := h.coreDAL.ListActiveStaff(execCtx)
+			if err != nil {
+				L.RaiseError("dal.staff.list_active failed: %s", err.Error())
+				return 0
+			}
+			arrTbl := L.NewTable()
+			markLuaTableAsArray(L, arrTbl)
+			for i, st := range staffList {
+				arrTbl.RawSetInt(i+1, staffToLuaTable(L, st))
+			}
+			L.Push(arrTbl)
+			return 1
+		}))
+		L.SetField(staffTbl, "get_by_id", L.NewFunction(func(L *lua.LState) int {
+			staffID := strings.TrimSpace(L.OptString(1, ""))
+			if staffID == "" {
+				L.RaiseError("missing mandatory parameter: staff_id")
+				return 0
+			}
+			st, err := h.coreDAL.GetStaffByID(execCtx, staffID)
+			if err != nil {
+				L.RaiseError("dal.staff.get_by_id failed: %s", err.Error())
+				return 0
+			}
+			L.Push(staffToLuaTable(L, *st))
+			return 1
+		}))
+		L.SetField(dalTbl, "staff", staffTbl)
+	}
+
 	// 3. ctx.dal.attendance
 	hasAttRead := hasDomainScope(endpointSpec.Scopes, "dal.attendance.read")
 	hasAttWrite := hasDomainScope(endpointSpec.Scopes, "dal.attendance.write")
@@ -349,7 +681,7 @@ func (h *Host) buildLuaDALTable(
 		attTbl := L.NewTable()
 
 		if hasAttRead {
-			attReadMode := resolveDomainScopeMode(endpointSpec.Scopes, "dal.attendance.read")
+			attReadMode := resolveEffectiveDomainScopeMode(endpointSpec.Scopes, caller, "dal.attendance.read")
 			L.SetField(attTbl, "get_group_session", L.NewFunction(func(L *lua.LState) int {
 				groupID := strings.TrimSpace(L.OptString(1, ""))
 				date := strings.TrimSpace(L.OptString(2, ""))
@@ -423,7 +755,7 @@ func (h *Host) buildLuaDALTable(
 		}
 
 		if hasAttWrite {
-			attWriteMode := resolveDomainScopeMode(endpointSpec.Scopes, "dal.attendance.write")
+			attWriteMode := resolveEffectiveDomainScopeMode(endpointSpec.Scopes, caller, "dal.attendance.write")
 			upsertSessionBatchFn := L.NewFunction(func(L *lua.LState) int {
 				if !endpointSpec.Mutates {
 					L.RaiseError("dal.attendance.upsert_session_batch is forbidden when endpoint mutates=false")
@@ -535,7 +867,7 @@ func (h *Host) buildLuaDALTable(
 
 	// 4. ctx.dal.guardians
 	if hasDomainScope(endpointSpec.Scopes, "dal.guardians.read") {
-		guardiansMode := resolveDomainScopeMode(endpointSpec.Scopes, "dal.guardians.read")
+		guardiansMode := resolveEffectiveDomainScopeMode(endpointSpec.Scopes, caller, "dal.guardians.read")
 		guardiansTbl := L.NewTable()
 
 		L.SetField(guardiansTbl, "list_for_pupil", L.NewFunction(func(L *lua.LState) int {
@@ -569,31 +901,50 @@ func (h *Host) buildLuaDALTable(
 			arrTbl := L.NewTable()
 			markLuaTableAsArray(L, arrTbl)
 			for i, g := range guardians {
-				gTbl := L.NewTable()
-				L.SetField(gTbl, "relationship_id", lua.LString(g.RelationshipID))
-				L.SetField(gTbl, "pupil_id", lua.LString(g.PupilID))
-				L.SetField(gTbl, "guardian_person_id", lua.LString(g.GuardianPersonID))
-				L.SetField(gTbl, "relationship_code", lua.LString(g.RelationshipCode))
-				L.SetField(gTbl, "first_name", lua.LString(g.FirstName))
-				L.SetField(gTbl, "last_name", lua.LString(g.LastName))
-				L.SetField(gTbl, "email", lua.LString(g.Email))
-				L.SetField(gTbl, "phone_primary", lua.LString(g.PhonePrimary))
-				L.SetField(gTbl, "has_parental_responsibility", lua.LBool(g.HasParentalResponsibility))
-				L.SetField(gTbl, "contact_priority", lua.LNumber(g.ContactPriority))
-				L.SetField(gTbl, "is_emergency_contact", lua.LBool(g.IsEmergencyContact))
-				L.SetField(gTbl, "authorised_to_collect", lua.LBool(g.AuthorisedToCollect))
-				L.SetField(gTbl, "receive_reports", lua.LBool(g.ReceiveReports))
-				L.SetField(gTbl, "household_id", lua.LString(g.HouseholdID))
-				L.SetField(gTbl, "household_name", lua.LString(g.HouseholdName))
-				L.SetField(gTbl, "address_line_1", lua.LString(g.AddressLine1))
-				L.SetField(gTbl, "town_city", lua.LString(g.TownCity))
-				L.SetField(gTbl, "postcode", lua.LString(g.Postcode))
-				L.SetField(gTbl, "is_confidential_address_redacted", lua.LBool(g.IsConfidentialAddressRedacted))
-				arrTbl.RawSetInt(i+1, gTbl)
+				arrTbl.RawSetInt(i+1, guardianToLuaTable(L, g))
 			}
 			L.Push(arrTbl)
 			return 1
 		}))
+
+		listForPupilsBatchFn := L.NewFunction(func(L *lua.LState) int {
+			pupilIDs, optsTbl, argErr := extractPupilIDsAndOptsFromLua(L)
+			if argErr != nil {
+				L.RaiseError("dal.guardians.list_for_pupils_batch %s", argErr.Error())
+				return 0
+			}
+			var reqPR bool
+			if optsTbl != nil {
+				if prVal := optsTbl.RawGetString("require_parental_responsibility"); prVal == lua.LTrue {
+					reqPR = true
+				}
+			}
+			scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, guardiansMode, caller.StaffID, optsTbl)
+			if sErr != nil {
+				L.RaiseError("dal.guardians.list_for_pupils_batch scope error: %s", sErr.Error())
+				return 0
+			}
+			batch, err := h.coreDAL.ListGuardiansForPupilsBatchScoped(execCtx, scope, pupilIDs, dal.GuardianFilterOptions{
+				RequireParentalResponsibility: reqPR,
+			})
+			if err != nil {
+				L.RaiseError("dal.guardians.list_for_pupils_batch failed: %s", err.Error())
+				return 0
+			}
+			resTbl := L.NewTable()
+			for pid, gList := range batch {
+				arrTbl := L.NewTable()
+				markLuaTableAsArray(L, arrTbl)
+				for idx, g := range gList {
+					arrTbl.RawSetInt(idx+1, guardianToLuaTable(L, g))
+				}
+				L.SetField(resTbl, pid, arrTbl)
+			}
+			L.Push(resTbl)
+			return 1
+		})
+		L.SetField(guardiansTbl, "list_for_pupils_batch", listForPupilsBatchFn)
+		L.SetField(guardiansTbl, "list_batch", listForPupilsBatchFn)
 
 		L.SetField(dalTbl, "guardians", guardiansTbl)
 	}

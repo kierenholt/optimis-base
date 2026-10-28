@@ -622,3 +622,101 @@ func (d *CoreDAL) GetPupilAttendanceSummaryScoped(
 	}, nil
 }
 
+type StaffSummary struct {
+	StaffID     string `json:"staff_id"`
+	PersonID    string `json:"person_id"`
+	StaffCode   string `json:"staff_code"`
+	DisplayName string `json:"display_name"`
+	FirstName   string `json:"first_name"`
+	LastName    string `json:"last_name"`
+	JobTitle    string `json:"job_title"`
+	StaffType   string `json:"staff_type"`
+	IsDSL       bool   `json:"is_dsl"`
+}
+
+func (d *CoreDAL) ListActiveStaff(ctx context.Context) ([]StaffSummary, error) {
+	rows, err := d.readDB.QueryContext(
+		ctx,
+		`SELECT s.id, s.person_id, s.staff_code,
+		        COALESCE(per.title, ''),
+		        COALESCE(NULLIF(TRIM(per.preferred_first_name), ''), per.legal_first_name),
+		        COALESCE(NULLIF(TRIM(per.preferred_last_name), ''), per.legal_last_name),
+		        per.legal_first_name, per.legal_last_name,
+		        COALESCE(s.job_title, ''), COALESCE(s.staff_type, ''), s.is_dsl
+		 FROM staff s
+		 JOIN persons per ON per.id = s.person_id
+		 WHERE per.status = 'ACTIVE'
+		   AND (s.termination_date IS NULL OR TRIM(s.termination_date) = '')
+		 ORDER BY per.legal_last_name ASC, per.legal_first_name ASC, s.id ASC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list active staff: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]StaffSummary, 0)
+	for rows.Next() {
+		var st StaffSummary
+		var title, prefFirst, prefLast, legFirst, legLast string
+		var isDSLInt int
+		if err := rows.Scan(
+			&st.StaffID, &st.PersonID, &st.StaffCode,
+			&title, &prefFirst, &prefLast, &legFirst, &legLast,
+			&st.JobTitle, &st.StaffType, &isDSLInt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan active staff row: %w", err)
+		}
+		st.FirstName = prefFirst
+		st.LastName = prefLast
+		st.DisplayName = formatPersonaDisplayName(title, prefFirst, legFirst, prefLast, legLast)
+		st.IsDSL = isDSLInt == 1
+		result = append(result, st)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating active staff: %w", err)
+	}
+	return result, nil
+}
+
+func (d *CoreDAL) GetStaffByID(ctx context.Context, staffID string) (*StaffSummary, error) {
+	trimmed := strings.TrimSpace(staffID)
+	if trimmed == "" {
+		return nil, errors.New("missing mandatory parameter: staff_id")
+	}
+
+	var st StaffSummary
+	var title, prefFirst, prefLast, legFirst, legLast string
+	var isDSLInt int
+	err := d.readDB.QueryRowContext(
+		ctx,
+		`SELECT s.id, s.person_id, s.staff_code,
+		        COALESCE(per.title, ''),
+		        COALESCE(NULLIF(TRIM(per.preferred_first_name), ''), per.legal_first_name),
+		        COALESCE(NULLIF(TRIM(per.preferred_last_name), ''), per.legal_last_name),
+		        per.legal_first_name, per.legal_last_name,
+		        COALESCE(s.job_title, ''), COALESCE(s.staff_type, ''), s.is_dsl
+		 FROM staff s
+		 JOIN persons per ON per.id = s.person_id
+		 WHERE s.id = ?
+		   AND per.status = 'ACTIVE'
+		   AND (s.termination_date IS NULL OR TRIM(s.termination_date) = '')`,
+		trimmed,
+	).Scan(
+		&st.StaffID, &st.PersonID, &st.StaffCode,
+		&title, &prefFirst, &prefLast, &legFirst, &legLast,
+		&st.JobTitle, &st.StaffType, &isDSLInt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("active staff not found: %s", trimmed)
+		}
+		return nil, fmt.Errorf("failed to query staff %s: %w", trimmed, err)
+	}
+	st.FirstName = prefFirst
+	st.LastName = prefLast
+	st.DisplayName = formatPersonaDisplayName(title, prefFirst, legFirst, prefLast, legLast)
+	st.IsDSL = isDSLInt == 1
+	return &st, nil
+}
+
+

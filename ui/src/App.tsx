@@ -589,9 +589,14 @@ export function App() {
         }
 
         const { pluginId, win } = resolveSourceIframe(event.source);
+        const rpcHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+        const propagatedStaffId = activeStaffId || activeCaller?.staff_id || '';
+        if (propagatedStaffId) {
+          rpcHeaders['X-MIS-Staff-ID'] = propagatedStaffId;
+        }
         const res = await fetch(`/api/plugins/${encodeURIComponent(pluginId)}/rpc/${encodeURIComponent(method)}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: rpcHeaders,
           body: JSON.stringify({ args: args ?? {} }),
         });
 
@@ -606,6 +611,23 @@ export function App() {
           },
           '*'
         );
+
+        if (payload.ok && payload.mutated) {
+          const invalidationEvent = {
+            type: 'mis:plugin:invalidated',
+            plugin_id: pluginId,
+            method,
+          };
+          const mainPluginEl = pluginIframeRefs.current.get(pluginId);
+          if (mainPluginEl?.contentWindow) {
+            mainPluginEl.contentWindow.postMessage(invalidationEvent, '*');
+          }
+          for (const [, entry] of widgetIframeRefs.current.entries()) {
+            if (entry.pluginId === pluginId && entry.el?.contentWindow) {
+              entry.el.contentWindow.postMessage(invalidationEvent, '*');
+            }
+          }
+        }
       }
     };
 
@@ -622,6 +644,7 @@ export function App() {
     activePupilId,
     activeGroupId,
     activeStaffId,
+    activeCaller,
   ]);
 
   const handleToggleThemeMode = () => {
