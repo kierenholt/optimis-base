@@ -1,50 +1,27 @@
-local SCALE_9_TO_1_POINTS = {
-  ["9"] = 9,
-  ["8"] = 8,
-  ["7"] = 7,
-  ["6"] = 6,
-  ["5"] = 5,
-  ["4"] = 4,
-  ["3"] = 3,
-  ["2"] = 2,
-  ["1"] = 1,
-  ["U"] = 0
-}
-
-local SCALE_PRIMARY_POINTS = {
-  ["GDS"] = 3,
-  ["EXS"] = 2,
-  ["WT"] = 1
-}
-
 local function ensure_mat_schema_synced(ctx)
   local schema_ver = (ctx.school and ctx.school.mat_grading_schema_version) or ""
-  if schema_ver == "" then
+  local schema_tbl = ctx.school and ctx.school.mat_grading_schema
+  if schema_ver == "" or type(schema_tbl) ~= "table" or type(schema_tbl.scales) ~= "table" then
     error("MAT_GRADING_SCHEMA_NOT_SYNCED: pull MAT policies into __system_config before using the markbook")
   end
   local mat_id = (ctx.school and ctx.school.mat_id) or ""
-  return mat_id, schema_ver
+  return mat_id, schema_ver, schema_tbl
 end
 
-local function validate_and_score_mat_grade(grading_scale, raw_grade)
+local function validate_and_score_mat_grade(schema_tbl, grading_scale, raw_grade)
   if type(raw_grade) ~= "string" or raw_grade == "" then
     error("INVALID_MAT_GRADE: missing mandatory grade value")
   end
-  if grading_scale == "9-1" then
-    local pts = SCALE_9_TO_1_POINTS[raw_grade]
-    if pts == nil then
-      error("INVALID_MAT_GRADE: grade '" .. tostring(raw_grade) .. "' is not valid for MAT grading scale '9-1'")
-    end
-    return pts
-  elseif grading_scale == "WT,EXS,GDS" then
-    local pts = SCALE_PRIMARY_POINTS[raw_grade]
-    if pts == nil then
-      error("INVALID_MAT_GRADE: grade '" .. tostring(raw_grade) .. "' is not valid for MAT grading scale 'WT,EXS,GDS'")
-    end
-    return pts
-  else
+  local scales = type(schema_tbl) == "table" and schema_tbl.scales or nil
+  local scale_spec = type(scales) == "table" and scales[grading_scale] or nil
+  if type(scale_spec) ~= "table" or type(scale_spec.points) ~= "table" then
     error("INVALID_MAT_SCALE: unsupported MAT grading scale '" .. tostring(grading_scale) .. "'")
   end
+  local pts = scale_spec.points[raw_grade]
+  if pts == nil then
+    error("INVALID_MAT_GRADE: grade '" .. tostring(raw_grade) .. "' is not valid for MAT grading scale '" .. tostring(grading_scale) .. "'")
+  end
+  return tonumber(pts) or 0
 end
 
 local function build_group_markbook_snapshot(ctx, group_id, ay_id, ref_date, active_column_id)
@@ -146,7 +123,7 @@ function create_markbook_column(ctx, args)
   if type(args) ~= "table" then
     error("missing mandatory arguments table")
   end
-  local mat_id, schema_ver = ensure_mat_schema_synced(ctx)
+  local mat_id, schema_ver, schema_tbl = ensure_mat_schema_synced(ctx)
 
   local group_id = args.group_id
   if type(group_id) ~= "string" or group_id == "" then
@@ -157,14 +134,19 @@ function create_markbook_column(ctx, args)
     error("missing mandatory parameter: title")
   end
   local grading_scale = args.grading_scale
-  if grading_scale ~= "9-1" and grading_scale ~= "WT,EXS,GDS" then
+  if type(grading_scale) ~= "string" or type(schema_tbl.scales[grading_scale]) ~= "table" then
     error("INVALID_MAT_SCALE: grading_scale must be '9-1' or 'WT,EXS,GDS'")
   end
 
   local ay_id = args.academic_year_id or (ctx.school and ctx.school.academic_year_id) or "ay_2026_2027"
   local ref_date = args.reference_date or (ctx.school and ctx.school.reference_date) or "2026-10-28"
 
-  -- Enforce caller scope on group_id (:own_groups blocks other sets for Classroom Teachers; :all allows HoD)
+  -- Enforce caller scope on group_id via first-class DAL write guard (:own_groups blocks other sets for Teachers; :all allows HoD)
+  ctx.dal.groups.assert_caller_assigned(group_id, {
+    academic_year_id = ay_id,
+    reference_date = ref_date
+  })
+
   local pupils = ctx.dal.pupils.list_by_group(group_id, {
     academic_year_id = ay_id,
     reference_date = ref_date
@@ -220,7 +202,7 @@ function save_pupil_grades(ctx, args)
   if type(args) ~= "table" then
     error("missing mandatory arguments table")
   end
-  local mat_id, schema_ver = ensure_mat_schema_synced(ctx)
+  local mat_id, schema_ver, schema_tbl = ensure_mat_schema_synced(ctx)
 
   local column_id = args.column_id
   if type(column_id) ~= "string" or column_id == "" then
@@ -237,7 +219,12 @@ function save_pupil_grades(ctx, args)
   local ay_id = args.academic_year_id or (ctx.school and ctx.school.academic_year_id) or "ay_2026_2027"
   local ref_date = args.reference_date or (ctx.school and ctx.school.reference_date) or "2026-10-28"
 
-  -- Enforce caller scope on group_id and verify every graded pupil is an active member of group_id on ref_date
+  -- Enforce caller scope on group_id via first-class DAL write guard and verify every graded pupil is an active member of group_id on ref_date
+  ctx.dal.groups.assert_caller_assigned(group_id, {
+    academic_year_id = ay_id,
+    reference_date = ref_date
+  })
+
   local group_pupils = ctx.dal.pupils.list_by_group(group_id, {
     academic_year_id = ay_id,
     reference_date = ref_date
@@ -259,7 +246,7 @@ function save_pupil_grades(ctx, args)
   local col = col_rows[1]
 
   local updated_at = ctx.clock.now_utc()
-  local saved_count = 0
+  local batch_rows = {}
 
   for i = 1, #args.entries do
     local entry = args.entries[i]
@@ -274,35 +261,38 @@ function save_pupil_grades(ctx, args)
       error("access denied under own_groups scope: pupil " .. tostring(pid) .. " is not an active member of group " .. tostring(group_id))
     end
 
-    local pts = validate_and_score_mat_grade(col.grading_scale, grade_val)
+    local pts = validate_and_score_mat_grade(schema_tbl, col.grading_scale, grade_val)
     local grade_id = "mkg_" .. ctx.crypto.uuid()
 
-    ctx.plugin_db.exec(
-      [[INSERT INTO plugin_markbook.markbook_grades (
-          id, column_id, group_id, pupil_id, academic_year_id,
-          grade, grade_points, teacher_comment, recorded_by_staff_id, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(column_id, pupil_id) DO UPDATE SET
-          grade = excluded.grade,
-          grade_points = excluded.grade_points,
-          teacher_comment = excluded.teacher_comment,
-          recorded_by_staff_id = excluded.recorded_by_staff_id,
-          updated_at = excluded.updated_at]],
-      {
-        grade_id,
-        column_id,
-        group_id,
-        pid,
-        ay_id,
-        grade_val,
-        pts,
-        comment_val,
-        ctx.caller.staff_id or "",
-        updated_at
-      }
-    )
-    saved_count = saved_count + 1
+    batch_rows[#batch_rows + 1] = {
+      grade_id,
+      column_id,
+      group_id,
+      pid,
+      ay_id,
+      grade_val,
+      pts,
+      comment_val,
+      ctx.caller.staff_id or "",
+      updated_at
+    }
   end
+
+  ctx.plugin_db.exec_batch(
+    [[INSERT INTO plugin_markbook.markbook_grades (
+        id, column_id, group_id, pupil_id, academic_year_id,
+        grade, grade_points, teacher_comment, recorded_by_staff_id, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(column_id, pupil_id) DO UPDATE SET
+        grade = excluded.grade,
+        grade_points = excluded.grade_points,
+        teacher_comment = excluded.teacher_comment,
+        recorded_by_staff_id = excluded.recorded_by_staff_id,
+        updated_at = excluded.updated_at]],
+    batch_rows
+  )
+
+  local saved_count = #batch_rows
 
   local saved_grades = ctx.plugin_db.query(
     [[SELECT id, column_id, group_id, pupil_id, academic_year_id,

@@ -568,7 +568,7 @@ export function App() {
           }
         } else if (
           requestedPlugin &&
-          plugins.some((p) => p.id === requestedPlugin)
+          installedPlugins.some((p) => p.id === requestedPlugin)
         ) {
           designatedPlugin = requestedPlugin;
         }
@@ -662,6 +662,7 @@ export function App() {
     broadcastInitToMountedIframes,
     activatePluginInKeepAlivePool,
     entityLinkHandlers,
+    installedPlugins,
     activePluginId,
     activePupilId,
     activeGroupId,

@@ -27,6 +27,7 @@
     },
     "record_trip_consent": {
       "scopes": [
+        "dal.groups.read:own_groups",
         "dal.pupils.read:own_groups",
         "dal.guardians.read:own_groups"
       ],
@@ -51,6 +52,20 @@
       ],
       "mutates": false,
       "timeout_ms": 2500
+    }
+  },
+  "workers": {
+    "on_parent_dmz_submission": {
+      "events": [
+        "core.parent_dmz.submission_received"
+      ],
+      "scopes": [
+        "dal.pupils.read:all",
+        "dal.guardians.read:all"
+      ],
+      "mutates": true,
+      "timeout_ms": 5000,
+      "max_concurrency": 1
     }
   }
 }

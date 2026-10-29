@@ -33,7 +33,8 @@ function create_trip(ctx, args)
 
   local opts = resolve_temporal_opts(ctx, args, nil)
 
-  -- Enforce :own_groups scoping and resolve active on-roll group roster via ctx.dal.pupils.list_by_group
+  -- Enforce :own_groups ownership guard via ctx.dal.groups.assert_caller_assigned (1B) and resolve active on-roll group roster
+  ctx.dal.groups.assert_caller_assigned(args.group_id, opts)
   local roster = ctx.dal.pupils.list_by_group(args.group_id, opts)
 
   local trip_id = args.trip_id
@@ -112,7 +113,8 @@ function record_trip_consent(ctx, args)
 
   local opts = resolve_temporal_opts(ctx, args, trip.academic_year_id)
 
-  -- Verify pupil is an active member of the trip's group under caller's :own_groups scope
+  -- Enforce :own_groups ownership guard and verify pupil is an active member of the trip's group
+  ctx.dal.groups.assert_caller_assigned(trip.group_id, opts)
   local group_pupils = ctx.dal.pupils.list_by_group(trip.group_id, opts)
   local matched_pupil = nil
   for i = 1, #group_pupils do
@@ -222,7 +224,8 @@ function generate_trip_emergency_pack(ctx, args)
 
   local opts = resolve_temporal_opts(ctx, args, trip.academic_year_id)
 
-  -- 1. Fetch active on-roll group roster (enforcing :own_groups for the Trip Leader)
+  -- 1. Enforce :own_groups ownership guard and fetch active on-roll group roster
+  ctx.dal.groups.assert_caller_assigned(trip.group_id, opts)
   local group_pupils = ctx.dal.pupils.list_by_group(trip.group_id, opts)
   local pupil_by_id = {}
   for i = 1, #group_pupils do
@@ -315,6 +318,7 @@ function get_trip_details(ctx, args)
     )
   elseif type(args.group_id) == "string" and args.group_id ~= "" then
     local opts = resolve_temporal_opts(ctx, args, nil)
+    ctx.dal.groups.assert_caller_assigned(args.group_id, opts)
     ctx.dal.pupils.list_by_group(args.group_id, opts)
     trip_rows = ctx.plugin_db.query(
       [[SELECT id, group_id, academic_year_id, trip_name, destination, trip_date, lead_staff_id, created_at
@@ -353,6 +357,85 @@ function get_trip_details(ctx, args)
     data = {
       trip = trip,
       consents = consents
+    }
+  }
+end
+
+function on_parent_dmz_submission(ctx, event)
+  local payload = type(event) == "table" and (event.payload or event) or {}
+  if payload.submission_type ~= "TRIP_CONSENT" or payload.status ~= "ACCEPTED" then
+    return { ok = true, data = { ignored = true } }
+  end
+  local pupil_id = payload.pupil_id
+  local guardian_id = payload.submitted_by_guardian_person_id or payload.guardian_id
+  if type(pupil_id) ~= "string" or pupil_id == "" or type(guardian_id) ~= "string" or guardian_id == "" then
+    return { ok = true, data = { ignored = true } }
+  end
+
+  local trip_rows = ctx.plugin_db.query(
+    [[SELECT id, group_id, academic_year_id, trip_name, destination, trip_date
+      FROM plugin_trips.trips
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1]],
+    {}
+  )
+  if #trip_rows == 0 then
+    return { ok = true, data = { ignored = true } }
+  end
+  local trip = trip_rows[1]
+
+  local opts = resolve_temporal_opts(ctx, { reference_date = payload.date }, trip.academic_year_id)
+  local pr_guardians = ctx.dal.guardians.list_for_pupil(pupil_id, {
+    academic_year_id = opts.academic_year_id,
+    reference_date = opts.reference_date,
+    require_parental_responsibility = true
+  })
+
+  local authorized_guardian = nil
+  for i = 1, #pr_guardians do
+    if pr_guardians[i].guardian_person_id == guardian_id and pr_guardians[i].has_parental_responsibility == true then
+      authorized_guardian = pr_guardians[i]
+      break
+    end
+  end
+  if not authorized_guardian then
+    return { ok = false, error_code = "GUARDIAN_NOT_AUTHORIZED_FOR_CONSENT" }
+  end
+
+  local consent_id = "tcon_" .. ctx.crypto.uuid()
+  local guardian_name = (authorized_guardian.first_name or "") .. " " .. (authorized_guardian.last_name or "")
+  local recorded_at = ctx.clock.now_utc()
+
+  ctx.plugin_db.exec(
+    "DELETE FROM plugin_trips.trip_consents WHERE trip_id = ? AND pupil_id = ?",
+    { trip.id, pupil_id }
+  )
+  ctx.plugin_db.exec(
+    [[INSERT INTO plugin_trips.trip_consents (
+        id, trip_id, pupil_id, guardian_person_id, guardian_name,
+        relationship_code, has_parental_responsibility, consent_status,
+        dietary_notes, medical_notes, emergency_phone,
+        recorded_by_staff_id, recorded_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, 'CONSENTED', ?, '', ?, 'SYSTEM_DMZ', ?)]],
+    {
+      consent_id,
+      trip.id,
+      pupil_id,
+      guardian_id,
+      guardian_name,
+      authorized_guardian.relationship_code or "",
+      payload.reason or "",
+      authorized_guardian.phone_primary or "",
+      recorded_at
+    }
+  )
+
+  return {
+    ok = true,
+    data = {
+      consent_id = consent_id,
+      trip_id = trip.id,
+      pupil_id = pupil_id
     }
   }
 end

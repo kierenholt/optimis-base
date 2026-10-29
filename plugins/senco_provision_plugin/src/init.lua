@@ -24,10 +24,19 @@ local function build_pupil_sen_rollup(ctx, pupil, sen_summary)
 
   local first_name = pupil.preferred_first_name or pupil.first_name or ""
   local last_name = pupil.preferred_last_name or pupil.last_name or ""
-  local prov_code = (sen_summary and sen_summary.sen_provision_code) or "N"
-  local need_code = (sen_summary and sen_summary.primary_sen_need_code) or ""
-  local strategies = (sen_summary and sen_summary.teaching_strategies) or ""
-  local med_conditions = (sen_summary and sen_summary.medical_conditions) or {}
+  local src = sen_summary or pupil
+  local prov_code = (src and src.sen_provision_code) or "N"
+  local need_code = (src and src.primary_sen_need_code) or ""
+  local sec_need_code = (src and src.secondary_sen_need_code) or ""
+  local strategies = (src and src.teaching_strategies) or ""
+  local pupil_targets = (src and src.pupil_targets) or ""
+  local senco_notes = (src and src.senco_notes) or ""
+  local ehcp_start_date = (src and src.ehcp_start_date) or ""
+  local ehcp_review_due_date = (src and src.ehcp_review_due_date) or ""
+  local next_annual_review_date = (src and src.next_annual_review_date) or ehcp_review_due_date
+  local sen_needs = (src and src.sen_needs) or {}
+  local sen_assistants = (src and src.sen_assistants) or {}
+  local med_conditions = (src and src.medical_conditions) or {}
 
   return {
     pupil_id = pupil.id,
@@ -38,7 +47,15 @@ local function build_pupil_sen_rollup(ctx, pupil, sen_summary)
     academic_year_id = pupil.academic_year_id or (ctx.school and ctx.school.academic_year_id) or "",
     sen_provision_code = prov_code,
     primary_sen_need_code = need_code,
+    secondary_sen_need_code = sec_need_code,
     teaching_strategies = strategies,
+    pupil_targets = pupil_targets,
+    senco_notes = senco_notes,
+    ehcp_start_date = ehcp_start_date,
+    ehcp_review_due_date = ehcp_review_due_date,
+    next_annual_review_date = next_annual_review_date,
+    sen_needs = sen_needs,
+    sen_assistants = sen_assistants,
     medical_conditions = med_conditions,
     total_ta_hours = total_ta_hours,
     provision_count = #rows,
@@ -49,31 +66,24 @@ local function build_pupil_sen_rollup(ctx, pupil, sen_summary)
   }
 end
 
-local function build_group_sen_pupils(ctx, group_id, opts)
-  if type(group_id) ~= "string" or group_id == "" then
-    return {}
-  end
-  local group_pupils = ctx.dal.pupils.list_by_group(group_id, opts)
-  if not group_pupils or #group_pupils == 0 then
-    return {}
+local function build_sen_register_pupils(ctx, group_id, opts)
+  local reg_opts = {
+    academic_year_id = opts.academic_year_id,
+    reference_date = opts.reference_date,
+    strict_own_groups = opts.strict_own_groups,
+    group_id = group_id or ""
+  }
+  local entries = {}
+  if ctx.dal.sen and ctx.dal.sen.list_register then
+    entries = ctx.dal.sen.list_register(reg_opts)
+  elseif ctx.dal.pupils and ctx.dal.pupils.list_sen_register then
+    entries = ctx.dal.pupils.list_sen_register(reg_opts)
   end
 
-  local pupil_ids = {}
-  for i = 1, #group_pupils do
-    pupil_ids[i] = group_pupils[i].id
-  end
-
-  local sen_batch = ctx.dal.pupils.list_sen_and_medical_batch(pupil_ids, opts)
   local sen_pupils = {}
-  local idx = 1
-  for i = 1, #group_pupils do
-    local p = group_pupils[i]
-    local summary = sen_batch and sen_batch[p.id] or nil
-    local code = summary and summary.sen_provision_code or "N"
-    if code == "K" or code == "E" then
-      sen_pupils[idx] = build_pupil_sen_rollup(ctx, p, summary)
-      idx = idx + 1
-    end
+  for i = 1, #entries do
+    local entry = entries[i]
+    sen_pupils[i] = build_pupil_sen_rollup(ctx, entry, entry)
   end
   return sen_pupils
 end
@@ -161,7 +171,7 @@ function log_iep_provision(ctx, args)
   local rollup = build_pupil_sen_rollup(ctx, pupil, sen_summary)
   rollup.logged_provision_id = provision_id
   if type(args.group_id) == "string" and args.group_id ~= "" then
-    rollup.sen_pupils = build_group_sen_pupils(ctx, args.group_id, opts)
+    rollup.sen_pupils = build_sen_register_pupils(ctx, args.group_id, opts)
   end
 
   ctx.events.emit("sen.provision_logged", {
@@ -215,7 +225,7 @@ function get_sen_differentiation_summary(ctx, args)
 
   local sen_pupils = {}
   if type(args.group_id) == "string" and args.group_id ~= "" then
-    sen_pupils = build_group_sen_pupils(ctx, args.group_id, opts)
+    sen_pupils = build_sen_register_pupils(ctx, args.group_id, opts)
   end
 
   if type(args.pupil_id) == "string" and args.pupil_id ~= "" then
@@ -246,7 +256,14 @@ function get_sen_differentiation_summary(ctx, args)
     }
   end
 
-  error("missing mandatory parameter: pupil_id or group_id")
+  -- 1G: When neither pupil_id nor group_id is provided, query ctx.dal.sen.list_register across the caller's scoped SEN register
+  local register_pupils = build_sen_register_pupils(ctx, "", opts)
+  return {
+    ok = true,
+    data = {
+      sen_pupils = register_pupils
+    }
+  }
 end
 
 function export_pupil_data(ctx, args)

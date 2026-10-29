@@ -379,39 +379,62 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
       widgetFrame.getByTestId(`widget-sen-ta-${m1Seed.second_active_pupil_id}`)
     ).toContainText('5 hrs/wk — Mr Thomas Wright');
 
-    // 5. Teacher clicks a pupil badge (`data-mis-link="student"`) inside the SEN Differentiation Mini-Widget and verifies it wakes the plugin in the Keep-Alive LRU pool for that pupil
+    // 5. Teacher clicks a pupil badge (`data-mis-link="student" data-mis-plugin="self"`) inside the SEN Differentiation Mini-Widget and verifies it directly wakes `uk.org.optimis.sen.provision` in the Keep-Alive LRU pool for that pupil (1H)
     const firstPupilLink = widgetFrame.getByTestId(
       `widget-sen-student-link-${m1Seed.active_pupil_id}`
     );
     await expect(firstPupilLink).toBeVisible();
     await expect(firstPupilLink).toHaveAttribute('data-mis-link', 'student');
+    await expect(firstPupilLink).toHaveAttribute('data-mis-plugin', 'self');
     await expect(firstPupilLink).toHaveAttribute('data-pupil-id', m1Seed.active_pupil_id);
 
     await firstPupilLink.click();
 
-    // Verify Keep-Alive LRU pool wakes the student handler (`uk.org.optimis.test`) while keeping `uk.org.optimis.sen.provision` mounted and updated to `active_pupil_id`
+    // Verify Keep-Alive LRU pool directly wakes `uk.org.optimis.sen.provision` (1H `data-mis-plugin="self"`) and updates context to `active_pupil_id` without needing an intermediate student profile plugin
     const lruPool = page.getByTestId('keep-alive-lru-pool');
-    await expect(lruPool).toHaveAttribute(
-      'data-lru-order',
-      'uk.org.optimis.sen.provision,uk.org.optimis.test'
-    );
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.test')).toBeVisible();
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.sen.provision')).toBeHidden();
+    await expect(lruPool).toHaveAttribute('data-lru-order', /uk\.org\.optimis\.sen\.provision$/);
+    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.sen.provision')).toBeVisible();
     await expect(page.getByTestId('active-entity-context-pill')).toContainText(
       `student:${m1Seed.active_pupil_id}`
     );
     await expect(page.getByTestId('deep-link-navigation-status')).toContainText(
-      `student:${m1Seed.active_pupil_id} -> uk.org.optimis.test`
+      `student:${m1Seed.active_pupil_id} -> uk.org.optimis.sen.provision`
     );
 
-    // Switch back to the cached `uk.org.optimis.sen.provision` tab in the Keep-Alive LRU Pool and verify it immediately reflects `active_pupil_id` (Ada Lovelace, E / ASD)
-    await senNavBtn.click();
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.sen.provision')).toBeVisible();
+    // Verify `uk.org.optimis.sen.provision` immediately reflects `active_pupil_id` (Ada Lovelace, E / ASD)
     await expect(senFrame.getByTestId('sen-context-status')).toContainText(
       `PUPIL:${m1Seed.active_pupil_id}`
     );
     await expect(senFrame.getByTestId('sen-provision-code-badge')).toHaveText('E');
     await expect(senFrame.getByTestId('sen-total-ta-hours')).toHaveText('15');
+
+    // 6. Verify 1G (`ctx.dal.sen.list_register` & expanded SEN fields): calling `get_sen_differentiation_summary` without `pupil_id` or `group_id` returns the scoped SEN register (`K` and `E` pupils) with `ehcp_start_date` and `sen_needs`
+    const registerRpcRes = await request.post(
+      `/api/plugins/uk.org.optimis.sen.provision/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
+        m1Seed.teacher_staff_id
+      )}`,
+      {
+        data: {
+          args: {
+            academic_year_id: m1Seed.academic_year_id,
+            reference_date: m1Seed.reference_date,
+          },
+        },
+      }
+    );
+    expect(registerRpcRes.ok()).toBe(true);
+    const registerRpcBody = await registerRpcRes.json();
+    expect(registerRpcBody.ok).toBe(true);
+    expect(Array.isArray(registerRpcBody.data.sen_pupils)).toBe(true);
+    expect(registerRpcBody.data.sen_pupils.length).toBe(2);
+    const ehcpPupil = registerRpcBody.data.sen_pupils.find(
+      (p: { pupil_id: string }) => p.pupil_id === m1Seed.active_pupil_id
+    );
+    expect(ehcpPupil).toBeDefined();
+    expect(ehcpPupil.sen_provision_code).toBe('E');
+    expect(ehcpPupil.ehcp_start_date).toBe('2026-10-11');
+    expect(Array.isArray(ehcpPupil.sen_needs)).toBe(true);
+    expect(ehcpPupil.sen_needs.length).toBeGreaterThanOrEqual(1);
   });
 
   test('senProvisionRbacScopingAndGdprHooks_teacherBlockedFromWriteAndOtherGroupReadAndAdminRedactsAndPurgesSar_test', async ({
