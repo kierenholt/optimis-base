@@ -39,6 +39,7 @@ type Config struct {
 	SchoolURN        string
 	HostKMSKeyHandle string
 	PluginsDir       string
+	CoreDBPath       string
 }
 
 type EndpointSpec struct {
@@ -166,7 +167,7 @@ func NewHost(cfg Config) (*Host, error) {
 		return nil, fmt.Errorf("failed to create DataDirPath: %w", err)
 	}
 
-	coreDAL, err := dal.NewCoreDAL(cfg.DataDirPath, cfg.SchoolURN)
+	coreDAL, err := dal.NewCoreDALWithPath(cfg.DataDirPath, cfg.SchoolURN, cfg.CoreDBPath)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +194,7 @@ func NewHost(cfg Config) (*Host, error) {
 		})
 	})
 
-	h.logInfo(fmt.Sprintf("Host initialized for school URN %s", cfg.SchoolURN))
+	h.logInfo(fmt.Sprintf("Host initialized for school URN %s (core_db=%s)", cfg.SchoolURN, coreDAL.DBPath()))
 	return h, nil
 }
 
@@ -206,11 +207,25 @@ func (h *Host) Close() error {
 	return h.coreDAL.Close()
 }
 
+func (h *Host) appendLogLineToFileLocked(entry string) {
+	if strings.TrimSpace(h.cfg.DataDirPath) == "" {
+		return
+	}
+	logFilePath := filepath.Join(h.cfg.DataDirPath, "mis-server.log")
+	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(entry + "\n")
+}
+
 func (h *Host) logInfo(msg string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	entry := fmt.Sprintf("[%s] INFO %s", time.Now().UTC().Format(time.RFC3339Nano), msg)
 	h.serviceLogs = append(h.serviceLogs, entry)
+	h.appendLogLineToFileLocked(entry)
 }
 
 func (h *Host) logError(msg string) {
@@ -218,6 +233,7 @@ func (h *Host) logError(msg string) {
 	defer h.mu.Unlock()
 	entry := fmt.Sprintf("[%s] ERROR %s", time.Now().UTC().Format(time.RFC3339Nano), msg)
 	h.serviceLogs = append(h.serviceLogs, entry)
+	h.appendLogLineToFileLocked(entry)
 }
 
 func (h *Host) recordDiagnostic(pluginID string, method string, errClass string, duration time.Duration) {

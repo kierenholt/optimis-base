@@ -19,6 +19,7 @@ const viteWatcher = spawn('npx', ['vite', 'build', '--watch', '--config', 'ui/vi
 // 2. Manage the Go Host Server process
 let goServer = null;
 let rebuildTimer = null;
+const serverArgs = process.argv.slice(2);
 
 function startGoServer() {
   if (goServer) {
@@ -26,7 +27,7 @@ function startGoServer() {
     spawnSync('sleep', ['0.15']);
     goServer = null;
   }
-  goServer = spawn('./bin/mis-server', [], {
+  goServer = spawn('./bin/mis-server', serverArgs, {
     cwd: rootDir,
     stdio: 'inherit',
   });

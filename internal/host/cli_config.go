@@ -22,6 +22,19 @@ func RunConfigCLI(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
+	return RunConfigCLIWithPath(ctx, dataDirPath, schoolURN, "", args, stdout, stderr)
+}
+
+// RunConfigCLIWithPath initializes CoreDAL pointing at a specific core or seed database file.
+func RunConfigCLIWithPath(
+	ctx context.Context,
+	dataDirPath string,
+	schoolURN string,
+	coreDBPath string,
+	args []string,
+	stdout io.Writer,
+	stderr io.Writer,
+) error {
 	if strings.TrimSpace(dataDirPath) == "" {
 		return errors.New("missing mandatory parameter: dataDirPath")
 	}
@@ -29,7 +42,7 @@ func RunConfigCLI(
 		return errors.New("missing mandatory parameter: schoolURN")
 	}
 
-	coreDAL, err := dal.NewCoreDAL(dataDirPath, schoolURN)
+	coreDAL, err := dal.NewCoreDALWithPath(dataDirPath, schoolURN, coreDBPath)
 	if err != nil {
 		return err
 	}

@@ -237,6 +237,7 @@ func (h *Host) recordDiagnosticDetailed(
 		overflow := len(h.diagnostics) - capLimit
 		h.diagnostics = append([]string(nil), h.diagnostics[overflow:]...)
 	}
+	h.appendLogLineToFileLocked(legacyLine)
 }
 
 func (h *Host) ResetDiagnostics(capacity int) {

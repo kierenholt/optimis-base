@@ -1,6 +1,8 @@
 # QA Synthetic UK School Database Seeder (`cmd/mis-seed-qa`)
 
-This package implements the standalone deterministic PRNG + pinned-anchor QA database generator (`npm run seed:qa` / `go run ./cmd/mis-seed-qa`) that populates `<DATA_DIR_PATH>/qa_core.db` across all 45 tables in [`schema/core/`](file:///home/kieren/Documents/code/optimis/schema/core/SCHEMA_MAP.md).
+This package implements the standalone deterministic PRNG + pinned-anchor QA database generator (`npm run seed` / `npm run seed:qa` / `go run ./cmd/mis-seed-qa`) that populates a target SQLite database (defaulting to `.data/core.db` or `.data/qa_core.db`) across all 45 tables in [`schema/core/`](file:///home/kieren/Documents/code/optimis/schema/core/SCHEMA_MAP.md).
+
+`npm run seed` does not read from `.env`. When run without arguments, it interactively prompts the user for the target database location. Non-interactive execution is supported via `-db <path>`, positional path argument, or `--overwrite-dev-db`.
 
 ## Seeded Dataset Profile
 

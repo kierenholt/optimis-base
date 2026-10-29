@@ -14,77 +14,51 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func loadDotEnv(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("mandatory .env file missing at %s: %w", path, err)
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
-		if os.Getenv(key) == "" {
-			_ = os.Setenv(key, val)
-		}
-	}
-	return scanner.Err()
-}
-
-func requireEnv(key string) (string, error) {
-	val := strings.TrimSpace(os.Getenv(key))
-	if val == "" {
-		return "", fmt.Errorf("missing mandatory environment variable: %s", key)
-	}
-	return val, nil
-}
 
 func run() error {
 	var customDBPath string
 	var overwriteDevDB bool
 	var seedVal uint64
+	var schoolURN string
+	var kmsKeyHandle string
 
-	flag.StringVar(&customDBPath, "db", "", "Explicit target SQLite database path (overrides default <DATA_DIR_PATH>/qa_core.db)")
-	flag.BoolVar(&overwriteDevDB, "overwrite-dev-db", false, "Write directly to <DATA_DIR_PATH>/core.db instead of <DATA_DIR_PATH>/qa_core.db")
+	flag.StringVar(&customDBPath, "db", "", "Explicit target SQLite database path")
+	flag.BoolVar(&overwriteDevDB, "overwrite-dev-db", false, "Write directly to .data/core.db")
 	flag.Uint64Var(&seedVal, "seed", 42, "Deterministic PRNG seed for synthetic school cohort generation")
+	flag.StringVar(&schoolURN, "urn", "100001", "School URN for synthetic school")
+	flag.StringVar(&kmsKeyHandle, "kms", "kms-local-dev-key-001", "Host KMS key handle")
 	flag.Parse()
 
-	if err := loadDotEnv(".env"); err != nil {
-		return err
-	}
-
-	dataDirPath, err := requireEnv("DATA_DIR_PATH")
-	if err != nil {
-		return err
-	}
-	schoolURN, err := requireEnv("SCHOOL_URN")
-	if err != nil {
-		return err
-	}
-	kmsKeyHandle, err := requireEnv("HOST_KMS_KEY_HANDLE")
-	if err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(dataDirPath, 0o755); err != nil {
-		return fmt.Errorf("failed to create DATA_DIR_PATH %s: %w", dataDirPath, err)
-	}
-
-	targetDBPath := filepath.Join(dataDirPath, "qa_core.db")
+	targetDBPath := ""
 	if overwriteDevDB {
-		targetDBPath = filepath.Join(dataDirPath, "core.db")
-	}
-	if strings.TrimSpace(customDBPath) != "" {
+		targetDBPath = ".data/core.db"
+	} else if strings.TrimSpace(customDBPath) != "" {
 		targetDBPath = strings.TrimSpace(customDBPath)
+	} else if flag.NArg() > 0 && strings.TrimSpace(flag.Arg(0)) != "" {
+		targetDBPath = strings.TrimSpace(flag.Arg(0))
+	}
+
+	if targetDBPath == "" {
+		fmt.Print("Where would you like to put the seed database? [.data/core.db]: ")
+		reader := bufio.NewReader(os.Stdin)
+		line, err := reader.ReadString('\n')
+		if err != nil && len(line) == 0 {
+			targetDBPath = ".data/core.db"
+		} else {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				targetDBPath = ".data/core.db"
+			} else {
+				targetDBPath = line
+			}
+		}
+	}
+
+	targetDBDir := filepath.Dir(targetDBPath)
+	if targetDBDir != "" && targetDBDir != "." {
+		if err := os.MkdirAll(targetDBDir, 0o755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", targetDBDir, err)
+		}
 	}
 
 	// Clean any prior target DB and WAL/SHM artifacts so QA starts from a clean deterministic state

@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"optimis/internal/host"
@@ -62,15 +65,144 @@ func parseStrictBoolEnv(key string) (bool, error) {
 	}
 }
 
+func discoverPluginFolders(dir string, includeTestPlugin bool) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read plugin directory %s: %w", dir, err)
+	}
+	var folders []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !includeTestPlugin && name == "test_plugin" {
+			continue
+		}
+		manifestPath := filepath.Join(dir, name, "manifest.json")
+		if st, err := os.Stat(manifestPath); err == nil && !st.IsDir() {
+			folders = append(folders, name)
+		}
+	}
+	sort.Strings(folders)
+	return folders, nil
+}
+
+func resolvePreloadPluginFolders(pluginsDir string, rawSpec string, includeTestPlugin bool) ([]string, error) {
+	trimmedSpec := strings.TrimSpace(rawSpec)
+	if trimmedSpec == "" || strings.EqualFold(trimmedSpec, "none") || strings.EqualFold(trimmedSpec, "false") || trimmedSpec == "0" {
+		return nil, nil
+	}
+
+	seen := make(map[string]struct{})
+	var ordered []string
+	addFolder := func(name string) {
+		if _, exists := seen[name]; !exists {
+			seen[name] = struct{}{}
+			ordered = append(ordered, name)
+		}
+	}
+
+	for _, part := range strings.Split(trimmedSpec, ",") {
+		token := strings.TrimSpace(part)
+		if token == "" || strings.EqualFold(token, "none") {
+			continue
+		}
+		if strings.EqualFold(token, "all") || token == "*" {
+			discovered, err := discoverPluginFolders(pluginsDir, includeTestPlugin)
+			if err != nil {
+				return nil, err
+			}
+			for _, f := range discovered {
+				addFolder(f)
+			}
+			continue
+		}
+
+		// Case 1: token is a folder name directly inside PLUGINS_DIR (e.g. "timetable_attendance_plugin")
+		candidateInPluginsDir := filepath.Join(pluginsDir, token)
+		if st, err := os.Stat(filepath.Join(candidateInPluginsDir, "manifest.json")); err == nil && !st.IsDir() {
+			addFolder(filepath.Base(filepath.Clean(token)))
+			continue
+		}
+
+		// Case 2: token is a relative or absolute path on disk
+		cleanPath := filepath.Clean(token)
+		if dirStat, err := os.Stat(cleanPath); err == nil && dirStat.IsDir() {
+			// Check if cleanPath itself is a single plugin directory containing manifest.json
+			if mfStat, mfErr := os.Stat(filepath.Join(cleanPath, "manifest.json")); mfErr == nil && !mfStat.IsDir() {
+				addFolder(filepath.Base(cleanPath))
+				continue
+			}
+			// Otherwise check if cleanPath is a parent directory containing multiple plugin folders (e.g. "./plugins")
+			discovered, dErr := discoverPluginFolders(cleanPath, includeTestPlugin)
+			if dErr != nil {
+				return nil, dErr
+			}
+			if len(discovered) > 0 {
+				for _, f := range discovered {
+					addFolder(f)
+				}
+				continue
+			}
+		}
+
+		return nil, fmt.Errorf("PRELOAD_PLUGINS target %q is neither a valid plugin folder nor a directory of plugins in %s", token, pluginsDir)
+	}
+
+	return ordered, nil
+}
+
+func resolveDatabaseConfig(customFlag string) (string, string, error) {
+	raw := strings.TrimSpace(customFlag)
+	if raw == "" {
+		raw = strings.TrimSpace(os.Getenv("DATABASE_PATH"))
+	}
+	if raw == "" {
+		if legacyDataDir := strings.TrimSpace(os.Getenv("DATA_DIR_PATH")); legacyDataDir != "" {
+			raw = filepath.Join(legacyDataDir, "core.db")
+		} else {
+			return "", "", errors.New("missing mandatory environment variable: DATABASE_PATH")
+		}
+	}
+
+	cleanDB := filepath.Clean(raw)
+	dataDir := strings.TrimSpace(os.Getenv("DATA_DIR_PATH"))
+	if dataDir == "" {
+		dataDir = filepath.Dir(cleanDB)
+		if dataDir == "" || dataDir == "." {
+			dataDir = ".data"
+		}
+	}
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return "", "", fmt.Errorf("failed to create data directory %s: %w", dataDir, err)
+	}
+	return cleanDB, dataDir, nil
+}
+
 func run() error {
 	if err := loadDotEnv(".env"); err != nil {
 		return err
 	}
 
-	dataDirPath, err := requireEnv("DATA_DIR_PATH")
+	var allPluginsFlag bool
+	var noPluginsFlag bool
+	var includeTestPluginFlag bool
+	var pluginsListFlag string
+	var customDBPathFlag string
+
+	flag.BoolVar(&allPluginsFlag, "all-plugins", false, "Install and activate all production plugins in PLUGINS_DIR at startup")
+	flag.BoolVar(&noPluginsFlag, "no-plugins", false, "Boot with zero plugins loaded (overrides PRELOAD_PLUGINS)")
+	flag.BoolVar(&includeTestPluginFlag, "include-test-plugin", false, "Include test_plugin when preloading all plugins from a directory")
+	flag.StringVar(&pluginsListFlag, "plugins", "", "Single plugin folder, parent directory, or comma-separated list of plugin folders to preload at startup")
+	flag.StringVar(&customDBPathFlag, "db", "", "Explicit SQLite database path (overrides DATABASE_PATH from .env)")
+	flag.Parse()
+
+	coreDBPath, dataDirPath, err := resolveDatabaseConfig(customDBPathFlag)
 	if err != nil {
 		return err
 	}
+
 	schoolURN, err := requireEnv("SCHOOL_URN")
 	if err != nil {
 		return err
@@ -81,8 +213,12 @@ func run() error {
 	}
 
 	// Section 7C Local Break-Glass CLI (`./mis-server config ...`)
-	if len(os.Args) > 1 && strings.TrimSpace(os.Args[1]) == "config" {
-		return host.RunConfigCLI(context.Background(), dataDirPath, schoolURN, os.Args[2:], os.Stdout, os.Stderr)
+	if flag.Arg(0) == "config" || (len(os.Args) > 1 && strings.TrimSpace(os.Args[1]) == "config") {
+		subArgs := os.Args[2:]
+		if flag.Arg(0) == "config" {
+			subArgs = flag.Args()[1:]
+		}
+		return host.RunConfigCLIWithPath(context.Background(), dataDirPath, schoolURN, coreDBPath, subArgs, os.Stdout, os.Stderr)
 	}
 
 	port, err := requireEnv("PORT")
@@ -123,6 +259,7 @@ func run() error {
 		SchoolURN:        schoolURN,
 		HostKMSKeyHandle: kmsKeyHandle,
 		PluginsDir:       pluginsDir,
+		CoreDBPath:       coreDBPath,
 	})
 	if err != nil {
 		return err
@@ -145,13 +282,40 @@ func run() error {
 		return err
 	}
 
+	preloadSpec := strings.TrimSpace(os.Getenv("PRELOAD_PLUGINS"))
+	if preloadSpec == "" {
+		preloadSpec = strings.TrimSpace(os.Getenv("LOAD_PLUGINS"))
+	}
+	if strings.TrimSpace(pluginsListFlag) != "" {
+		preloadSpec = strings.TrimSpace(pluginsListFlag)
+	}
+	if allPluginsFlag {
+		preloadSpec = "all"
+	}
+
+	var foldersToLoad []string
+	if !noPluginsFlag && preloadSpec != "" {
+		resolved, rErr := resolvePreloadPluginFolders(pluginsDir, preloadSpec, includeTestPluginFlag)
+		if rErr != nil {
+			return rErr
+		}
+		foldersToLoad = resolved
+	}
+
+	for _, folder := range foldersToLoad {
+		if err := h.LoadPlugin(folder); err != nil {
+			return fmt.Errorf("failed to preload plugin folder %q: %w", folder, err)
+		}
+		log.Printf("Preloaded plugin folder: %s", folder)
+	}
+
 	handler, err := h.NewHTTPHandler()
 	if err != nil {
 		return err
 	}
 
 	addr := "127.0.0.1:" + port
-	log.Printf("Optimis MIS Host Server listening on http://%s", addr)
+	log.Printf("Optimis MIS Host Server listening on http://%s (preloaded_plugins=%d, core_db=%s, log_file=%s)", addr, len(foldersToLoad), coreDBPath, filepath.Join(dataDirPath, "mis-server.log"))
 	if err := http.ListenAndServe(addr, handler); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

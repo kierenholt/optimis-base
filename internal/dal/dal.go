@@ -103,6 +103,10 @@ type CoreDAL struct {
 }
 
 func NewCoreDAL(dataDirPath string, schoolURN string) (*CoreDAL, error) {
+	return NewCoreDALWithPath(dataDirPath, schoolURN, "")
+}
+
+func NewCoreDALWithPath(dataDirPath string, schoolURN string, customDBPath string) (*CoreDAL, error) {
 	if strings.TrimSpace(dataDirPath) == "" {
 		return nil, errors.New("mandatory parameter dataDirPath is missing")
 	}
@@ -111,6 +115,9 @@ func NewCoreDAL(dataDirPath string, schoolURN string) (*CoreDAL, error) {
 	}
 
 	dbPath := filepath.Join(dataDirPath, "core.db")
+	if trimmedCustom := strings.TrimSpace(customDBPath); trimmedCustom != "" {
+		dbPath = trimmedCustom
+	}
 	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbPath)
 
 	probeDB, err := sql.Open("sqlite", dsn)
@@ -190,6 +197,10 @@ func ValidatePluginDatabaseAlias(alias string) error {
 		return fmt.Errorf("invalid plugin database.alias %q: must match ^plugin_[a-z0-9_]+$", alias)
 	}
 	return nil
+}
+
+func (d *CoreDAL) DBPath() string {
+	return d.dbPath
 }
 
 func (d *CoreDAL) IsPluginDBAttached(alias string) bool {
