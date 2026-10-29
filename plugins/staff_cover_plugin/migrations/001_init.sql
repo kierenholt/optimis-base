@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS cover_absences_and_assignments (
     academic_year_id TEXT NOT NULL,
     cover_date TEXT NOT NULL,
     session TEXT NOT NULL DEFAULT 'AM',
-    assigned_role TEXT NOT NULL DEFAULT 'CO_TEACHER',
+    assigned_role TEXT NOT NULL DEFAULT 'COVER_TEACHER',
     staff_assignment_id TEXT NOT NULL,
     absence_reason TEXT NOT NULL DEFAULT '',
     cover_notes TEXT NOT NULL DEFAULT '',

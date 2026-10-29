@@ -294,6 +294,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     await expect(personaSelect).toBeVisible();
     await personaSelect.selectOption(personas.admin_staff_id);
     await expect(page.getByTestId('topbar-active-persona')).toContainText(personas.admin_staff_id);
+    await expect(pluginFrame.getByTestId('cover-active-persona-badge')).toContainText(personas.admin_staff_id);
 
     const loadAbsentTimetableBtn = pluginFrame.getByTestId('load-absent-timetable-btn');
     await expect(loadAbsentTimetableBtn).toBeVisible();
@@ -304,6 +305,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     await expect(absentSlotCard).toBeVisible();
     await expect(absentSlotCard).toContainText('P1_AM');
     await expect(absentSlotCard).toContainText('AM');
+    await expect(absentSlotCard).toContainText('Free Cover Staff:');
 
     const absenceReasonInput = pluginFrame.getByTestId('absence-reason-input');
     const coverNotesInput = pluginFrame.getByTestId('cover-notes-input');
@@ -323,13 +325,14 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     await expect(assignmentReceipt).toContainText(seeded.teacher_staff_id);
     await expect(assignmentReceipt).toContainText(seeded.other_teacher_staff_id);
     await expect(assignmentReceipt).toContainText(seeded.own_group_id);
-    await expect(assignmentReceipt).toContainText('CO_TEACHER');
+    await expect(assignmentReceipt).toContainText('COVER_TEACHER');
 
     // =========================================================================
     // Step 3: Switch back to Cover Teacher persona (seeded.other_teacher_staff_id) -> :own_groups now permits loading the class roster and submitting the statutory attendance register
     // =========================================================================
     await personaSelect.selectOption(seeded.other_teacher_staff_id);
     await expect(page.getByTestId('topbar-active-persona')).toContainText(seeded.other_teacher_staff_id);
+    await expect(pluginFrame.getByTestId('cover-active-persona-badge')).toContainText(seeded.other_teacher_staff_id);
 
     await loadCoverRosterBtn.click();
 
@@ -526,5 +529,46 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     const exportAfterPurgeBody = await exportAfterPurgeRes.json();
     expect(exportAfterPurgeBody.ok).toBe(true);
     expect(exportAfterPurgeBody.data.sections[0].records.length).toBe(0);
+
+    // 6. Verify revoke_cover_assignment (ctx.dal.groups.revoke_staff_assignment) strips dynamic :own_groups access
+    const revokeRes = await request.post(
+      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/revoke_cover_assignment`,
+      {
+        data: {
+          args: {
+            cover_staff_id: seeded.other_teacher_staff_id,
+            group_id: seeded.own_group_id,
+            slot_id: seeded.timetable_slot_am_id,
+            date: seeded.reference_date,
+            academic_year_id: seeded.academic_year_id,
+          },
+        },
+      }
+    );
+    expect(revokeRes.ok()).toBe(true);
+    const revokeBody = await revokeRes.json();
+    expect(revokeBody.ok).toBe(true);
+    expect(revokeBody.data.revoked).toBe(true);
+
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.other_teacher_staff_id },
+    });
+    const postRevokeRosterRes = await request.post(
+      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/load_cover_class_roster`,
+      {
+        data: {
+          args: {
+            group_id: seeded.own_group_id,
+            date: seeded.reference_date,
+            session: 'AM',
+            academic_year_id: seeded.academic_year_id,
+          },
+        },
+      }
+    );
+    expect(postRevokeRosterRes.status()).toBe(400);
+    const postRevokeRosterBody = await postRevokeRosterRes.json();
+    expect(postRevokeRosterBody.ok).toBe(false);
+    expect(postRevokeRosterBody.error_code).toContain('access denied under own_groups scope');
   });
 });

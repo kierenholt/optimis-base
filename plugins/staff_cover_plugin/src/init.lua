@@ -71,6 +71,28 @@ function load_absent_teacher_timetable(ctx, args)
     opts
   )
 
+  if type(slots) == "table" and ctx.dal.groups.list_free_staff_for_period then
+    for i = 1, #slots do
+      local s = slots[i]
+      if type(s) == "table" then
+        local period_key = trim(s.period_id)
+        if period_key == "" then
+          period_key = trim(s.period_code)
+        end
+        if period_key ~= "" then
+          local free_staff = ctx.dal.groups.list_free_staff_for_period(
+            cycle_week,
+            day_of_week_id,
+            period_key,
+            opts
+          )
+          s.free_staff = free_staff or {}
+          s.free_staff_count = type(free_staff) == "table" and #free_staff or 0
+        end
+      end
+    end
+  end
+
   return {
     ok = true,
     data = {
@@ -133,7 +155,7 @@ function record_absence_and_assign_cover(ctx, args)
   local cover_notes = trim(args.cover_notes)
   local assigned_role = trim(args.role)
   if assigned_role == "" then
-    assigned_role = "CO_TEACHER"
+    assigned_role = "COVER_TEACHER"
   end
 
   local session = trim(args.session)
@@ -141,6 +163,34 @@ function record_absence_and_assign_cover(ctx, args)
     session = "AM"
   end
   session = validate_statutory_session(session)
+
+  -- If a prior cover teacher was assigned to this group/slot on cover_date, revoke their temporary cover assignment first
+  local existing_rows = ctx.plugin_db.query(
+    [[SELECT id, cover_staff_id, assigned_role
+      FROM plugin_cover.cover_absences_and_assignments
+      WHERE group_id = ? AND slot_id = ? AND cover_date = ?]],
+    { group_id, slot_id, cover_date }
+  )
+  if type(existing_rows) == "table" and ctx.dal.groups.revoke_staff_assignment then
+    for i = 1, #existing_rows do
+      local prev = existing_rows[i]
+      if prev and trim(prev.cover_staff_id) ~= "" and trim(prev.cover_staff_id) ~= cover_staff_id then
+        ctx.dal.groups.revoke_staff_assignment(
+          {
+            group_id = group_id,
+            staff_id = trim(prev.cover_staff_id),
+            role = trim(prev.assigned_role) ~= "" and trim(prev.assigned_role) or "COVER_TEACHER",
+            effective_from = cover_date,
+            academic_year_id = academic_year_id
+          },
+          {
+            academic_year_id = academic_year_id,
+            reference_date = cover_date
+          }
+        )
+      end
+    end
+  end
 
   -- Grant temporal :own_groups access to Cover Teacher via Core DAL upsert_staff_assignment
   local gsa_res = ctx.dal.groups.upsert_staff_assignment(
@@ -384,33 +434,38 @@ function submit_cover_attendance_batch(ctx, args)
   local caller_staff_id = (ctx.caller and trim(ctx.caller.staff_id)) or ""
   local ay_id = opts.academic_year_id or school_defaults.academic_year_id or ""
 
+  local batch_rows = {}
   for i = 1, #args.marks do
     local m = args.marks[i]
     if type(m) == "table" and trim(m.pupil_id) ~= "" then
       local log_id = "cpr_" .. ctx.crypto.uuid()
-      ctx.plugin_db.exec(
-        [[INSERT INTO plugin_cover.cover_pupil_register_logs (
-            id, cover_assignment_id, pupil_id, group_id, academic_year_id,
-            cover_date, session, attendance_code, minutes_late,
-            register_comment, taken_by_staff_id, submission_id, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
-        {
-          log_id,
-          cover_assignment_id,
-          trim(m.pupil_id),
-          group_id,
-          ay_id,
-          date,
-          session,
-          trim(m.attendance_code),
-          tonumber(m.minutes_late) or 0,
-          trim(m.comment),
-          caller_staff_id,
-          upsert_res.submission_id or "",
-          created_at
-        }
-      )
+      batch_rows[#batch_rows + 1] = {
+        log_id,
+        cover_assignment_id,
+        trim(m.pupil_id),
+        group_id,
+        ay_id,
+        date,
+        session,
+        trim(m.attendance_code),
+        tonumber(m.minutes_late) or 0,
+        trim(m.comment),
+        caller_staff_id,
+        upsert_res.submission_id or "",
+        created_at
+      }
     end
+  end
+
+  if #batch_rows > 0 then
+    ctx.plugin_db.exec_batch(
+      [[INSERT INTO plugin_cover.cover_pupil_register_logs (
+          id, cover_assignment_id, pupil_id, group_id, academic_year_id,
+          cover_date, session, attendance_code, minutes_late,
+          register_comment, taken_by_staff_id, submission_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
+      batch_rows
+    )
   end
 
   local persisted_marks = ctx.dal.attendance.get_group_session(group_id, date, session, opts)
@@ -426,6 +481,73 @@ function submit_cover_attendance_batch(ctx, args)
       session = upsert_res.session,
       submitted_at_utc = created_at,
       persisted_marks = persisted_marks
+    }
+  }
+end
+
+function revoke_cover_assignment(ctx, args)
+  if type(args) ~= "table" then
+    error("missing mandatory arguments table for revoke_cover_assignment")
+  end
+
+  local group_id = trim(args.group_id)
+  if group_id == "" then
+    error("missing mandatory parameter: group_id")
+  end
+
+  local cover_staff_id = trim(args.cover_staff_id)
+  if cover_staff_id == "" then
+    error("missing mandatory parameter: cover_staff_id")
+  end
+
+  local school_defaults = resolve_school_defaults(ctx)
+  local cover_date = trim(args.date)
+  if cover_date == "" then
+    cover_date = trim(args.reference_date)
+  end
+  if cover_date == "" then
+    cover_date = school_defaults.reference_date
+  end
+  if cover_date == "" then
+    error("missing mandatory parameter: date")
+  end
+
+  local academic_year_id = trim(args.academic_year_id)
+  if academic_year_id == "" then
+    academic_year_id = school_defaults.academic_year_id
+  end
+
+  local role = trim(args.role)
+  local revoke_res = ctx.dal.groups.revoke_staff_assignment(
+    {
+      group_id = group_id,
+      staff_id = cover_staff_id,
+      role = role,
+      effective_from = cover_date,
+      academic_year_id = academic_year_id
+    },
+    {
+      academic_year_id = academic_year_id,
+      reference_date = cover_date
+    }
+  )
+
+  local db_res = ctx.plugin_db.exec(
+    [[DELETE FROM plugin_cover.cover_absences_and_assignments
+      WHERE group_id = ? AND cover_staff_id = ? AND cover_date = ?]],
+    { group_id, cover_staff_id, cover_date }
+  )
+
+  return {
+    ok = true,
+    data = {
+      status = "COVER_REVOKED",
+      revoked = revoke_res.revoked == true,
+      rows_affected = revoke_res.rows_affected or 0,
+      plugin_rows_deleted = db_res.rows_affected or 0,
+      group_id = group_id,
+      cover_staff_id = cover_staff_id,
+      date = cover_date
     }
   }
 end

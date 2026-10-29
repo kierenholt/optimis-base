@@ -85,7 +85,7 @@ func TestSparxMathsPlugin_TwoPhaseSyncDiagnosticApiKeyScrubbingAndGdprHooks_Pers
 	})
 
 	const sparxURL = "https://sync.sparxmaths.uk/v1/homework/sync"
-	const secretAPIKey = "spx_live_secret_go_test_key_8877665544332211"
+	const secretAPIKey = "arbitrary_vendor_secret_go_test_key_8877665544332211"
 
 	if err := h.RegisterMockEgressRule(host.MockEgressRule{
 		Method: "POST",
@@ -120,22 +120,35 @@ func TestSparxMathsPlugin_TwoPhaseSyncDiagnosticApiKeyScrubbingAndGdprHooks_Pers
 		StaffID:     "stf_admin_sparx",
 		ActiveRoles: []string{"ADMIN"},
 		Scopes: []string{
+			"plugin.config.write",
 			"dal.groups.read:all",
 			"dal.pupils.read:all",
 		},
 		RequestID: "req_sparx_admin",
 	}
 
-	// 1. Configure vendor API key in plugin_sparx.db (committed before HTTP call)
-	cfgResp, err := h.ExecuteRPC(ctx, "uk.co.sparx.maths", "configure_vendor_credentials", teacherCaller, map[string]any{
+	// 1a. Verify Classroom Teacher without ADMIN/HOD role or plugin.config.write is rejected on configure_vendor_credentials (1D)
+	if _, unauthErr := h.ExecuteRPC(ctx, "uk.co.sparx.maths", "configure_vendor_credentials", teacherCaller, map[string]any{
+		"api_key":           secretAPIKey,
+		"sync_endpoint_url": sparxURL,
+	}); unauthErr == nil {
+		t.Fatalf("expected teacherCaller without ADMIN/HOD role or plugin.config.write to be rejected on configure_vendor_credentials")
+	}
+
+	// 1b. Admin configures sealed vendor API key in plugin_sparx.db (committed before HTTP call via ctx.crypto.seal_secret)
+	cfgResp, err := h.ExecuteRPC(ctx, "uk.co.sparx.maths", "configure_vendor_credentials", adminCaller, map[string]any{
 		"api_key":           secretAPIKey,
 		"sync_endpoint_url": sparxURL,
 	})
 	if err != nil || !cfgResp.OK {
-		t.Fatalf("expected configure_vendor_credentials to succeed, got resp=%+v err=%v", cfgResp, err)
+		t.Fatalf("expected configure_vendor_credentials to succeed for Admin, got resp=%+v err=%v", cfgResp, err)
+	}
+	cfgData, _ := cfgResp.Data.(map[string]any)
+	if cfgData["is_sealed_envelope"] != true {
+		t.Errorf("expected is_sealed_envelope=true, got %v", cfgData["is_sealed_envelope"])
 	}
 
-	// 2. Trigger two-phase Read/Egress -> WriteDB sync
+	// 2. Trigger two-phase Read/Egress -> WriteDB sync as Teacher (opening secret via ctx.crypto.open_secret & batch-writing via ctx.plugin_db.exec_batch)
 	syncResp, err := h.ExecuteRPC(ctx, "uk.co.sparx.maths", "sync_group_homework", teacherCaller, map[string]any{
 		"group_id":         seeded.OwnGroupID,
 		"academic_year_id": seeded.AcademicYearID,

@@ -233,13 +233,17 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
     await expect(loadProfileBtn).toHaveAttribute('data-mis-rpc', 'get_pupil_first_aid_profile');
     await loadProfileBtn.click();
 
-    // 4. Step 2 of Journey: Plugin renders CRITICAL anaphylaxis/IHCP badge + emergency contacts (asserting court-order-blocked father & refuge address are excluded)
+    // 4. Step 2 of Journey: Plugin renders CRITICAL anaphylaxis/IHCP badge + clinical medication/location/trigger details + emergency contacts
     const criticalAlertBadge = frame.getByTestId('critical-medical-alert-badge');
     await expect(criticalAlertBadge).toBeVisible();
     await expect(criticalAlertBadge).toContainText('CRITICAL');
     await expect(criticalAlertBadge).toContainText('Anaphylaxis (Peanut Allergy)');
     await expect(criticalAlertBadge).toContainText('IHCP');
     await expect(criticalAlertBadge).toContainText('Administer EpiPen immediately and call 999');
+    await expect(criticalAlertBadge).toContainText('EpiPen 0.3mg IM Auto-Injector');
+    await expect(criticalAlertBadge).toContainText('Medical Room Red Cabinet #2');
+    await expect(criticalAlertBadge).toContainText('Peanuts, tree nuts');
+    await expect(criticalAlertBadge).toContainText('PARENTAL_CONSENT_VERIFIED');
 
     const emergencyContactsCard = frame.getByTestId('emergency-contacts-card');
     await expect(emergencyContactsCard).toBeVisible();

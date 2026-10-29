@@ -244,8 +244,16 @@ func (d *CoreDAL) SeedMilestone1Fixtures(ctx context.Context, in Milestone1SeedI
 		{
 			sql: `INSERT INTO pupil_medical_conditions (
 				id, pupil_id, condition_name, condition_category, alert_level_id,
-				has_ihcp, emergency_response_plan, parental_consent_given, effective_from, effective_to
-			) VALUES (?, ?, 'Anaphylaxis (Peanut Allergy)', 'ALLERGY', 'CRITICAL', 1, 'Administer EpiPen immediately and call 999', 1, '2026-09-01', NULL)`,
+				has_ihcp, triggers, reaction_symptoms, emergency_response_plan,
+				medication_name_and_dose, medication_location, parental_consent_given,
+				effective_from, effective_to
+			) VALUES (
+				?, ?, 'Anaphylaxis (Peanut Allergy)', 'ALLERGY', 'CRITICAL',
+				1, 'Peanuts, tree nuts, wasp venom', 'Airway constriction, facial swelling, urticaria',
+				'Administer EpiPen immediately and call 999',
+				'EpiPen 0.3mg IM Auto-Injector', 'Medical Room Red Cabinet #2 & Pupil Blazer Pocket', 1,
+				'2026-09-01', NULL
+			)`,
 			args: []any{"med_" + sfx, res.ActivePupilID},
 		},
 		{

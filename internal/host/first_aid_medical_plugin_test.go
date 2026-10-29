@@ -87,6 +87,9 @@ func TestFirstAidMedicalPlugin_ProfileTreatmentEventAndGdprSarHooks_test(t *test
 	if !strings.Contains(profileStr, "Administer EpiPen immediately and call 999") {
 		t.Fatalf("expected emergency response plan in profile, got: %s", profileStr)
 	}
+	if !strings.Contains(profileStr, "EpiPen 0.3mg IM Auto-Injector") || !strings.Contains(profileStr, "Medical Room Red Cabinet #2") {
+		t.Fatalf("expected clinical medication_name_and_dose and medication_location in profile, got: %s", profileStr)
+	}
 	if !strings.Contains(profileStr, "Anne Byron") || !strings.Contains(profileStr, "AUTHORISED_TO_COLLECT") {
 		t.Fatalf("expected unrestricted mother Anne Byron in emergency contacts, got: %s", profileStr)
 	}

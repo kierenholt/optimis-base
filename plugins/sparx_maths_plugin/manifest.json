@@ -22,7 +22,11 @@
   "endpoints": {
     "configure_vendor_credentials": {
       "scopes": [
-        "dal.groups.read:own_groups"
+        "plugin.config.write"
+      ],
+      "require_roles": [
+        "ADMIN",
+        "HOD"
       ],
       "mutates": true,
       "timeout_ms": 2500

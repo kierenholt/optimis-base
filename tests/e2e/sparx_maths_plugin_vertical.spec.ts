@@ -225,7 +225,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     expect(pageErrors).toEqual([]);
   });
 
-  test('configureVendorApiKeyAndTriggerTwoPhaseSync_asTeacher_commitsKeyBeforeEgressSyncsOwnGroupsAndPersistsScores_test', async ({
+  test('configureVendorApiKeyAndTriggerTwoPhaseSync_adminConfiguresSealedKeyAndTeacherSyncsOwnGroupsAndPersistsScores_test', async ({
     page,
     request,
   }) => {
@@ -261,31 +261,50 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     });
     expect(mockRuleRes.status()).toBe(201);
 
-    // 2. Authenticate as Milestone 1 Classroom Teacher (assigned to own_group_id, holding :own_groups scopes)
-    const switchTeacherRes = await request.post('/api/auth/persona', {
+    // 2. Verify RBAC (1D): Regular Classroom Teacher without ADMIN/HOD role or plugin.config.write scope
+    //    cannot call configure_vendor_credentials (403 Forbidden)
+    const switchTeacherFirstRes = await request.post('/api/auth/persona', {
       data: { staff_id: m1Seeded.teacher_staff_id },
     });
-    expect(switchTeacherRes.ok()).toBe(true);
-    const teacherSession = await switchTeacherRes.json();
+    expect(switchTeacherFirstRes.ok()).toBe(true);
+
+    const teacherUnauthCfgRes = await request.post(
+      '/api/plugins/uk.co.sparx.maths/rpc/configure_vendor_credentials',
+      {
+        data: {
+          args: {
+            api_key: vendorApiKey,
+            sync_endpoint_url: SPARX_SYNC_URL,
+          },
+        },
+      }
+    );
+    expect(teacherUnauthCfgRes.status()).toBe(403);
+
+    // 3. Authenticate as System Admin (holding ADMIN role + plugin.config.write) to configure sealed vendor API key via UI
+    const switchAdminRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personas.admin_staff_id },
+    });
+    expect(switchAdminRes.ok()).toBe(true);
+    const adminSession = await switchAdminRes.json();
 
     await page.context().addCookies([
       {
         name: 'mis_session',
-        value: teacherSession.session_token,
+        value: adminSession.session_token,
         url: 'http://127.0.0.1:18080',
         sameSite: 'Strict',
       },
     ]);
 
-    // 3. Navigate to Host UI Shell and open the Sparx Maths plugin iframe
-    const query = new URLSearchParams({
+    const adminQuery = new URLSearchParams({
       group_id: m1Seeded.own_group_id,
       pupil_id: m1Seeded.active_pupil_id,
       reference_date: m1Seeded.reference_date,
       academic_year_id: m1Seeded.academic_year_id,
-      staff_id: m1Seeded.teacher_staff_id,
+      staff_id: personas.admin_staff_id,
     });
-    await page.goto(`/?${query.toString()}`);
+    await page.goto(`/?${adminQuery.toString()}`);
 
     await expect(page.getByTestId('host-shell')).toBeVisible();
     const sparxNavBtn = page.getByTestId('nav-item-plugin-uk.co.sparx.maths');
@@ -299,7 +318,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.co.sparx.maths"]');
     await expect(pluginFrame.getByTestId('sparx-maths-plugin-root')).toBeVisible();
 
-    // 4. Phase 1 Setup: Configure vendor API key in plugin_sparx.db (committed before HTTP call)
+    // 4. Phase 1 Setup: Configure vendor API key in plugin_sparx.db (sealed via ctx.crypto.seal_secret & committed before HTTP call)
     const apiKeyInput = pluginFrame.getByTestId('sparx-api-key-input');
     await expect(apiKeyInput).toBeVisible();
     await apiKeyInput.fill(vendorApiKey);
@@ -315,10 +334,47 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     await expect(pluginFrame.getByTestId('sparx-key-preview')).toContainText('spx_...3210');
     await expect(pluginFrame.getByTestId('sparx-key-preview')).not.toContainText(vendorApiKey);
 
-    // 5. Phase 2 Sync: Trigger two-phase Read/Egress -> WriteDB sync via UI button
-    //    Fetches :own_groups roster (Ada Lovelace in own_group_id; excludes transferred Alan Turing & other-group Grace Hopper),
-    //    posts outbound to https://sync.sparxmaths.uk/v1/homework/sync with zero open SQLite write transaction,
-    //    and persists returned homework completion scores into plugin_sparx.db.
+    // Verify get_vendor_config confirms the key is stored sealed (enc:v1:...) and never exposes plaintext
+    const getCfgRes = await request.post('/api/plugins/uk.co.sparx.maths/rpc/get_vendor_config', {
+      data: { args: {} },
+    });
+    expect(getCfgRes.ok()).toBe(true);
+    const getCfgBody = await getCfgRes.json();
+    expect(getCfgBody.data.status).toBe('CONFIGURED');
+    expect(getCfgBody.data.is_sealed_envelope).toBe(true);
+    expect(JSON.stringify(getCfgBody)).not.toContain(vendorApiKey);
+
+    // 5. Switch to Classroom Teacher (assigned to own_group_id, holding :own_groups scopes) to trigger daily class sync
+    const switchTeacherRes = await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seeded.teacher_staff_id },
+    });
+    expect(switchTeacherRes.ok()).toBe(true);
+    const teacherSession = await switchTeacherRes.json();
+
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: teacherSession.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
+
+    const teacherQuery = new URLSearchParams({
+      group_id: m1Seeded.own_group_id,
+      pupil_id: m1Seeded.active_pupil_id,
+      reference_date: m1Seeded.reference_date,
+      academic_year_id: m1Seeded.academic_year_id,
+      staff_id: m1Seeded.teacher_staff_id,
+    });
+    await page.goto(`/?${teacherQuery.toString()}`);
+    await page.getByTestId('nav-item-plugin-uk.co.sparx.maths').click();
+
+    // 6. Phase 2 Sync: Trigger two-phase Read/Egress -> WriteDB sync via UI button
+    //    Opens sealed key via ctx.crypto.open_secret, fetches :own_groups roster (Ada Lovelace in own_group_id;
+    //    excludes transferred Alan Turing & other-group Grace Hopper), posts outbound to
+    //    https://sync.sparxmaths.uk/v1/homework/sync with zero open SQLite write transaction,
+    //    and persists returned homework completion scores into plugin_sparx.db via ctx.plugin_db.exec_batch.
     const syncBtn = pluginFrame.getByTestId('trigger-sparx-sync-btn');
     await expect(syncBtn).toBeVisible();
     await expect(syncBtn).toHaveAttribute('data-mis-rpc', 'sync_group_homework');
@@ -355,7 +411,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
       pluginFrame.getByTestId(`sparx-score-row-${m1Seeded.other_group_pupil_id}`)
     ).toHaveCount(0);
 
-    // 6. Verify :own_groups RBAC isolation: Teacher attempting to sync other_group_id fails fast
+    // 7. Verify :own_groups RBAC isolation: Teacher attempting to sync other_group_id fails fast
     const unauthGroupSyncRes = await request.post(
       '/api/plugins/uk.co.sparx.maths/rpc/sync_group_homework',
       {
@@ -383,14 +439,16 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
       throw new Error('Missing mandatory seeded fixtures');
     }
 
-    const vendorApiKey = 'spx_live_secret_key_77889900aabbccddeeff_sensitive';
+    // Use an arbitrary vendor secret token without a standard prefix to prove deterministic
+    // ctx.crypto.open_secret extraSecrets scrubbing (1C) in addition to regex scrubbing
+    const vendorApiKey = 'arbitrary_partner_secret_token_77889900aabbccddeeff_sensitive';
     const bearerHeaderToken = `Bearer ${vendorApiKey}`;
 
-    // 1. Authenticate as Teacher and configure the vendor API key in plugin_sparx.db
-    const switchTeacherRes = await request.post('/api/auth/persona', {
-      data: { staff_id: m1Seeded.teacher_staff_id },
+    // 1. Authenticate as Admin (holding plugin.config.write & ADMIN role) to configure sealed vendor API key
+    const switchAdminCfgRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personas.admin_staff_id },
     });
-    expect(switchTeacherRes.ok()).toBe(true);
+    expect(switchAdminCfgRes.ok()).toBe(true);
 
     const cfgRes = await request.post(
       '/api/plugins/uk.co.sparx.maths/rpc/configure_vendor_credentials',
@@ -404,6 +462,12 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
       }
     );
     expect(cfgRes.ok()).toBe(true);
+
+    // Switch to Classroom Teacher for sync_group_homework operations
+    const switchTeacherRes = await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seeded.teacher_staff_id },
+    });
+    expect(switchTeacherRes.ok()).toBe(true);
 
     // 2. Register mock egress rule to persist a score first (so we can also verify GDPR hooks)
     await request.post('/api/test/egress-mock', {

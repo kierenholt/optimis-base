@@ -103,6 +103,8 @@ local function load_pupil_first_aid_bundle(ctx, pupil_id, academic_year_id, refe
   }
 end
 
+---@param ctx OptimisCtx
+---@param args table
 function get_pupil_first_aid_profile(ctx, args)
   local pupil_id = require_non_empty_string(args, "pupil_id")
   local academic_year_id = require_non_empty_string(args, "academic_year_id")
@@ -115,6 +117,8 @@ function get_pupil_first_aid_profile(ctx, args)
   }
 end
 
+---@param ctx OptimisCtx
+---@param args table
 function log_first_aid_treatment(ctx, args)
   local pupil_id = require_non_empty_string(args, "pupil_id")
   local academic_year_id = require_non_empty_string(args, "academic_year_id")
@@ -141,7 +145,14 @@ function log_first_aid_treatment(ctx, args)
   for i = 1, #med_list do
     local m = med_list[i]
     local ihcp_tag = m.has_ihcp and " [IHCP]" or ""
-    alert_summary = (m.alert_level_id or "ALERT") .. ": " .. (m.condition_name or "") .. ihcp_tag
+    local med_tag = ""
+    if type(m.medication_name_and_dose) == "string" and m.medication_name_and_dose ~= "" then
+      med_tag = " — " .. m.medication_name_and_dose
+      if type(m.medication_location) == "string" and m.medication_location ~= "" then
+        med_tag = med_tag .. " (" .. m.medication_location .. ")"
+      end
+    end
+    alert_summary = (m.alert_level_id or "ALERT") .. ": " .. (m.condition_name or "") .. ihcp_tag .. med_tag
     break
   end
 

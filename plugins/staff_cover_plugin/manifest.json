@@ -59,6 +59,14 @@
       ],
       "mutates": false,
       "timeout_ms": 2500
+    },
+    "revoke_cover_assignment": {
+      "scopes": [
+        "dal.groups.read:all",
+        "dal.groups.write:all"
+      ],
+      "mutates": true,
+      "timeout_ms": 2500
     }
   }
 }
