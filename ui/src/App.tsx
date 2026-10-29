@@ -558,7 +558,20 @@ export function App() {
           throw new Error('Malformed mis:link:navigate payload: missing entity_type or entity_id');
         }
 
-        const designatedPlugin = entityLinkHandlers[entityType] || PLUGIN_ID;
+        const requestedPlugin =
+          typeof msg.target_plugin === 'string' ? msg.target_plugin.trim() : '';
+        let designatedPlugin = entityLinkHandlers[entityType] || PLUGIN_ID;
+        if (requestedPlugin === 'self') {
+          const { pluginId: sourcePluginId } = resolveSourceIframe(event.source);
+          if (sourcePluginId) {
+            designatedPlugin = sourcePluginId;
+          }
+        } else if (
+          requestedPlugin &&
+          plugins.some((p) => p.id === requestedPlugin)
+        ) {
+          designatedPlugin = requestedPlugin;
+        }
         activatePluginInKeepAlivePool(designatedPlugin);
 
         let nextPupilId = activePupilId;

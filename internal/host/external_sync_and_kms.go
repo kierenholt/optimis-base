@@ -46,8 +46,38 @@ type MATApprovedPluginRef struct {
 type MATPolicyBundle struct {
 	MATID                string                 `json:"mat_id"`
 	GradingSchemaVersion string                 `json:"grading_schema_version"`
+	GradingSchema        map[string]any         `json:"grading_schema,omitempty"`
 	BehaviourTaxonomy    []string               `json:"behaviour_taxonomy"`
 	ApprovedPlugins      []MATApprovedPluginRef `json:"approved_plugins"`
+}
+
+func defaultMATGradingSchemaForVersion(version string) map[string]any {
+	v := strings.TrimSpace(version)
+	if v == "" {
+		return nil
+	}
+	return map[string]any{
+		"version": v,
+		"scales": map[string]any{
+			"9-1": map[string]any{
+				"scale_code":  "9-1",
+				"description": "GCSE 9-1 Numerical Scale",
+				"grades":      []any{"9", "8", "7", "6", "5", "4", "3", "2", "1", "U"},
+				"points": map[string]any{
+					"9": 9, "8": 8, "7": 7, "6": 6, "5": 5,
+					"4": 4, "3": 3, "2": 2, "1": 1, "U": 0,
+				},
+			},
+			"WT,EXS,GDS": map[string]any{
+				"scale_code":  "WT,EXS,GDS",
+				"description": "Primary / KS2-KS3 Attainment Standard Scale",
+				"grades":      []any{"GDS", "EXS", "WT"},
+				"points": map[string]any{
+					"GDS": 3, "EXS": 2, "WT": 1,
+				},
+			},
+		},
+	}
 }
 
 type MATSchoolAnalytics struct {
@@ -215,6 +245,7 @@ func (h *Host) ConfigureMATSyncMode(ctx context.Context, enableRealMATSync bool)
 		for _, k := range []string{
 			"mat_id",
 			"mat_grading_schema_version",
+			"mat_grading_schema_json",
 			"mat_behaviour_taxonomy_json",
 			"mat_approved_plugins_json",
 		} {
@@ -537,6 +568,22 @@ func (h *Host) RegisterExternalSyncAndTestRoutes(mux *http.ServeMux) {
 			if authorized {
 				sub.Status = "ACCEPTED"
 				acceptedCount++
+				h.dispatchEvents([]Event{
+					{
+						Name: dal.EventCoreParentDMZSubmissionReceived,
+						Payload: map[string]any{
+							"submission_id":                   sub.SubmissionID,
+							"pupil_id":                        sub.PupilID,
+							"submitted_by_guardian_person_id": sub.SubmittedByGuardianPersonID,
+							"submission_type":                 sub.SubmissionType,
+							"date":                            sub.Date,
+							"session":                         sub.Session,
+							"reason":                          sub.Reason,
+							"status":                          sub.Status,
+						},
+						Hop: 1,
+					},
+				})
 			} else {
 				sub.Status = "REJECTED_SAFEGUARDING_BLOCK"
 				rejectedCount++
@@ -569,6 +616,9 @@ func (h *Host) RegisterExternalSyncAndTestRoutes(mux *http.ServeMux) {
 				"error_code": "missing mandatory fields: mat_id, grading_schema_version",
 			})
 			return
+		}
+		if len(bundle.GradingSchema) == 0 {
+			bundle.GradingSchema = defaultMATGradingSchemaForVersion(bundle.GradingSchemaVersion)
 		}
 
 		st := h.getExternalDepsState()
@@ -620,6 +670,11 @@ func (h *Host) RegisterExternalSyncAndTestRoutes(mux *http.ServeMux) {
 			return
 		}
 
+		gradingSchemaMap := bundle.GradingSchema
+		if len(gradingSchemaMap) == 0 {
+			gradingSchemaMap = defaultMATGradingSchemaForVersion(bundle.GradingSchemaVersion)
+		}
+		gradingSchemaJSON, _ := json.Marshal(gradingSchemaMap)
 		taxonomyJSON, _ := json.Marshal(bundle.BehaviourTaxonomy)
 		pluginsJSON, _ := json.Marshal(bundle.ApprovedPlugins)
 
@@ -629,6 +684,7 @@ func (h *Host) RegisterExternalSyncAndTestRoutes(mux *http.ServeMux) {
 		}{
 			{"mat_id", bundle.MATID},
 			{"mat_grading_schema_version", bundle.GradingSchemaVersion},
+			{"mat_grading_schema_json", string(gradingSchemaJSON)},
 			{"mat_behaviour_taxonomy_json", string(taxonomyJSON)},
 			{"mat_approved_plugins_json", string(pluginsJSON)},
 		}

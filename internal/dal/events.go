@@ -8,11 +8,12 @@ import (
 )
 
 const (
-	EventCorePupilEnrolled              = "core.pupil.enrolled"
-	EventCoreGroupMembershipChanged     = "core.group.membership_changed"
-	EventCoreAttendanceSessionRecorded  = "core.attendance.session_recorded"
-	EventCoreSafeguardingPostboxCreated = "core.safeguarding.postbox_created"
-	EventCoreGDPRPupilPurged            = "core.gdpr.pupil_purged"
+	EventCorePupilEnrolled               = "core.pupil.enrolled"
+	EventCoreGroupMembershipChanged      = "core.group.membership_changed"
+	EventCoreAttendanceSessionRecorded   = "core.attendance.session_recorded"
+	EventCoreSafeguardingPostboxCreated  = "core.safeguarding.postbox_created"
+	EventCoreGDPRPupilPurged             = "core.gdpr.pupil_purged"
+	EventCoreParentDMZSubmissionReceived = "core.parent_dmz.submission_received"
 )
 
 var standardCoreEventCatalog = []string{
@@ -21,6 +22,7 @@ var standardCoreEventCatalog = []string{
 	EventCoreAttendanceSessionRecorded,
 	EventCoreSafeguardingPostboxCreated,
 	EventCoreGDPRPupilPurged,
+	EventCoreParentDMZSubmissionReceived,
 }
 
 type CoreDomainEvent struct {

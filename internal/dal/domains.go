@@ -111,9 +111,24 @@ func (d *CoreDAL) ensureGroupInOwnGroups(ctx context.Context, scope DALQueryScop
 		return fmt.Errorf("failed to verify :own_groups assignment for group %s: %w", groupID, err)
 	}
 	if count == 0 {
-		return fmt.Errorf("access denied under own_groups scope: staff %s is not assigned to active group %s on %s", scope.StaffID, groupID, scope.ReferenceDate)
+		return fmt.Errorf("GROUP_NOT_IN_OWN_GROUPS: access denied under own_groups scope: staff %s is not assigned to active group %s on %s", scope.StaffID, groupID, scope.ReferenceDate)
 	}
 	return nil
+}
+
+func (d *CoreDAL) EnsureCallerAssignedToGroupScoped(ctx context.Context, scope DALQueryScope, groupID string) error {
+	return d.ensureGroupInOwnGroups(ctx, scope, groupID)
+}
+
+func (d *CoreDAL) IsCallerAssignedToGroupScoped(ctx context.Context, scope DALQueryScope, groupID string) (bool, error) {
+	err := d.ensureGroupInOwnGroups(ctx, scope, groupID)
+	if err == nil {
+		return true, nil
+	}
+	if strings.Contains(err.Error(), "GROUP_NOT_IN_OWN_GROUPS") || strings.Contains(err.Error(), "access denied under own_groups scope") {
+		return false, nil
+	}
+	return false, err
 }
 
 func (d *CoreDAL) ensurePupilInOwnGroups(ctx context.Context, scope DALQueryScope, pupilID string) error {

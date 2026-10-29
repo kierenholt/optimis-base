@@ -112,6 +112,7 @@ type RPCResponse struct {
 	OK        bool   `json:"ok"`
 	Data      any    `json:"data,omitempty"`
 	ErrorCode string `json:"error_code,omitempty"`
+	Error     string `json:"error,omitempty"`
 	Mutated   bool   `json:"mutated,omitempty"`
 }
 
@@ -607,10 +608,27 @@ func (h *Host) ExecuteRPC(
 			writeTx = nil
 			lockTracker.finishHold()
 		}
-		errCode := L.GetField(retTbl, "error_code").String()
+		var errCode string
+		if ecVal := L.GetField(retTbl, "error_code"); ecVal != lua.LNil {
+			errCode = strings.TrimSpace(ecVal.String())
+		}
+		var errMsg string
+		if emVal := L.GetField(retTbl, "error"); emVal != lua.LNil {
+			errMsg = strings.TrimSpace(emVal.String())
+		} else if emVal := L.GetField(retTbl, "message"); emVal != lua.LNil {
+			errMsg = strings.TrimSpace(emVal.String())
+		}
+		if errCode == "" {
+			if errMsg != "" {
+				errCode = errMsg
+			} else {
+				errCode = "PLUGIN_RPC_FAILED"
+			}
+		}
 		return &RPCResponse{
 			OK:        false,
 			ErrorCode: errCode,
+			Error:     errMsg,
 		}, nil
 	}
 
@@ -672,18 +690,7 @@ func validatePluginDBSQLScope(sqlQuery string, alias string) error {
 	return nil
 }
 
-func luaTableToSQLArgs(L *lua.LState, argIdx int) ([]any, error) {
-	if L.GetTop() < argIdx {
-		return nil, nil
-	}
-	lv := L.Get(argIdx)
-	if lv == lua.LNil {
-		return nil, nil
-	}
-	tbl, ok := lv.(*lua.LTable)
-	if !ok {
-		return nil, errors.New("SQL params argument must be a Lua table")
-	}
+func luaTableInstanceToSQLArgs(tbl *lua.LTable) []any {
 	maxn := tbl.MaxN()
 	args := make([]any, 0, maxn)
 	for i := 1; i <= maxn; i++ {
@@ -706,7 +713,22 @@ func luaTableToSQLArgs(L *lua.LState, argIdx int) ([]any, error) {
 			args = append(args, v.String())
 		}
 	}
-	return args, nil
+	return args
+}
+
+func luaTableToSQLArgs(L *lua.LState, argIdx int) ([]any, error) {
+	if L.GetTop() < argIdx {
+		return nil, nil
+	}
+	lv := L.Get(argIdx)
+	if lv == lua.LNil {
+		return nil, nil
+	}
+	tbl, ok := lv.(*lua.LTable)
+	if !ok {
+		return nil, errors.New("SQL params argument must be a Lua table")
+	}
+	return luaTableInstanceToSQLArgs(tbl), nil
 }
 
 func markLuaTableAsArray(L *lua.LState, tbl *lua.LTable) {
@@ -841,6 +863,26 @@ func (h *Host) buildLuaCtxTable(
 	}))
 
 	if endpointSpec.Mutates {
+		ensureOpenWriteTx := func(L *lua.LState, opName string) bool {
+			if *writeTx != nil {
+				return true
+			}
+			waitStart := time.Now()
+			tx, txErr := h.coreDAL.WriteDB().BeginTx(execCtx, nil)
+			if lockTracker != nil {
+				lockTracker.lockWaitDuration += time.Since(waitStart)
+			}
+			if txErr != nil {
+				L.RaiseError("%s failed to start WriteDB transaction: %s", opName, txErr.Error())
+				return false
+			}
+			if lockTracker != nil {
+				lockTracker.writeHoldStart = time.Now()
+			}
+			*writeTx = tx
+			return true
+		}
+
 		L.SetField(pluginDBTbl, "exec", L.NewFunction(func(L *lua.LState) int {
 			sqlQuery := strings.TrimSpace(L.OptString(1, ""))
 			if sqlQuery == "" {
@@ -862,20 +904,8 @@ func (h *Host) buildLuaCtxTable(
 				return 0
 			}
 
-			if *writeTx == nil {
-				waitStart := time.Now()
-				tx, txErr := h.coreDAL.WriteDB().BeginTx(execCtx, nil)
-				if lockTracker != nil {
-					lockTracker.lockWaitDuration += time.Since(waitStart)
-				}
-				if txErr != nil {
-					L.RaiseError("plugin_db.exec failed to start WriteDB transaction: %s", txErr.Error())
-					return 0
-				}
-				if lockTracker != nil {
-					lockTracker.writeHoldStart = time.Now()
-				}
-				*writeTx = tx
+			if !ensureOpenWriteTx(L, "plugin_db.exec") {
+				return 0
 			}
 
 			res, execErr := (*writeTx).ExecContext(execCtx, sqlQuery, sqlArgs...)
@@ -890,6 +920,63 @@ func (h *Host) buildLuaCtxTable(
 			resTbl := L.NewTable()
 			L.SetField(resTbl, "rows_affected", lua.LNumber(rowsAffected))
 			L.SetField(resTbl, "last_insert_id", lua.LNumber(lastInsertID))
+			L.Push(resTbl)
+			return 1
+		}))
+
+		L.SetField(pluginDBTbl, "exec_batch", L.NewFunction(func(L *lua.LState) int {
+			sqlQuery := strings.TrimSpace(L.OptString(1, ""))
+			if sqlQuery == "" {
+				L.RaiseError("plugin_db.exec_batch requires a non-empty SQL statement")
+				return 0
+			}
+			if plugin.Manifest.Database == nil || strings.TrimSpace(plugin.Manifest.Database.Alias) == "" {
+				L.RaiseError("plugin %s does not declare database.alias in manifest.json", plugin.Manifest.ID)
+				return 0
+			}
+			alias := strings.TrimSpace(plugin.Manifest.Database.Alias)
+			if err := validatePluginDBSQLScope(sqlQuery, alias); err != nil {
+				L.RaiseError("plugin_db.exec_batch scope violation: %s", err.Error())
+				return 0
+			}
+			batchTbl, ok := L.Get(2).(*lua.LTable)
+			if !ok {
+				L.RaiseError("plugin_db.exec_batch requires a Lua table array of parameter rows as 2nd argument")
+				return 0
+			}
+
+			if !ensureOpenWriteTx(L, "plugin_db.exec_batch") {
+				return 0
+			}
+
+			stmt, prepErr := (*writeTx).PrepareContext(execCtx, sqlQuery)
+			if prepErr != nil {
+				L.RaiseError("plugin_db.exec_batch prepare failed: %s", prepErr.Error())
+				return 0
+			}
+			defer stmt.Close()
+
+			maxn := batchTbl.MaxN()
+			var totalRowsAffected int64
+			for i := 1; i <= maxn; i++ {
+				rowTbl, isTbl := batchTbl.RawGetInt(i).(*lua.LTable)
+				if !isTbl {
+					L.RaiseError("plugin_db.exec_batch invalid row at index %d: must be a Lua table", i)
+					return 0
+				}
+				rowArgs := luaTableInstanceToSQLArgs(rowTbl)
+				res, execErr := stmt.ExecContext(execCtx, rowArgs...)
+				if execErr != nil {
+					L.RaiseError("plugin_db.exec_batch failed at row %d: %s", i, execErr.Error())
+					return 0
+				}
+				affected, _ := res.RowsAffected()
+				totalRowsAffected += affected
+			}
+
+			resTbl := L.NewTable()
+			L.SetField(resTbl, "rows_affected", lua.LNumber(totalRowsAffected))
+			L.SetField(resTbl, "batch_size", lua.LNumber(maxn))
 			L.Push(resTbl)
 			return 1
 		}))
@@ -972,8 +1059,21 @@ func (h *Host) buildLuaCtxTable(
 	}
 	matID, _ := h.coreDAL.GetSystemConfigValue(execCtx, "mat_id")
 	matGradingSchemaVersion, _ := h.coreDAL.GetSystemConfigValue(execCtx, "mat_grading_schema_version")
+	trimmedMATVersion := strings.TrimSpace(matGradingSchemaVersion)
 	L.SetField(schoolTbl, "mat_id", lua.LString(strings.TrimSpace(matID)))
-	L.SetField(schoolTbl, "mat_grading_schema_version", lua.LString(strings.TrimSpace(matGradingSchemaVersion)))
+	L.SetField(schoolTbl, "mat_grading_schema_version", lua.LString(trimmedMATVersion))
+	if trimmedMATVersion != "" {
+		var schemaMap map[string]any
+		if rawSchemaJSON, sErr := h.coreDAL.GetSystemConfigValue(execCtx, "mat_grading_schema_json"); sErr == nil && strings.TrimSpace(rawSchemaJSON) != "" {
+			_ = json.Unmarshal([]byte(rawSchemaJSON), &schemaMap)
+		}
+		if len(schemaMap) == 0 {
+			schemaMap = defaultMATGradingSchemaForVersion(trimmedMATVersion)
+		}
+		if len(schemaMap) > 0 {
+			L.SetField(schoolTbl, "mat_grading_schema", goMapToLuaTable(L, schemaMap))
+		}
+	}
 	L.SetField(ctxTbl, "school", schoolTbl)
 
 	return ctxTbl

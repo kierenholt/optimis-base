@@ -161,6 +161,11 @@
       );
     }
 
+    var targetPlugin =
+      (typeof params.target_plugin === 'string' && params.target_plugin.trim()) ||
+      (typeof params.plugin_id === 'string' && params.plugin_id.trim()) ||
+      '';
+
     var message = {
       type: 'mis:link:navigate',
       entity_type: normalizedType,
@@ -168,6 +173,7 @@
       pupil_id: pupilId || (normalizedType === 'student' ? entityId : undefined),
       group_id: groupId || (normalizedType === 'group' ? entityId : undefined),
       staff_id: staffId || (normalizedType === 'staff' ? entityId : undefined),
+      target_plugin: targetPlugin || undefined,
     };
 
     global.parent.postMessage(message, '*');
@@ -294,12 +300,14 @@
       var groupId = linkTarget.getAttribute('data-group-id') || '';
       var staffId = linkTarget.getAttribute('data-staff-id') || '';
       var entityId = linkTarget.getAttribute('data-entity-id') || '';
+      var targetPlugin = linkTarget.getAttribute('data-mis-plugin') || '';
 
       navigate(entityType || '', {
         entity_id: entityId,
         pupil_id: pupilId,
         group_id: groupId,
         staff_id: staffId,
+        target_plugin: targetPlugin,
       });
       return;
     }
