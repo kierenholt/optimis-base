@@ -168,7 +168,7 @@ func (h *Host) invokePluginGDPRHook(
 		TimeoutMS: 5000,
 	}
 
-	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, hookSpec, caller, &bufferedEvents, &writeTx, lockTracker)
+	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, hookSpec, caller, &bufferedEvents, &writeTx, lockTracker, &argSecrets)
 	argsTable := goMapToLuaTable(L, map[string]any{
 		"pupil_id": pupilID,
 	})

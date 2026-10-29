@@ -274,7 +274,7 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 			}
 			methods := make([]string, 0, len(p.Manifest.Endpoints))
 			for m, spec := range p.Manifest.Endpoints {
-				if hasAllScopes(caller.Scopes, spec.Scopes) {
+				if (hasAllScopes(caller.Scopes, spec.Scopes) && hasRequiredEndpointRoles(caller, spec.RequireRoles)) || isCallerAdminOrDPO(caller, false) {
 					methods = append(methods, m)
 				}
 			}

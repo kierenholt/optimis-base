@@ -544,7 +544,7 @@ func (d *CoreDAL) SeedPersonaTestFixtures(ctx context.Context, academicYearID st
 	}{
 		{
 			"ADMIN", "STAFF", "System Administrator / Headteacher", "ADM", "Full school administrative access",
-			`["dal.census.read:all","dal.pupils.read:all","dal.pupils.write:all","dal.staff.read:admin","dal.staff.write:admin","dal.groups.read:all","dal.groups.write:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.guardians.write:all","dal.sen.read:all","dal.medical.read:all"]`,
+			`["dal.census.read:all","dal.pupils.read:all","dal.pupils.write:all","dal.staff.read:admin","dal.staff.write:admin","dal.groups.read:all","dal.groups.write:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.guardians.write:all","dal.sen.read:all","dal.medical.read:all","plugin.config.write"]`,
 		},
 		{
 			"DSL", "STAFF", "Designated Safeguarding Lead", "DSL", "KCSIE Safeguarding Vault read & triage authority",
@@ -552,7 +552,7 @@ func (d *CoreDAL) SeedPersonaTestFixtures(ctx context.Context, academicYearID st
 		},
 		{
 			"HOD", "STAFF", "Head of Department", "HOD", "Departmental curriculum and cohort lead",
-			`["dal.pupils.read:all","dal.groups.read:all","dal.groups.write:all","dal.attendance.read:all","dal.sen.read:all","dal.medical.read:all","dal.safeguarding.create"]`,
+			`["dal.pupils.read:all","dal.groups.read:all","dal.groups.write:all","dal.attendance.read:all","dal.sen.read:all","dal.medical.read:all","dal.safeguarding.create","plugin.config.write"]`,
 		},
 		{
 			"TEACHER", "STAFF", "Classroom Teacher", "TCH", "Scoped access to assigned teaching and registration groups",

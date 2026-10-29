@@ -14,7 +14,14 @@ type PupilMedicalConditionAlert struct {
 	ConditionCategory     string `json:"condition_category"`
 	AlertLevelID          string `json:"alert_level_id"`
 	HasIHCP               bool   `json:"has_ihcp"`
+	Triggers              string `json:"triggers"`
+	ReactionSymptoms      string `json:"reaction_symptoms"`
 	EmergencyResponsePlan string `json:"emergency_response_plan"`
+	MedicationNameAndDose string `json:"medication_name_and_dose"`
+	MedicationLocation    string `json:"medication_location"`
+	ParentalConsentGiven  bool   `json:"parental_consent_given"`
+	EffectiveFrom         string `json:"effective_from"`
+	EffectiveTo           string `json:"effective_to"`
 }
 
 type PupilSenNeedSummary struct {
@@ -513,7 +520,10 @@ func (d *CoreDAL) ListPupilSenAndMedicalBatch(
 	medRows, err := d.readDB.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			`SELECT id, pupil_id, condition_name, condition_category, COALESCE(alert_level_id, ''), has_ihcp, emergency_response_plan
+			`SELECT id, pupil_id, condition_name, condition_category, COALESCE(alert_level_id, ''), has_ihcp,
+			        COALESCE(triggers, ''), COALESCE(reaction_symptoms, ''), COALESCE(emergency_response_plan, ''),
+			        COALESCE(medication_name_and_dose, ''), COALESCE(medication_location, ''),
+			        parental_consent_given, effective_from, COALESCE(effective_to, '')
 			 FROM pupil_medical_conditions
 			 WHERE pupil_id IN (%s)
 			   AND effective_from <= ?
@@ -530,6 +540,7 @@ func (d *CoreDAL) ListPupilSenAndMedicalBatch(
 		var cond PupilMedicalConditionAlert
 		var pid string
 		var hasIHCPInt int
+		var consentInt int
 		if scanErr := medRows.Scan(
 			&cond.ID,
 			&pid,
@@ -537,12 +548,20 @@ func (d *CoreDAL) ListPupilSenAndMedicalBatch(
 			&cond.ConditionCategory,
 			&cond.AlertLevelID,
 			&hasIHCPInt,
+			&cond.Triggers,
+			&cond.ReactionSymptoms,
 			&cond.EmergencyResponsePlan,
+			&cond.MedicationNameAndDose,
+			&cond.MedicationLocation,
+			&consentInt,
+			&cond.EffectiveFrom,
+			&cond.EffectiveTo,
 		); scanErr != nil {
 			_ = medRows.Close()
 			return nil, fmt.Errorf("failed to scan medical condition: %w", scanErr)
 		}
 		cond.HasIHCP = hasIHCPInt == 1
+		cond.ParentalConsentGiven = consentInt == 1
 		summary := result[pid]
 		summary.MedicalConditions = append(summary.MedicalConditions, cond)
 		result[pid] = summary

@@ -15,6 +15,7 @@
   var requestCounter = 0;
   var pendingRequests = Object.create(null);
   var initListeners = [];
+  var personaChangedListeners = [];
   var invalidationListeners = [];
   var readyResolved = false;
   var readyResolveFn = null;
@@ -186,7 +187,12 @@
       return;
     }
 
-    if (msg.type === 'mis:init') {
+    if (msg.type === 'mis:init' || msg.type === 'mis:persona:changed') {
+      var prevStaffId =
+        state.context && typeof state.context.staff_id === 'string'
+          ? state.context.staff_id
+          : '';
+      var wasReady = state.isReady;
       state.isReady = true;
       state.context =
         msg.context && typeof msg.context === 'object'
@@ -207,6 +213,23 @@
           : [];
       applyThemeTokens(msg.theme_mode, msg.theme_tokens, msg.theme);
       notifyInitListeners();
+      var nextStaffId =
+        state.context && typeof state.context.staff_id === 'string'
+          ? state.context.staff_id
+          : '';
+      if (msg.type === 'mis:persona:changed' || (wasReady && prevStaffId !== nextStaffId)) {
+        var snapshot = buildSnapshot();
+        for (var pIdx = 0; pIdx < personaChangedListeners.length; pIdx++) {
+          try {
+            personaChangedListeners[pIdx](snapshot);
+          } catch (pErr) {
+            console.error('[mis-bridge] Error in onPersonaChanged listener:', pErr);
+          }
+        }
+        if (typeof CustomEvent === 'function') {
+          global.dispatchEvent(new CustomEvent('mis:persona:changed', { detail: snapshot }));
+        }
+      }
       return;
     }
 
@@ -369,6 +392,12 @@
       if (state.isReady) {
         callback(buildSnapshot());
       }
+    },
+    onPersonaChanged: function (callback) {
+      if (typeof callback !== 'function') {
+        throw new Error('window.mis.onPersonaChanged requires a function callback');
+      }
+      personaChangedListeners.push(callback);
     },
     onInvalidated: function (callback) {
       if (typeof callback !== 'function') {

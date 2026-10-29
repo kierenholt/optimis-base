@@ -2,10 +2,16 @@ package host
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,6 +43,7 @@ type Config struct {
 
 type EndpointSpec struct {
 	Scopes         []string `json:"scopes"`
+	RequireRoles   []string `json:"require_roles,omitempty"`
 	Mutates        bool     `json:"mutates"`
 	TimeoutMS      int      `json:"timeout_ms,omitempty"`
 	Events         []string `json:"events,omitempty"`
@@ -516,7 +523,7 @@ func (h *Host) ExecuteRPC(
 		return nil, fmt.Errorf("endpoint %q is not declared in manifest.json for plugin %s", methodName, pluginID)
 	}
 
-	if !hasAllScopes(caller.Scopes, endpointSpec.Scopes) && !isCallerAdminOrDPO(caller, false) {
+	if (!hasAllScopes(caller.Scopes, endpointSpec.Scopes) || !hasRequiredEndpointRoles(caller, endpointSpec.RequireRoles)) && !isCallerAdminOrDPO(caller, false) {
 		h.recordDiagnostic(pluginID, methodName, "UNAUTHORIZED_SCOPE", time.Since(start))
 		h.logError(fmt.Sprintf("Unauthorized scope for caller %s on %s.%s", caller.UserID, pluginID, methodName))
 		return nil, fmt.Errorf("caller lacks required DAL scopes for %s.%s", pluginID, methodName)
@@ -567,7 +574,7 @@ func (h *Host) ExecuteRPC(
 		}
 	}()
 
-	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, endpointSpec, caller, &bufferedEvents, &writeTx, lockTracker)
+	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, endpointSpec, caller, &bufferedEvents, &writeTx, lockTracker, &argSecrets)
 	argsTable := goMapToLuaTable(L, args)
 
 	if err := L.DoString(plugin.LuaSource); err != nil {
@@ -754,6 +761,7 @@ func (h *Host) buildLuaCtxTable(
 	bufferedEvents *[]Event,
 	writeTx **sql.Tx,
 	lockTracker *sqlLockTracker,
+	extraSecrets *[]string,
 ) *lua.LTable {
 	ctxTbl := L.NewTable()
 
@@ -1045,6 +1053,40 @@ func (h *Host) buildLuaCtxTable(
 		L.Push(lua.LString(uuid.NewString()))
 		return 1
 	}))
+	L.SetField(cryptoTbl, "seal_secret", L.NewFunction(func(L *lua.LState) int {
+		plaintext := strings.TrimSpace(L.OptString(1, ""))
+		if plaintext == "" {
+			L.RaiseError("ctx.crypto.seal_secret requires a non-empty plaintext string")
+			return 0
+		}
+		sealed, sErr := h.sealPluginSecret(plugin.Manifest.ID, plaintext)
+		if sErr != nil {
+			L.RaiseError("ctx.crypto.seal_secret failed: %s", sErr.Error())
+			return 0
+		}
+		if extraSecrets != nil && len(plaintext) >= 4 {
+			*extraSecrets = append(*extraSecrets, plaintext)
+		}
+		L.Push(lua.LString(sealed))
+		return 1
+	}))
+	L.SetField(cryptoTbl, "open_secret", L.NewFunction(func(L *lua.LState) int {
+		ciphertext := strings.TrimSpace(L.OptString(1, ""))
+		if ciphertext == "" {
+			L.RaiseError("ctx.crypto.open_secret requires a non-empty ciphertext string")
+			return 0
+		}
+		opened, oErr := h.openPluginSecret(plugin.Manifest.ID, ciphertext)
+		if oErr != nil {
+			L.RaiseError("ctx.crypto.open_secret failed: %s", oErr.Error())
+			return 0
+		}
+		if extraSecrets != nil && len(opened) >= 4 {
+			*extraSecrets = append(*extraSecrets, opened)
+		}
+		L.Push(lua.LString(opened))
+		return 1
+	}))
 	L.SetField(ctxTbl, "crypto", cryptoTbl)
 
 	// 9. ctx.school (read-only school URN, default temporal context, and synced MAT policy metadata from __system_config)
@@ -1077,6 +1119,77 @@ func (h *Host) buildLuaCtxTable(
 	L.SetField(ctxTbl, "school", schoolTbl)
 
 	return ctxTbl
+}
+
+func (h *Host) derivePluginSecretKey(pluginID string) [32]byte {
+	return sha256.Sum256([]byte("optimis-plugin-secret-v1:" + h.cfg.HostKMSKeyHandle + ":" + strings.TrimSpace(pluginID)))
+}
+
+func (h *Host) sealPluginSecret(pluginID string, plaintext string) (string, error) {
+	key := h.derivePluginSecretKey(pluginID)
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	sealed := gcm.Seal(nonce, nonce, []byte(plaintext), []byte(strings.TrimSpace(pluginID)))
+	return "enc:v1:" + base64.StdEncoding.EncodeToString(sealed), nil
+}
+
+func (h *Host) openPluginSecret(pluginID string, ciphertext string) (string, error) {
+	const prefix = "enc:v1:"
+	trimmed := strings.TrimSpace(ciphertext)
+	if !strings.HasPrefix(trimmed, prefix) {
+		return "", errors.New("invalid secret envelope prefix: expected enc:v1:")
+	}
+	rawBytes, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(trimmed, prefix))
+	if err != nil {
+		return "", fmt.Errorf("invalid base64 secret payload: %w", err)
+	}
+	key := h.derivePluginSecretKey(pluginID)
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	if len(rawBytes) < gcm.NonceSize() {
+		return "", errors.New("malformed secret envelope: payload shorter than GCM nonce")
+	}
+	nonce := rawBytes[:gcm.NonceSize()]
+	enc := rawBytes[gcm.NonceSize():]
+	plainBytes, err := gcm.Open(nil, nonce, enc, []byte(strings.TrimSpace(pluginID)))
+	if err != nil {
+		return "", errors.New("failed to authenticate or decrypt plugin secret for this plugin_id")
+	}
+	return string(plainBytes), nil
+}
+
+func hasRequiredEndpointRoles(caller CallerContext, requireRoles []string) bool {
+	if len(requireRoles) == 0 {
+		return true
+	}
+	for _, reqRole := range requireRoles {
+		target := strings.ToUpper(strings.TrimSpace(reqRole))
+		if target == "" {
+			continue
+		}
+		for _, active := range caller.ActiveRoles {
+			if strings.ToUpper(strings.TrimSpace(active)) == target {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func hasAllScopes(callerScopes []string, requiredScopes []string) bool {

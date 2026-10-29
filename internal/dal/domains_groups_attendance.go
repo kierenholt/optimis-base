@@ -256,6 +256,176 @@ func (d *CoreDAL) GetStaffTimetableSlotsScoped(
 	return result, nil
 }
 
+func (d *CoreDAL) GetStaffTimetableSlotsBatchScoped(
+	ctx context.Context,
+	scope DALQueryScope,
+	staffIDs []string,
+	cycleWeek int,
+	dayOfWeekID int,
+) (map[string][]TimetableSlotSummary, error) {
+	if err := validateScope(scope); err != nil {
+		return nil, err
+	}
+	if len(staffIDs) == 0 {
+		return nil, errors.New("missing mandatory parameter: staff_ids")
+	}
+	if cycleWeek != 1 && cycleWeek != 2 {
+		return nil, fmt.Errorf("invalid cycleWeek %d: must be 1 or 2", cycleWeek)
+	}
+
+	result := make(map[string][]TimetableSlotSummary, len(staffIDs))
+	uniqueStaffIDs := make([]string, 0, len(staffIDs))
+	seen := make(map[string]struct{}, len(staffIDs))
+	for _, rawID := range staffIDs {
+		sid := strings.TrimSpace(rawID)
+		if sid == "" {
+			return nil, errors.New("staff_ids batch contains an empty staff_id")
+		}
+		if scope.Mode == ScopeOwnGroups && sid != scope.StaffID {
+			return nil, fmt.Errorf("access denied under own_groups scope: staff %s cannot read timetable for staff %s", scope.StaffID, sid)
+		}
+		if _, exists := seen[sid]; !exists {
+			seen[sid] = struct{}{}
+			uniqueStaffIDs = append(uniqueStaffIDs, sid)
+			result[sid] = []TimetableSlotSummary{}
+		}
+	}
+
+	placeholders := strings.Repeat("?,", len(uniqueStaffIDs))
+	placeholders = strings.TrimSuffix(placeholders, ",")
+	args := make([]any, 0, len(uniqueStaffIDs)+5)
+	for _, sid := range uniqueStaffIDs {
+		args = append(args, sid)
+	}
+	args = append(args, scope.AcademicYearID, cycleWeek, dayOfWeekID, scope.ReferenceDate, scope.ReferenceDate)
+
+	rows, err := d.readDB.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			`SELECT ts.id, tp.id, tp.period_code, tp.name, tp.cycle_week, tp.day_of_week_id,
+			        tp.start_time, tp.end_time, tp.period_type, COALESCE(tp.maps_to_statutory_session, ''),
+			        ts.group_id, g.code, COALESCE(ts.staff_id, ''), COALESCE(ts.room_id, '')
+			 FROM timetable_slots ts
+			 JOIN timetable_periods tp ON tp.id = ts.timetable_period_id
+			 JOIN groups g ON g.id = ts.group_id
+			 WHERE ts.staff_id IN (%s)
+			   AND tp.academic_year_id = ?
+			   AND tp.cycle_week = ?
+			   AND tp.day_of_week_id = ?
+			   AND ts.effective_from <= ?
+			   AND (ts.effective_to IS NULL OR ts.effective_to >= ?)
+			 ORDER BY ts.staff_id ASC, tp.sequence_number ASC, ts.id ASC`,
+			placeholders,
+		),
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query staff timetable slots batch: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var slot TimetableSlotSummary
+		if err := rows.Scan(
+			&slot.SlotID,
+			&slot.PeriodID,
+			&slot.PeriodCode,
+			&slot.PeriodName,
+			&slot.CycleWeek,
+			&slot.DayOfWeekID,
+			&slot.StartTime,
+			&slot.EndTime,
+			&slot.PeriodType,
+			&slot.MapsToStatutorySession,
+			&slot.GroupID,
+			&slot.GroupCode,
+			&slot.StaffID,
+			&slot.RoomID,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan batch timetable slot: %w", err)
+		}
+		result[slot.StaffID] = append(result[slot.StaffID], slot)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating batch timetable slots: %w", err)
+	}
+	return result, nil
+}
+
+func (d *CoreDAL) ListFreeStaffForPeriodScoped(
+	ctx context.Context,
+	scope DALQueryScope,
+	cycleWeek int,
+	dayOfWeekID int,
+	periodIdentifier string,
+) ([]StaffSummary, error) {
+	if err := validateScope(scope); err != nil {
+		return nil, err
+	}
+	trimmedPeriod := strings.TrimSpace(periodIdentifier)
+	if trimmedPeriod == "" {
+		return nil, errors.New("missing mandatory parameter: period_id or period_code")
+	}
+	if cycleWeek != 1 && cycleWeek != 2 {
+		return nil, fmt.Errorf("invalid cycleWeek %d: must be 1 or 2", cycleWeek)
+	}
+
+	rows, err := d.readDB.QueryContext(
+		ctx,
+		`SELECT s.id, s.person_id, s.staff_code,
+		        COALESCE(p.title, ''),
+		        COALESCE(NULLIF(TRIM(p.preferred_first_name), ''), p.legal_first_name),
+		        COALESCE(NULLIF(TRIM(p.preferred_last_name), ''), p.legal_last_name),
+		        p.legal_first_name, p.legal_last_name,
+		        COALESCE(s.job_title, ''), COALESCE(s.staff_type, ''), s.is_dsl
+		 FROM staff s
+		 JOIN persons p ON p.id = s.person_id
+		 WHERE p.status = 'ACTIVE'
+		   AND (s.termination_date IS NULL OR TRIM(s.termination_date) = '')
+		   AND NOT EXISTS (
+		       SELECT 1
+		       FROM timetable_slots ts
+		       JOIN timetable_periods tp ON tp.id = ts.timetable_period_id
+		       WHERE ts.staff_id = s.id
+		         AND tp.academic_year_id = ?
+		         AND tp.cycle_week = ?
+		         AND tp.day_of_week_id = ?
+		         AND (tp.id = ? OR tp.period_code = ?)
+		         AND ts.effective_from <= ?
+		         AND (ts.effective_to IS NULL OR ts.effective_to >= ?)
+		   )
+		 ORDER BY p.legal_last_name ASC, p.legal_first_name ASC, s.id ASC`,
+		scope.AcademicYearID, cycleWeek, dayOfWeekID, trimmedPeriod, trimmedPeriod, scope.ReferenceDate, scope.ReferenceDate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list free staff for period: %w", err)
+	}
+	defer rows.Close()
+
+	var result []StaffSummary
+	for rows.Next() {
+		var st StaffSummary
+		var title, prefFirst, prefLast, legFirst, legLast string
+		var isDSLInt int
+		if err := rows.Scan(
+			&st.StaffID, &st.PersonID, &st.StaffCode,
+			&title, &prefFirst, &prefLast, &legFirst, &legLast,
+			&st.JobTitle, &st.StaffType, &isDSLInt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan free staff row: %w", err)
+		}
+		st.FirstName = prefFirst
+		st.LastName = prefLast
+		st.DisplayName = formatPersonaDisplayName(title, prefFirst, legFirst, prefLast, legLast)
+		st.IsDSL = isDSLInt == 1
+		result = append(result, st)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating free staff rows: %w", err)
+	}
+	return result, nil
+}
+
 type UpsertGroupPupilMembershipInput struct {
 	MembershipID   string `json:"membership_id,omitempty"`
 	GroupID        string `json:"group_id"`
@@ -393,9 +563,9 @@ func (d *CoreDAL) UpsertGroupStaffAssignmentScoped(
 		role = "CO_TEACHER"
 	}
 	switch role {
-	case "LEAD_TEACHER", "CO_TEACHER", "FORM_TUTOR", "TEACHING_ASSISTANT":
+	case "LEAD_TEACHER", "CO_TEACHER", "COVER_TEACHER", "FORM_TUTOR", "TEACHING_ASSISTANT":
 	default:
-		return nil, fmt.Errorf("invalid group_staff_assignments role %q: must be LEAD_TEACHER, CO_TEACHER, FORM_TUTOR, or TEACHING_ASSISTANT", in.Role)
+		return nil, fmt.Errorf("invalid group_staff_assignments role %q: must be LEAD_TEACHER, CO_TEACHER, COVER_TEACHER, FORM_TUTOR, or TEACHING_ASSISTANT", in.Role)
 	}
 
 	ayID := strings.TrimSpace(in.AcademicYearID)
@@ -477,6 +647,78 @@ func (d *CoreDAL) UpsertGroupStaffAssignmentScoped(
 		EffectiveFrom:  effFrom,
 		EffectiveTo:    trimmedEffTo,
 	}, nil
+}
+
+type RevokeGroupStaffAssignmentInput struct {
+	AssignmentID  string `json:"assignment_id,omitempty"`
+	GroupID       string `json:"group_id,omitempty"`
+	StaffID       string `json:"staff_id,omitempty"`
+	Role          string `json:"role,omitempty"`
+	EffectiveFrom string `json:"effective_from,omitempty"`
+}
+
+func (d *CoreDAL) RevokeGroupStaffAssignmentScoped(
+	ctx context.Context,
+	scope DALQueryScope,
+	in RevokeGroupStaffAssignmentInput,
+) (int64, error) {
+	if err := validateScope(scope); err != nil {
+		return 0, err
+	}
+	assignmentID := strings.TrimSpace(in.AssignmentID)
+	groupID := strings.TrimSpace(in.GroupID)
+	staffID := strings.TrimSpace(in.StaffID)
+	role := strings.ToUpper(strings.TrimSpace(in.Role))
+	effFrom := strings.TrimSpace(in.EffectiveFrom)
+
+	if assignmentID == "" && (groupID == "" || staffID == "") {
+		return 0, errors.New("missing mandatory parameter: assignment_id or (group_id and staff_id)")
+	}
+	if groupID != "" {
+		if err := d.ensureGroupInOwnGroups(ctx, scope, groupID); err != nil {
+			return 0, err
+		}
+	}
+
+	tx, err := d.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin revoke group staff assignment tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	var res sql.Result
+	if assignmentID != "" {
+		res, err = tx.ExecContext(ctx, `DELETE FROM group_staff_assignments WHERE id = ?`, assignmentID)
+	} else if role != "" && effFrom != "" {
+		res, err = tx.ExecContext(
+			ctx,
+			`DELETE FROM group_staff_assignments WHERE group_id = ? AND staff_id = ? AND role = ? AND effective_from = ?`,
+			groupID, staffID, role, effFrom,
+		)
+	} else if effFrom != "" {
+		res, err = tx.ExecContext(
+			ctx,
+			`DELETE FROM group_staff_assignments WHERE group_id = ? AND staff_id = ? AND effective_from = ?`,
+			groupID, staffID, effFrom,
+		)
+	} else {
+		res, err = tx.ExecContext(
+			ctx,
+			`DELETE FROM group_staff_assignments WHERE group_id = ? AND staff_id = ?`,
+			groupID, staffID,
+		)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete group_staff_assignments row: %w", err)
+	}
+	rowsAffected, _ := res.RowsAffected()
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit revoke group staff assignment tx: %w", err)
+	}
+	return rowsAffected, nil
 }
 
 func (d *CoreDAL) GetGroupSessionAttendanceScoped(

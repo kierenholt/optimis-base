@@ -434,7 +434,15 @@ func (h *Host) buildLuaDALTable(
 						L.SetField(mTbl, "condition_category", lua.LString(mc.ConditionCategory))
 						L.SetField(mTbl, "alert_level_id", lua.LString(mc.AlertLevelID))
 						L.SetField(mTbl, "has_ihcp", lua.LBool(mc.HasIHCP))
+						L.SetField(mTbl, "triggers", lua.LString(mc.Triggers))
+						L.SetField(mTbl, "reaction_symptoms", lua.LString(mc.ReactionSymptoms))
 						L.SetField(mTbl, "emergency_response_plan", lua.LString(mc.EmergencyResponsePlan))
+						L.SetField(mTbl, "medication_name_and_dose", lua.LString(mc.MedicationNameAndDose))
+						L.SetField(mTbl, "medication_location", lua.LString(mc.MedicationLocation))
+						L.SetField(mTbl, "parental_consent_given", lua.LBool(mc.ParentalConsentGiven))
+						L.SetField(mTbl, "effective_from", lua.LString(mc.EffectiveFrom))
+						L.SetField(mTbl, "effective_to", lua.LString(mc.EffectiveTo))
+						L.SetField(mTbl, "medication_expiry_date", lua.LString(mc.EffectiveTo))
 						medsArr.RawSetInt(idx+1, mTbl)
 					}
 					L.SetField(sTbl, "medical_conditions", medsArr)
@@ -789,6 +797,121 @@ func (h *Host) buildLuaDALTable(
 				L.Push(arrTbl)
 				return 1
 			}))
+
+			L.SetField(groupsTbl, "get_staff_timetable_slots_batch", L.NewFunction(func(L *lua.LState) int {
+				idsTbl, ok := L.Get(1).(*lua.LTable)
+				if !ok {
+					L.RaiseError("dal.groups.get_staff_timetable_slots_batch requires a table of staff_ids")
+					return 0
+				}
+				var staffIDs []string
+				for i := 1; i <= idsTbl.MaxN(); i++ {
+					if val := idsTbl.RawGetInt(i); val != lua.LNil {
+						staffIDs = append(staffIDs, strings.TrimSpace(val.String()))
+					}
+				}
+				cycleWeek := L.OptInt(2, 1)
+				dayOfWeekID := L.OptInt(3, 1)
+				var optsTbl *lua.LTable
+				if L.GetTop() >= 4 {
+					optsTbl, _ = L.Get(4).(*lua.LTable)
+				}
+				effectiveMode := dal.ScopeAll
+				if optsTbl != nil && optsTbl.RawGetString("strict_own_groups") == lua.LTrue {
+					effectiveMode = groupsMode
+				}
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, effectiveMode, caller.StaffID, optsTbl)
+				if sErr != nil {
+					L.RaiseError("dal.groups.get_staff_timetable_slots_batch scope error: %s", sErr.Error())
+					return 0
+				}
+				batchSlots, err := h.coreDAL.GetStaffTimetableSlotsBatchScoped(execCtx, scope, staffIDs, cycleWeek, dayOfWeekID)
+				if err != nil {
+					L.RaiseError("dal.groups.get_staff_timetable_slots_batch failed: %s", err.Error())
+					return 0
+				}
+				resTbl := L.NewTable()
+				for sid, slots := range batchSlots {
+					arrTbl := L.NewTable()
+					markLuaTableAsArray(L, arrTbl)
+					for i, s := range slots {
+						sTbl := L.NewTable()
+						L.SetField(sTbl, "slot_id", lua.LString(s.SlotID))
+						L.SetField(sTbl, "period_id", lua.LString(s.PeriodID))
+						L.SetField(sTbl, "period_code", lua.LString(s.PeriodCode))
+						L.SetField(sTbl, "period_name", lua.LString(s.PeriodName))
+						L.SetField(sTbl, "cycle_week", lua.LNumber(s.CycleWeek))
+						L.SetField(sTbl, "day_of_week_id", lua.LNumber(s.DayOfWeekID))
+						L.SetField(sTbl, "start_time", lua.LString(s.StartTime))
+						L.SetField(sTbl, "end_time", lua.LString(s.EndTime))
+						L.SetField(sTbl, "period_type", lua.LString(s.PeriodType))
+						L.SetField(sTbl, "maps_to_statutory_session", lua.LString(s.MapsToStatutorySession))
+						L.SetField(sTbl, "group_id", lua.LString(s.GroupID))
+						L.SetField(sTbl, "group_code", lua.LString(s.GroupCode))
+						L.SetField(sTbl, "staff_id", lua.LString(s.StaffID))
+						L.SetField(sTbl, "room_id", lua.LString(s.RoomID))
+						arrTbl.RawSetInt(i+1, sTbl)
+					}
+					L.SetField(resTbl, sid, arrTbl)
+				}
+				L.Push(resTbl)
+				return 1
+			}))
+
+			L.SetField(groupsTbl, "list_free_staff_for_period", L.NewFunction(func(L *lua.LState) int {
+				var cycleWeek int
+				var dayOfWeekID int
+				var periodIdentifier string
+				var optsTbl *lua.LTable
+				if firstTbl, isTbl := L.Get(1).(*lua.LTable); isTbl {
+					if v := firstTbl.RawGetString("cycle_week"); v != lua.LNil {
+						if n, ok := v.(lua.LNumber); ok {
+							cycleWeek = int(n)
+						}
+					}
+					if v := firstTbl.RawGetString("day_of_week_id"); v != lua.LNil {
+						if n, ok := v.(lua.LNumber); ok {
+							dayOfWeekID = int(n)
+						}
+					}
+					if v := firstTbl.RawGetString("period_id"); v != lua.LNil && strings.TrimSpace(v.String()) != "" {
+						periodIdentifier = strings.TrimSpace(v.String())
+					} else if v := firstTbl.RawGetString("period_code"); v != lua.LNil {
+						periodIdentifier = strings.TrimSpace(v.String())
+					}
+					optsTbl = firstTbl
+				} else {
+					cycleWeek = L.OptInt(1, 1)
+					dayOfWeekID = L.OptInt(2, 1)
+					periodIdentifier = strings.TrimSpace(L.OptString(3, ""))
+					if L.GetTop() >= 4 {
+						optsTbl, _ = L.Get(4).(*lua.LTable)
+					}
+				}
+				if cycleWeek == 0 {
+					cycleWeek = 1
+				}
+				if dayOfWeekID == 0 {
+					dayOfWeekID = 1
+				}
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, dal.ScopeAll, caller.StaffID, optsTbl)
+				if sErr != nil {
+					L.RaiseError("dal.groups.list_free_staff_for_period scope error: %s", sErr.Error())
+					return 0
+				}
+				freeStaff, err := h.coreDAL.ListFreeStaffForPeriodScoped(execCtx, scope, cycleWeek, dayOfWeekID, periodIdentifier)
+				if err != nil {
+					L.RaiseError("dal.groups.list_free_staff_for_period failed: %s", err.Error())
+					return 0
+				}
+				arrTbl := L.NewTable()
+				markLuaTableAsArray(L, arrTbl)
+				for i, st := range freeStaff {
+					arrTbl.RawSetInt(i+1, staffToLuaTable(L, st))
+				}
+				L.Push(arrTbl)
+				return 1
+			}))
 		}
 
 		if hasGroupsWrite {
@@ -892,6 +1015,52 @@ func (h *Host) buildLuaDALTable(
 				L.Push(resTbl)
 				return 1
 			}))
+
+			revokeStaffAssignFn := L.NewFunction(func(L *lua.LState) int {
+				if !endpointSpec.Mutates {
+					L.RaiseError("dal.groups.revoke_staff_assignment is forbidden when endpoint mutates=false")
+					return 0
+				}
+				inTbl, ok := L.Get(1).(*lua.LTable)
+				if !ok {
+					L.RaiseError("dal.groups.revoke_staff_assignment requires an input table")
+					return 0
+				}
+				var optsTbl *lua.LTable
+				if L.GetTop() >= 2 {
+					optsTbl, _ = L.Get(2).(*lua.LTable)
+				}
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, groupsWriteMode, caller.StaffID, optsTbl)
+				if sErr != nil {
+					L.RaiseError("dal.groups.revoke_staff_assignment scope error: %s", sErr.Error())
+					return 0
+				}
+				getStr := func(key string) string {
+					v := inTbl.RawGetString(key)
+					if v == lua.LNil {
+						return ""
+					}
+					return strings.TrimSpace(v.String())
+				}
+				deletedCount, err := h.coreDAL.RevokeGroupStaffAssignmentScoped(execCtx, scope, dal.RevokeGroupStaffAssignmentInput{
+					AssignmentID:  getStr("assignment_id"),
+					GroupID:       getStr("group_id"),
+					StaffID:       getStr("staff_id"),
+					Role:          getStr("role"),
+					EffectiveFrom: getStr("effective_from"),
+				})
+				if err != nil {
+					L.RaiseError("dal.groups.revoke_staff_assignment failed: %s", err.Error())
+					return 0
+				}
+				resTbl := L.NewTable()
+				L.SetField(resTbl, "revoked", lua.LBool(deletedCount > 0))
+				L.SetField(resTbl, "rows_affected", lua.LNumber(deletedCount))
+				L.Push(resTbl)
+				return 1
+			})
+			L.SetField(groupsTbl, "revoke_staff_assignment", revokeStaffAssignFn)
+			L.SetField(groupsTbl, "delete_staff_assignment", revokeStaffAssignFn)
 		}
 
 		L.SetField(dalTbl, "groups", groupsTbl)
@@ -1466,7 +1635,7 @@ func (h *Host) ExecuteWorker(
 		}
 	}()
 
-	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, workerSpec, caller, &bufferedEvents, &writeTx, lockTracker)
+	ctxTable := h.buildLuaCtxTable(L, execCtx, plugin, workerSpec, caller, &bufferedEvents, &writeTx, lockTracker, &argSecrets)
 	argsTable := goMapToLuaTable(L, args)
 
 	if err := L.DoString(plugin.LuaSource); err != nil {
