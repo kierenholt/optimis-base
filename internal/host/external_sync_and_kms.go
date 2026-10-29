@@ -211,6 +211,17 @@ func (h *Host) ConfigureMATSyncMode(ctx context.Context, enableRealMATSync bool)
 	}
 	st.mu.Unlock()
 
+	if !enableRealMATSync {
+		for _, k := range []string{
+			"mat_id",
+			"mat_grading_schema_version",
+			"mat_behaviour_taxonomy_json",
+			"mat_approved_plugins_json",
+		} {
+			_ = h.coreDAL.DeleteSystemConfigKey(ctx, k)
+		}
+	}
+
 	if enableRealMATSync {
 		return h.ensureMATSyncAvailable(ctx)
 	}

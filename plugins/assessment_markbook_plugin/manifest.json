@@ -1,0 +1,53 @@
+{
+  "id": "uk.org.optimis.assessment.markbook",
+  "title": "Department Assessment & Markbook",
+  "version": "0.1.0",
+  "core_dal_version": "~1.0",
+  "max_concurrency": 4,
+  "max_memory_mb": 32,
+  "database": {
+    "alias": "plugin_markbook",
+    "max_db_size_mb": 64
+  },
+  "gdpr_hooks": {
+    "export_pupil_data": "export_pupil_data",
+    "purge_pupil_data": "purge_pupil_data"
+  },
+  "egress": {
+    "allowed_domains": []
+  },
+  "endpoints": {
+    "get_markbook_workspace": {
+      "scopes": [
+        "dal.groups.read:own_groups",
+        "dal.pupils.read:own_groups"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "create_markbook_column": {
+      "scopes": [
+        "dal.groups.read:own_groups",
+        "dal.pupils.read:own_groups"
+      ],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "save_pupil_grades": {
+      "scopes": [
+        "dal.groups.read:own_groups",
+        "dal.pupils.read:own_groups"
+      ],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "get_department_attainment_rollup": {
+      "scopes": [
+        "dal.groups.read:all",
+        "dal.pupils.read:all"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    }
+  }
+}

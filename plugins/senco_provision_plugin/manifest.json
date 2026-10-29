@@ -1,0 +1,38 @@
+{
+  "id": "uk.org.optimis.sen.provision",
+  "title": "SEN Provision & Differentiation",
+  "version": "0.1.0",
+  "core_dal_version": "~1.0",
+  "max_concurrency": 4,
+  "max_memory_mb": 32,
+  "database": {
+    "alias": "plugin_sen_provision",
+    "max_db_size_mb": 64
+  },
+  "gdpr_hooks": {
+    "export_pupil_data": "export_pupil_data",
+    "purge_pupil_data": "purge_pupil_data"
+  },
+  "egress": {
+    "allowed_domains": []
+  },
+  "endpoints": {
+    "log_iep_provision": {
+      "scopes": ["dal.pupils.read:all", "dal.sen.read:all"],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "get_sen_differentiation_summary": {
+      "scopes": ["dal.pupils.read:own_groups", "dal.sen.read:own_groups", "dal.groups.read:own_groups"],
+      "mutates": false,
+      "timeout_ms": 2500
+    }
+  },
+  "widgets": [
+    {
+      "id": "sen_differentiation",
+      "title": "Classroom SEN Differentiation",
+      "entry": "ui/dist/widget.html"
+    }
+  ]
+}

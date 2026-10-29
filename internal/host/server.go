@@ -192,7 +192,7 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 		res, err := h.ExecuteRPC(r.Context(), pluginID, method, caller, body.Args)
 		if err != nil {
 			status := http.StatusBadRequest
-			if (pluginID == "uk.gov.dfe.census" || pluginID == "uk.org.optimis.parent.dmz") && strings.Contains(err.Error(), "caller lacks required DAL scopes") {
+			if (pluginID == "uk.gov.dfe.census" || pluginID == "uk.org.optimis.parent.dmz" || pluginID == "uk.org.optimis.assessment.markbook" || pluginID == "uk.org.optimis.ops.cover" || pluginID == "uk.org.optimis.medical.firstaid" || pluginID == "uk.org.optimis.sen.provision") && strings.Contains(err.Error(), "caller lacks required DAL scopes") {
 				status = http.StatusForbidden
 			}
 			writeJSON(w, status, RPCResponse{

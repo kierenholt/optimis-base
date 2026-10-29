@@ -95,7 +95,12 @@ func (d *CoreDAL) SeedMilestone1Fixtures(ctx context.Context, in Milestone1SeedI
 		},
 		{
 			sql: `INSERT INTO alert_levels (id, name, name_short, color_hex, bg_color_hex, description, sequence_number)
-			      VALUES ('HIGH', 'High Priority', 'HI', '#FFFFFF', '#D32F2F', 'Critical alert', 1)
+			      VALUES ('HIGH', 'High Priority', 'HI', '#FFFFFF', '#D32F2F', 'Critical alert', (SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM alert_levels))
+			      ON CONFLICT(id) DO NOTHING`,
+		},
+		{
+			sql: `INSERT INTO alert_levels (id, name, name_short, color_hex, bg_color_hex, description, sequence_number)
+			      VALUES ('CRITICAL', 'Critical Life-Safety / Statutory Alert', 'CRIT', '#FFFFFF', '#B71C1C', 'Immediate life-safety medical condition (IHCP/Anaphylaxis)', (SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM alert_levels))
 			      ON CONFLICT(id) DO NOTHING`,
 		},
 		{
@@ -240,7 +245,7 @@ func (d *CoreDAL) SeedMilestone1Fixtures(ctx context.Context, in Milestone1SeedI
 			sql: `INSERT INTO pupil_medical_conditions (
 				id, pupil_id, condition_name, condition_category, alert_level_id,
 				has_ihcp, emergency_response_plan, parental_consent_given, effective_from, effective_to
-			) VALUES (?, ?, 'Anaphylaxis (Peanut Allergy)', 'ALLERGY', 'HIGH', 1, 'Administer EpiPen immediately and call 999', 1, '2026-09-01', NULL)`,
+			) VALUES (?, ?, 'Anaphylaxis (Peanut Allergy)', 'ALLERGY', 'CRITICAL', 1, 'Administer EpiPen immediately and call 999', 1, '2026-09-01', NULL)`,
 			args: []any{"med_" + sfx, res.ActivePupilID},
 		},
 		{
@@ -277,35 +282,29 @@ func (d *CoreDAL) SeedMilestone1Fixtures(ctx context.Context, in Milestone1SeedI
 				"grel_gp_" + sfx, res.ActivePupilID, "per_gp_" + sfx,
 			},
 		},
+		{
+			sql: `INSERT INTO roles (id, category, name, name_short, description, default_scopes_json)
+			      VALUES ('TEACHER', 'STAFF', 'Classroom Teacher', 'TCH', 'Scoped access to assigned teaching and registration groups',
+			              '["dal.pupils.read:own_groups","dal.groups.read:own_groups","dal.attendance.read:own_groups","dal.attendance.write:own_groups","dal.sen.read:own_groups","dal.medical.read:own_groups","dal.guardians.read:own_groups","dal.safeguarding.create"]'),
+			             ('DSL', 'STAFF', 'Designated Safeguarding Lead', 'DSL', 'KCSIE Safeguarding Vault read & triage authority',
+			              '["dal.safeguarding.create","dal.safeguarding.read","dal.pupils.read:all","dal.guardians.read:all","dal.attendance.read:all","dal.sen.read:all","dal.medical.read:all"]')
+			      ON CONFLICT(id) DO UPDATE SET default_scopes_json = excluded.default_scopes_json`,
+		},
+		{
+			sql: `INSERT INTO person_roles (person_id, role_id, is_primary, effective_from)
+			      VALUES (?, 'TEACHER', 1, '2026-09-01'),
+			             (?, 'TEACHER', 1, '2026-09-01'),
+			             (?, 'DSL', 1, '2026-09-01')`,
+			args: []any{
+				"per_t1_" + sfx,
+				"per_t2_" + sfx,
+				"per_dsl_" + sfx,
+			},
+		},
 	}
 
 	if in.IncludeSecondActivePupil {
 		stmts = append(stmts,
-			struct {
-				sql  string
-				args []any
-			}{
-				sql: `INSERT INTO roles (id, category, name, name_short, description, default_scopes_json)
-				      VALUES ('TEACHER', 'STAFF', 'Classroom Teacher', 'TCH', 'Scoped access to assigned teaching and registration groups',
-				              '["dal.pupils.read:own_groups","dal.groups.read:own_groups","dal.attendance.read:own_groups","dal.attendance.write:own_groups","dal.sen.read:own_groups","dal.medical.read:own_groups","dal.safeguarding.create"]'),
-				             ('DSL', 'STAFF', 'Designated Safeguarding Lead', 'DSL', 'KCSIE Safeguarding Vault read & triage authority',
-				              '["dal.safeguarding.create","dal.safeguarding.read","dal.pupils.read:all","dal.guardians.read:all","dal.attendance.read:all","dal.sen.read:all","dal.medical.read:all"]')
-				      ON CONFLICT(id) DO UPDATE SET default_scopes_json = excluded.default_scopes_json`,
-			},
-			struct {
-				sql  string
-				args []any
-			}{
-				sql: `INSERT INTO person_roles (person_id, role_id, is_primary, effective_from)
-				      VALUES (?, 'TEACHER', 1, '2026-09-01'),
-				             (?, 'TEACHER', 1, '2026-09-01'),
-				             (?, 'DSL', 1, '2026-09-01')`,
-				args: []any{
-					"per_t1_" + sfx,
-					"per_t2_" + sfx,
-					"per_dsl_" + sfx,
-				},
-			},
 			struct {
 				sql  string
 				args []any

@@ -1,0 +1,54 @@
+{
+  "id": "uk.co.sparx.maths",
+  "title": "Sparx Maths Partner Sync",
+  "version": "0.1.0",
+  "core_dal_version": "~1.0",
+  "max_concurrency": 4,
+  "max_memory_mb": 32,
+  "database": {
+    "alias": "plugin_sparx",
+    "max_db_size_mb": 128
+  },
+  "gdpr_hooks": {
+    "export_pupil_data": "export_pupil_data",
+    "purge_pupil_data": "purge_pupil_data"
+  },
+  "egress": {
+    "allowed_domains": [
+      "https://sync.sparxmaths.uk"
+    ],
+    "timeout_ms": 5000
+  },
+  "endpoints": {
+    "configure_vendor_credentials": {
+      "scopes": [
+        "dal.groups.read:own_groups"
+      ],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "get_vendor_config": {
+      "scopes": [
+        "dal.groups.read:own_groups"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "sync_group_homework": {
+      "scopes": [
+        "dal.groups.read:own_groups",
+        "dal.pupils.read:own_groups"
+      ],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "list_homework_scores": {
+      "scopes": [
+        "dal.groups.read:own_groups",
+        "dal.pupils.read:own_groups"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    }
+  }
+}

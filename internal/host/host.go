@@ -960,7 +960,7 @@ func (h *Host) buildLuaCtxTable(
 	}))
 	L.SetField(ctxTbl, "crypto", cryptoTbl)
 
-	// 9. ctx.school (read-only school URN and default temporal context)
+	// 9. ctx.school (read-only school URN, default temporal context, and synced MAT policy metadata from __system_config)
 	schoolTbl := L.NewTable()
 	L.SetField(schoolTbl, "urn", lua.LString(h.cfg.SchoolURN))
 	if defScope, sErr := h.coreDAL.ResolveScopeDefaults(execCtx, dal.DALQueryScope{}); sErr == nil {
@@ -970,6 +970,10 @@ func (h *Host) buildLuaCtxTable(
 		L.SetField(schoolTbl, "academic_year_id", lua.LString("ay_2026_2027"))
 		L.SetField(schoolTbl, "reference_date", lua.LString(time.Now().UTC().Format("2006-01-02")))
 	}
+	matID, _ := h.coreDAL.GetSystemConfigValue(execCtx, "mat_id")
+	matGradingSchemaVersion, _ := h.coreDAL.GetSystemConfigValue(execCtx, "mat_grading_schema_version")
+	L.SetField(schoolTbl, "mat_id", lua.LString(strings.TrimSpace(matID)))
+	L.SetField(schoolTbl, "mat_grading_schema_version", lua.LString(strings.TrimSpace(matGradingSchemaVersion)))
 	L.SetField(ctxTbl, "school", schoolTbl)
 
 	return ctxTbl

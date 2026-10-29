@@ -58,6 +58,7 @@ var (
 	ulnTokenRegex     = regexp.MustCompile(`\b[0-9]{10}\b`)
 	entityIDRegex     = regexp.MustCompile(`(?i)\b(pup|per|stf|grd|hh|sfg|pnote|wlog|usr|req|wrk|sess)_[a-z0-9_-]+\b`)
 	upnTokenRegex     = regexp.MustCompile(`\b[A-Z][0-9]{12}[A-Z0-9]?\b`)
+	vendorSecretRegex = regexp.MustCompile(`(?i)(Bearer\s+[A-Za-z0-9._~+/=-]{6,}|\b(spx|sk|pk|api|key|sec|tok|pat)_[A-Za-z0-9_-]{6,}\b|(api[_-]?key|x-sparx-api-key|authorization|token|secret)\s*[:=]\s*[^\s,;)"']+)`)
 )
 
 func scrubDiagnosticText(raw string, extraSecrets []string) string {
@@ -68,6 +69,7 @@ func scrubDiagnosticText(raw string, extraSecrets []string) string {
 			s = strings.ReplaceAll(s, trimmed, "[REDACTED]")
 		}
 	}
+	s = vendorSecretRegex.ReplaceAllString(s, "[REDACTED]")
 	s = piiScrubPattern.ReplaceAllString(s, "[REDACTED]")
 	s = entityIDRegex.ReplaceAllString(s, "[REDACTED]")
 	s = upnTokenRegex.ReplaceAllString(s, "[REDACTED]")

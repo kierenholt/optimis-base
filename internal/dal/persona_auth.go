@@ -52,6 +52,7 @@ type PersonaTestFixtures struct {
 	HoDStaffID               string `json:"hod_staff_id"`
 	TeacherStaffID           string `json:"teacher_staff_id"`
 	AttendanceOfficerStaffID string `json:"attendance_officer_staff_id"`
+	SchoolNurseStaffID       string `json:"school_nurse_staff_id"`
 	TerminatedStaffID        string `json:"terminated_staff_id"`
 }
 
@@ -516,6 +517,7 @@ func (d *CoreDAL) SeedPersonaTestFixtures(ctx context.Context, academicYearID st
 		HoDStaffID:               "stf_hod_" + fxID,
 		TeacherStaffID:           "stf_tch_" + fxID,
 		AttendanceOfficerStaffID: "stf_att_" + fxID,
+		SchoolNurseStaffID:       "stf_att_" + fxID,
 		TerminatedStaffID:        "stf_term_" + fxID,
 	}
 
@@ -557,8 +559,8 @@ func (d *CoreDAL) SeedPersonaTestFixtures(ctx context.Context, academicYearID st
 			`["dal.pupils.read:own_groups","dal.groups.read:own_groups","dal.attendance.read:own_groups","dal.attendance.write:own_groups","dal.sen.read:own_groups","dal.medical.read:own_groups","dal.safeguarding.create"]`,
 		},
 		{
-			"SUPPORT", "STAFF", "School Office & Pastoral Support", "SUP", "Attendance officer and administrative support",
-			`["dal.pupils.read:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.safeguarding.create"]`,
+			"SUPPORT", "STAFF", "School Office & Pastoral Support", "SUP", "Attendance officer, First Aider, and administrative support",
+			`["dal.pupils.read:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.medical.read:all","dal.safeguarding.create"]`,
 		},
 	}
 	for _, r := range roles {

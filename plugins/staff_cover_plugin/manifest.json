@@ -1,0 +1,64 @@
+{
+  "id": "uk.org.optimis.ops.cover",
+  "title": "Staff Absence & Cover Manager",
+  "version": "0.1.0",
+  "core_dal_version": "~1.0",
+  "max_concurrency": 4,
+  "max_memory_mb": 32,
+  "database": {
+    "alias": "plugin_cover",
+    "max_db_size_mb": 64
+  },
+  "gdpr_hooks": {
+    "export_pupil_data": "export_pupil_data",
+    "purge_pupil_data": "purge_pupil_data"
+  },
+  "egress": {
+    "allowed_domains": []
+  },
+  "endpoints": {
+    "load_absent_teacher_timetable": {
+      "scopes": [
+        "dal.groups.read:all"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "record_absence_and_assign_cover": {
+      "scopes": [
+        "dal.groups.read:all",
+        "dal.groups.write:all"
+      ],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "load_cover_class_roster": {
+      "scopes": [
+        "dal.groups.read:own_groups",
+        "dal.pupils.read:own_groups",
+        "dal.sen.read:own_groups",
+        "dal.medical.read:own_groups",
+        "dal.attendance.read:own_groups"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    },
+    "submit_cover_attendance_batch": {
+      "scopes": [
+        "dal.groups.read:own_groups",
+        "dal.pupils.read:own_groups",
+        "dal.attendance.read:own_groups",
+        "dal.attendance.write:own_groups"
+      ],
+      "mutates": true,
+      "timeout_ms": 2500
+    },
+    "list_cover_assignments": {
+      "scopes": [
+        "dal.groups.read:own_groups"
+      ],
+      "mutates": false,
+      "timeout_ms": 2500
+    }
+  }
+}

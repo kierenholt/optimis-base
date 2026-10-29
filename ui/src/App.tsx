@@ -37,6 +37,9 @@ export function App() {
   const initialSecondPupilId = params.get('second_pupil_id') || '';
   const initialGroupId = params.get('group_id') || '';
   const initialOtherGroupId = params.get('other_group_id') || '';
+  const initialAbsentStaffId = params.get('absent_staff_id') || '';
+  const initialCoverStaffId = params.get('cover_staff_id') || '';
+  const initialSlotId = params.get('slot_id') || '';
   const initialReferenceDate = params.get('reference_date') || '';
   const initialAcademicYearId = params.get('academic_year_id') || '';
   const initialStaffId = params.get('staff_id') || '';
@@ -286,6 +289,9 @@ export function App() {
           second_pupil_id: initialSecondPupilId || null,
           group_id: resolvedGroupId || null,
           other_group_id: initialOtherGroupId || null,
+          absent_staff_id: initialAbsentStaffId || null,
+          cover_staff_id: initialCoverStaffId || null,
+          slot_id: initialSlotId || null,
           reference_date: initialReferenceDate || null,
           academic_year_id: initialAcademicYearId || configuredAcademicYear,
           staff_id: resolvedStaffId || null,
@@ -311,6 +317,9 @@ export function App() {
       initialSecondPupilId,
       activeGroupId,
       initialOtherGroupId,
+      initialAbsentStaffId,
+      initialCoverStaffId,
+      initialSlotId,
       initialReferenceDate,
       initialAcademicYearId,
       configuredAcademicYear,
@@ -1031,7 +1040,9 @@ export function App() {
                       fontWeight: 700,
                     }}
                   >
-                    {activeCaller.staff_id} ({activeCaller.active_roles.join(', ')})
+                    <span data-testid="topbar-active-persona">
+                      {activeCaller.staff_id} ({activeCaller.active_roles.join(', ')})
+                    </span>
                   </span>
                 )}
                 {personaSwitchError && (

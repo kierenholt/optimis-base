@@ -361,6 +361,124 @@ func (d *CoreDAL) UpsertGroupPupilMembershipScoped(
 	}, nil
 }
 
+type UpsertGroupStaffAssignmentInput struct {
+	AssignmentID   string `json:"assignment_id,omitempty"`
+	GroupID        string `json:"group_id"`
+	StaffID        string `json:"staff_id"`
+	Role           string `json:"role"`
+	AcademicYearID string `json:"academic_year_id"`
+	EffectiveFrom  string `json:"effective_from"`
+	EffectiveTo    string `json:"effective_to,omitempty"`
+}
+
+type UpsertGroupStaffAssignmentResult struct {
+	AssignmentID   string `json:"assignment_id"`
+	GroupID        string `json:"group_id"`
+	StaffID        string `json:"staff_id"`
+	Role           string `json:"role"`
+	AcademicYearID string `json:"academic_year_id"`
+	EffectiveFrom  string `json:"effective_from"`
+	EffectiveTo    string `json:"effective_to,omitempty"`
+}
+
+func (d *CoreDAL) UpsertGroupStaffAssignmentScoped(
+	ctx context.Context,
+	scope DALQueryScope,
+	in UpsertGroupStaffAssignmentInput,
+) (*UpsertGroupStaffAssignmentResult, error) {
+	groupID := strings.TrimSpace(in.GroupID)
+	staffID := strings.TrimSpace(in.StaffID)
+	role := strings.ToUpper(strings.TrimSpace(in.Role))
+	if role == "" {
+		role = "CO_TEACHER"
+	}
+	switch role {
+	case "LEAD_TEACHER", "CO_TEACHER", "FORM_TUTOR", "TEACHING_ASSISTANT":
+	default:
+		return nil, fmt.Errorf("invalid group_staff_assignments role %q: must be LEAD_TEACHER, CO_TEACHER, FORM_TUTOR, or TEACHING_ASSISTANT", in.Role)
+	}
+
+	ayID := strings.TrimSpace(in.AcademicYearID)
+	if ayID == "" {
+		ayID = strings.TrimSpace(scope.AcademicYearID)
+	}
+	effFrom := strings.TrimSpace(in.EffectiveFrom)
+	if effFrom == "" {
+		effFrom = strings.TrimSpace(scope.ReferenceDate)
+	}
+	if groupID == "" {
+		return nil, errors.New("missing mandatory parameter: group_id")
+	}
+	if staffID == "" {
+		return nil, errors.New("missing mandatory parameter: staff_id")
+	}
+	if ayID == "" {
+		return nil, errors.New("missing mandatory parameter: academic_year_id")
+	}
+	if effFrom == "" {
+		return nil, errors.New("missing mandatory parameter: effective_from")
+	}
+	if err := d.ensureGroupInOwnGroups(ctx, scope, groupID); err != nil {
+		return nil, err
+	}
+
+	assignmentID := strings.TrimSpace(in.AssignmentID)
+	if assignmentID == "" {
+		assignmentID = "gsa_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	}
+
+	var effToArg any
+	trimmedEffTo := strings.TrimSpace(in.EffectiveTo)
+	if trimmedEffTo != "" {
+		effToArg = trimmedEffTo
+	}
+
+	tx, err := d.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin group staff assignment transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO group_staff_assignments (
+			id, group_id, staff_id, role, academic_year_id, effective_from, effective_to
+		) VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(group_id, staff_id, role, effective_from) DO UPDATE SET
+			academic_year_id = excluded.academic_year_id,
+			effective_to = excluded.effective_to`,
+		assignmentID, groupID, staffID, role, ayID, effFrom, effToArg,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upsert group_staff_assignments row: %w", err)
+	}
+
+	var persistedID string
+	if err := tx.QueryRowContext(
+		ctx,
+		`SELECT id FROM group_staff_assignments WHERE group_id = ? AND staff_id = ? AND role = ? AND effective_from = ?`,
+		groupID, staffID, role, effFrom,
+	).Scan(&persistedID); err == nil && strings.TrimSpace(persistedID) != "" {
+		assignmentID = persistedID
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit group staff assignment transaction: %w", err)
+	}
+
+	return &UpsertGroupStaffAssignmentResult{
+		AssignmentID:   assignmentID,
+		GroupID:        groupID,
+		StaffID:        staffID,
+		Role:           role,
+		AcademicYearID: ayID,
+		EffectiveFrom:  effFrom,
+		EffectiveTo:    trimmedEffTo,
+	}, nil
+}
+
 func (d *CoreDAL) GetGroupSessionAttendanceScoped(
 	ctx context.Context,
 	scope DALQueryScope,

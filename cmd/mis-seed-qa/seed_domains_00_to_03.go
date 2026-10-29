@@ -194,7 +194,7 @@ func seedDomain01And03StaffGroupsAndPupils(tx *sql.Tx, st *qaSeedState) error {
 		{"HOD", "STAFF", "Head of Department", "HOD", "Departmental curriculum and cohort lead", `["dal.pupils.read:all","dal.groups.read:all","dal.attendance.read:all","dal.sen.read:all","dal.medical.read:all","dal.safeguarding.create"]`},
 		{"TEACHER", "STAFF", "Classroom Teacher", "TCH", "Scoped access to assigned teaching and registration groups", `["dal.pupils.read:own_groups","dal.groups.read:own_groups","dal.attendance.read:own_groups","dal.attendance.write:own_groups","dal.sen.read:own_groups","dal.medical.read:own_groups","dal.safeguarding.create"]`},
 		{"TA", "STAFF", "Teaching Assistant / HLTA", "TA", "Classroom and SEN intervention support", `["dal.pupils.read:own_groups","dal.groups.read:own_groups","dal.sen.read:own_groups","dal.medical.read:own_groups","dal.safeguarding.create"]`},
-		{"SUPPORT", "STAFF", "School Office & Pastoral Support", "SUP", "Attendance officer and administrative support", `["dal.pupils.read:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.safeguarding.create"]`},
+		{"SUPPORT", "STAFF", "School Office & Pastoral Support", "SUP", "Attendance officer, First Aider, and administrative support", `["dal.pupils.read:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.medical.read:all","dal.safeguarding.create"]`},
 		{"PUPIL", "PUPIL", "Enrolled School Pupil", "PUP", "Student identity role", `[]`},
 		{"GUARDIAN", "GUARDIAN", "Parent / Legal Guardian", "GDN", "Household guardian role", `[]`},
 		{"SYSTEM", "SYSTEM", "Host Service Principal", "SYS", "Background worker execution role", `[]`},

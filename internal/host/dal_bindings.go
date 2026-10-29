@@ -351,6 +351,15 @@ func (h *Host) buildLuaDALTable(
 			}))
 		}
 
+		senMode := resolveEffectiveDomainScopeMode(endpointSpec.Scopes, caller, "dal.sen.read")
+		medMode := resolveEffectiveDomainScopeMode(endpointSpec.Scopes, caller, "dal.medical.read")
+		batchStrictMode := dal.ScopeOwnGroups
+		if (hasPupilsRead && pupilsMode == dal.ScopeAll) ||
+			(hasSenRead && senMode == dal.ScopeAll) ||
+			(hasMedicalRead && medMode == dal.ScopeAll) {
+			batchStrictMode = dal.ScopeAll
+		}
+
 		senMedicalBatchFn := L.NewFunction(func(L *lua.LState) int {
 			pupilIDs, optsTbl, argErr := extractPupilIDsAndOptsFromLua(L)
 			if argErr != nil {
@@ -359,7 +368,7 @@ func (h *Host) buildLuaDALTable(
 			}
 			effectiveMode := dal.ScopeAll
 			if optsTbl != nil && optsTbl.RawGetString("strict_own_groups") == lua.LTrue {
-				effectiveMode = pupilsMode
+				effectiveMode = batchStrictMode
 			}
 			scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, effectiveMode, caller.StaffID, optsTbl)
 			if sErr != nil {
@@ -629,6 +638,57 @@ func (h *Host) buildLuaDALTable(
 				L.SetField(resTbl, "membership_id", lua.LString(res.MembershipID))
 				L.SetField(resTbl, "group_id", lua.LString(res.GroupID))
 				L.SetField(resTbl, "pupil_id", lua.LString(res.PupilID))
+				L.SetField(resTbl, "academic_year_id", lua.LString(res.AcademicYearID))
+				L.SetField(resTbl, "effective_from", lua.LString(res.EffectiveFrom))
+				L.SetField(resTbl, "effective_to", lua.LString(res.EffectiveTo))
+				L.Push(resTbl)
+				return 1
+			}))
+
+			L.SetField(groupsTbl, "upsert_staff_assignment", L.NewFunction(func(L *lua.LState) int {
+				if !endpointSpec.Mutates {
+					L.RaiseError("dal.groups.upsert_staff_assignment is forbidden when endpoint mutates=false")
+					return 0
+				}
+				inTbl, ok := L.Get(1).(*lua.LTable)
+				if !ok {
+					L.RaiseError("dal.groups.upsert_staff_assignment requires an input table")
+					return 0
+				}
+				var optsTbl *lua.LTable
+				if L.GetTop() >= 2 {
+					optsTbl, _ = L.Get(2).(*lua.LTable)
+				}
+				scope, sErr := extractScopeFromLuaOpts(execCtx, h.coreDAL, groupsWriteMode, caller.StaffID, optsTbl)
+				if sErr != nil {
+					L.RaiseError("dal.groups.upsert_staff_assignment scope error: %s", sErr.Error())
+					return 0
+				}
+				getStr := func(key string) string {
+					v := inTbl.RawGetString(key)
+					if v == lua.LNil {
+						return ""
+					}
+					return strings.TrimSpace(v.String())
+				}
+				res, err := h.coreDAL.UpsertGroupStaffAssignmentScoped(execCtx, scope, dal.UpsertGroupStaffAssignmentInput{
+					AssignmentID:   getStr("assignment_id"),
+					GroupID:        getStr("group_id"),
+					StaffID:        getStr("staff_id"),
+					Role:           getStr("role"),
+					AcademicYearID: getStr("academic_year_id"),
+					EffectiveFrom:  getStr("effective_from"),
+					EffectiveTo:    getStr("effective_to"),
+				})
+				if err != nil {
+					L.RaiseError("dal.groups.upsert_staff_assignment failed: %s", err.Error())
+					return 0
+				}
+				resTbl := L.NewTable()
+				L.SetField(resTbl, "assignment_id", lua.LString(res.AssignmentID))
+				L.SetField(resTbl, "group_id", lua.LString(res.GroupID))
+				L.SetField(resTbl, "staff_id", lua.LString(res.StaffID))
+				L.SetField(resTbl, "role", lua.LString(res.Role))
 				L.SetField(resTbl, "academic_year_id", lua.LString(res.AcademicYearID))
 				L.SetField(resTbl, "effective_from", lua.LString(res.EffectiveFrom))
 				L.SetField(resTbl, "effective_to", lua.LString(res.EffectiveTo))
