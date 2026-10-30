@@ -159,9 +159,6 @@ func NewHost(cfg Config) (*Host, error) {
 	if strings.TrimSpace(cfg.HostKMSKeyHandle) == "" {
 		return nil, errors.New("missing mandatory config: HostKMSKeyHandle")
 	}
-	if strings.TrimSpace(cfg.PluginsDir) == "" {
-		return nil, errors.New("missing mandatory config: PluginsDir")
-	}
 
 	if err := os.MkdirAll(cfg.DataDirPath, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create DataDirPath: %w", err)

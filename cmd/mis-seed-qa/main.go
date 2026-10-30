@@ -17,22 +17,18 @@ import (
 
 func run() error {
 	var customDBPath string
-	var overwriteDevDB bool
 	var seedVal uint64
 	var schoolURN string
 	var kmsKeyHandle string
 
 	flag.StringVar(&customDBPath, "db", "", "Explicit target SQLite database path")
-	flag.BoolVar(&overwriteDevDB, "overwrite-dev-db", false, "Write directly to .data/core.db")
 	flag.Uint64Var(&seedVal, "seed", 42, "Deterministic PRNG seed for synthetic school cohort generation")
 	flag.StringVar(&schoolURN, "urn", "100001", "School URN for synthetic school")
 	flag.StringVar(&kmsKeyHandle, "kms", "kms-local-dev-key-001", "Host KMS key handle")
 	flag.Parse()
 
 	targetDBPath := ""
-	if overwriteDevDB {
-		targetDBPath = ".data/core.db"
-	} else if strings.TrimSpace(customDBPath) != "" {
+	if strings.TrimSpace(customDBPath) != "" {
 		targetDBPath = strings.TrimSpace(customDBPath)
 	} else if flag.NArg() > 0 && strings.TrimSpace(flag.Arg(0)) != "" {
 		targetDBPath = strings.TrimSpace(flag.Arg(0))

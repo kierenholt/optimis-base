@@ -36,6 +36,9 @@ func validatePluginFolderName(pluginFolder string) (string, error) {
 }
 
 func (h *Host) InstallPlugin(ctx context.Context, pluginFolder string) (*LoadedPlugin, error) {
+	if strings.TrimSpace(h.cfg.PluginsDir) == "" {
+		return nil, errors.New("cannot install plugin: PluginsDir is not configured")
+	}
 	cleanFolder, err := validatePluginFolderName(pluginFolder)
 	if err != nil {
 		return nil, err

@@ -11,18 +11,12 @@
 ## Available NPM Commands
 
 ### Root Workspace (`package.json`)
-* `npm run dev`: Build and run the Go Host server and React UI in hot-reload watch mode (`node scripts/dev_watch.mjs`).
-* `npm run dev:all-plugins`: Build and run in hot-reload watch mode with all production plugins in `PLUGINS_DIR` preloaded (`PRELOAD_PLUGINS=all node scripts/dev_watch.mjs --all-plugins`).
-* `npm run dev:no-plugins`: Build and run in hot-reload watch mode with zero plugins preloaded (`PRELOAD_PLUGINS=none node scripts/dev_watch.mjs --no-plugins`).
-* `npm start`: Start the compiled Go Host server (`./bin/mis-server`).
-* `npm run start:all-plugins`: Start the compiled Go Host server with all production plugins preloaded (`PRELOAD_PLUGINS=all ./bin/mis-server --all-plugins`).
-* `npm run start:no-plugins`: Start the compiled Go Host server with zero plugins preloaded (`PRELOAD_PLUGINS=none ./bin/mis-server --no-plugins`).
+* `npm run dev`: Build and run the Go Host server and React UI in hot-reload watch mode (`node scripts/dev_watch.mjs`). Preloads plugins based on `PLUGINS_DIR` in `.env` (or pass `--no-plugins` / `--plugins <list>`).
+* `npm start`: Start the compiled Go Host server (`./bin/mis-server`). Preloads plugins based on `PLUGINS_DIR` in `.env` (or pass `--no-plugins` / `--plugins <list>`).
 * `npm run build`: Build the embedded React UI (`build:ui`) and compile the Go Host binary (`build:go`).
 * `npm run build:ui`: Build the Vite + React Host UI Shell into `internal/host/ui_dist`.
 * `npm run build:go`: Compile the Go Host server binary into `bin/mis-server`.
-* `npm run seed`: Build and populate the 45-table synthetic UK All-Through school QA database (`go run ./cmd/mis-seed-qa`). Does not read from `.env`; interactively prompts the user for the target database path if none is passed (defaulting to `.data/core.db`), or accepts `-- -db <path>` / `-- <path>` / `-- --overwrite-dev-db`.
-* `npm run seed:qa`: Build and populate the synthetic QA database non-interactively at `.data/qa_core.db` (`go run ./cmd/mis-seed-qa -db .data/qa_core.db`).
-* `npm run seed:dev`: Build and populate the synthetic QA database directly into `.data/core.db` (`go run ./cmd/mis-seed-qa --overwrite-dev-db`).
+* `npm run seed`: Build and populate the 45-table synthetic UK All-Through school QA database (`go run ./cmd/mis-seed-qa`). Does not read from `.env`; interactively prompts the user for the target database path if none is passed (defaulting to `.data/core.db`), or accepts a path argument (e.g. `-- .data/core.db` or `-- -db <path>`).
 * `npm run plugins:all`: Hot-install and activate all production plugins in `PLUGINS_DIR` against the running local server (`node scripts/manage_plugins.mjs all`).
 * `npm run plugins:none`: Remove all active plugins from the running local server (`node scripts/manage_plugins.mjs none`).
 * `npm run plugins:load -- <folder...>`: Hot-install and activate specific plugin folder(s) on the running local server (`node scripts/manage_plugins.mjs load`).

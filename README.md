@@ -24,17 +24,13 @@ npm run seed
 # Where would you like to put the seed database? [.data/core.db]: 
 ```
 * **Press Enter** to seed into `.data/core.db`.
-* **Or type `.data/qa_core.db`** (or any custom path) to keep it separate.
+* **Or type a custom path** (e.g. `.data/qa_core.db` or any target path) to keep it separate.
 
-#### Non-Interactive Seeding Shortcuts
-If you prefer not to be prompted:
+#### Non-Interactive Seeding
+If you prefer not to be prompted, pass the database path directly as an argument:
 ```bash
-# Seed directly to a dedicated QA database:
-npm run seed:qa
-# (or: npm run seed -- .data/qa_core.db)
-
-# Seed directly to the default core database:
-npm run seed:dev
+npm run seed -- .data/core.db
+# (or any custom path, e.g. npm run seed -- .data/qa_core.db)
 ```
 
 #### Pointing the Server to Your Database (`DATABASE_PATH`)
@@ -43,65 +39,55 @@ There is **only ONE variable for the database in [`.env`](file:///home/kieren/Do
 # Point to your database in .env:
 DATABASE_PATH=.data/core.db
 
-# Or point directly to your dedicated QA seed database:
+# Or point directly to your custom seed database:
 # DATABASE_PATH=.data/qa_core.db
 ```
-*(Or pass the `--db` flag on the CLI: `./bin/mis-server --db .data/qa_core.db`)*
+*(Or pass the `--db` flag on the CLI: `./bin/mis-server --db .data/core.db`)*
 
 > **Tip — Resetting Attached Plugin Databases:** Attached plugin databases live alongside your core DB in `.data/plugin_*.db`. To wipe all plugin state and re-seed fresh, run:
 > ```bash
-> rm -f .data/plugin_*.db* && npm run seed:qa
+> rm -f .data/plugin_*.db* && npm run seed -- .data/core.db
 > ```
 
 ### Step 3: Launch the Server & Open the UI
-Choose how you want to boot the platform:
 
-* **Option A — Run with ALL 11 production plugins preloaded (Recommended for full walkthrough):**
-  ```bash
-  # Hot-reload dev mode (rebuilds React UI + Go Host automatically on file save):
-  npm run dev:all-plugins
+```bash
+# Hot-reload dev mode (rebuilds React UI + Go Host automatically on file save):
+npm run dev
 
-  # OR build once and run the compiled binary directly:
-  npm run build && npm run start:all-plugins
-  ```
-* **Option B — Run with NO plugins (Clean Base Host UI Shell only):**
-  ```bash
-  # Hot-reload dev mode with 0 plugins:
-  npm run dev:no-plugins
-
-  # OR build once and run the compiled binary with 0 plugins:
-  npm run build && npm run start:no-plugins
-  ```
+# OR build once and run the compiled binary directly:
+npm run build && npm start
+```
 
 Then open **[http://127.0.0.1:18080](http://127.0.0.1:18080)** in your browser.
 
 ---
 
-## 2. Controlling Preloaded Plugins via `.env` (`PRELOAD_PLUGINS`) or CLI Flags
+## 2. Running With Plugins vs. No Plugins via `.env` (`PLUGINS_DIR`)
 
-You can control which plugins are automatically installed, migrated (`ATTACH DATABASE`), and activated at server startup using the **`PRELOAD_PLUGINS`** environment variable in [`.env`](file:///home/kieren/Documents/code/optimis/.env) (or inline on the command line):
+Plugin loading is configured directly in [`.env`](file:///home/kieren/Documents/code/optimis/.env) through **`PLUGINS_DIR`**:
 
-| Mode | `.env` / Environment Variable Setting | Description |
-| :--- | :--- | :--- |
-| **No Plugins** | `PRELOAD_PLUGINS=none` *(or empty)* | Boots the clean React Host Shell with zero plugins installed. |
-| **All Production Plugins** | `PRELOAD_PLUGINS=all` *(or `PRELOAD_PLUGINS=./plugins`)* | Scans the folder and preloads all production plugin subdirectories containing a `manifest.json` (excludes the synthetic `test_plugin` fixture). |
-| **Single Plugin Folder** | `PRELOAD_PLUGINS=timetable_attendance_plugin` *(or `PRELOAD_PLUGINS=./plugins/timetable_attendance_plugin`)* | Preloads only that single plugin folder. |
-| **List of Plugin Folders** | `PRELOAD_PLUGINS=timetable_attendance_plugin,behaviour_plugin,staff_cover_plugin,first_aid_medical_plugin` | Preloads the exact comma-separated list of plugin folders in order. |
+* **Run with ALL production plugins:** Set `PLUGINS_DIR` to the plugins folder:
+  ```bash
+  PLUGINS_DIR=plugins
+  ```
+  The server automatically discovers, migrates, and preloads all production plugins in that directory.
 
-### Equivalent CLI Flags on `./bin/mis-server` (and `npm run dev --`)
-You can also pass flags directly to `./bin/mis-server` or `npm run dev --`:
+* **Run with NO plugins (Clean Host UI Shell):** Leave `PLUGINS_DIR` blank:
+  ```bash
+  PLUGINS_DIR=
+  ```
+  The server starts instantly with 0 plugins loaded.
+
+### Optional CLI Overrides
+You can also override `.env` from the command line:
 ```bash
-# Preload all production plugins:
-./bin/mis-server --all-plugins
+# Force zero plugins without modifying .env:
+npm run dev -- --no-plugins
 
-# Preload all plugins INCLUDING the synthetic test_plugin fixture:
-./bin/mis-server --all-plugins --include-test-plugin
-
-# Preload a specific comma-separated list of plugin folders:
-./bin/mis-server --plugins timetable_attendance_plugin,senco_provision_plugin,sparx_maths_plugin
-
-# Force zero plugins even if PRELOAD_PLUGINS is set in .env:
-./bin/mis-server --no-plugins
+# Load only specific plugin folder(s):
+npm run dev -- --plugins timetable_attendance_plugin,senco_provision_plugin
+```
 ```
 
 ---

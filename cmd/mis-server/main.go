@@ -35,7 +35,7 @@ func loadDotEnv(path string) error {
 		}
 		key := strings.TrimSpace(parts[0])
 		val := strings.TrimSpace(parts[1])
-		if os.Getenv(key) == "" {
+		if _, exists := os.LookupEnv(key); !exists {
 			_ = os.Setenv(key, val)
 		}
 	}
@@ -225,10 +225,19 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	pluginsDir, err := requireEnv("PLUGINS_DIR")
-	if err != nil {
-		return err
+	pluginsDir := strings.TrimSpace(os.Getenv("PLUGINS_DIR"))
+	if pluginsDir != "" {
+		if !filepath.IsAbs(pluginsDir) {
+			abs, err := filepath.Abs(pluginsDir)
+			if err == nil {
+				pluginsDir = abs
+			}
+		}
+		if st, err := os.Stat(pluginsDir); err != nil || !st.IsDir() {
+			return fmt.Errorf("PLUGINS_DIR does not exist or is not a directory: %s", pluginsDir)
+		}
 	}
+
 	enableDevPersonaSwitcher, err := parseStrictBoolEnv("ENABLE_DEV_PERSONA_SWITCHER")
 	if err != nil {
 		return err
@@ -282,24 +291,26 @@ func run() error {
 		return err
 	}
 
-	preloadSpec := strings.TrimSpace(os.Getenv("PRELOAD_PLUGINS"))
-	if preloadSpec == "" {
-		preloadSpec = strings.TrimSpace(os.Getenv("LOAD_PLUGINS"))
-	}
-	if strings.TrimSpace(pluginsListFlag) != "" {
-		preloadSpec = strings.TrimSpace(pluginsListFlag)
-	}
-	if allPluginsFlag {
-		preloadSpec = "all"
-	}
-
 	var foldersToLoad []string
-	if !noPluginsFlag && preloadSpec != "" {
+	if pluginsDir != "" && !noPluginsFlag {
+		preloadSpec := strings.TrimSpace(os.Getenv("PRELOAD_PLUGINS"))
+		if preloadSpec == "" {
+			preloadSpec = strings.TrimSpace(os.Getenv("LOAD_PLUGINS"))
+		}
+		if strings.TrimSpace(pluginsListFlag) != "" {
+			preloadSpec = strings.TrimSpace(pluginsListFlag)
+		}
+		if allPluginsFlag || preloadSpec == "" {
+			preloadSpec = "all"
+		}
+
 		resolved, rErr := resolvePreloadPluginFolders(pluginsDir, preloadSpec, includeTestPluginFlag)
 		if rErr != nil {
 			return rErr
 		}
 		foldersToLoad = resolved
+	} else if pluginsDir == "" && (allPluginsFlag || strings.TrimSpace(pluginsListFlag) != "") {
+		return errors.New("cannot preload plugins: PLUGINS_DIR is empty in .env")
 	}
 
 	for _, folder := range foldersToLoad {
