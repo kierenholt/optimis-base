@@ -184,10 +184,21 @@
 ---@field build fun(root_node_spec: table): string
 ---@field validate_xsd fun(xml_string: string, xsd_schema_name: string): { valid: boolean, errors: string[] }
 
----@class OptimisContext
+---@class OptimisDAL
+---@field pupils table
+---@field groups table
+---@field guardians table
+---@field attendance table
+---@field safeguarding table
+---@field sen table
+---@field medical table
+---@field staff table
+---@field census table
+
+---@class OptimisPluginContext
 ---@field caller OptimisCallerContext
 ---@field school OptimisSchoolContext
----@field dal table
+---@field dal OptimisDAL
 ---@field plugin_db OptimisPluginDB
 ---@field events OptimisEvents
 ---@field http OptimisHTTP
@@ -195,3 +206,5 @@
 ---@field json OptimisJSON
 ---@field clock OptimisClock
 ---@field crypto OptimisCrypto
+
+---@alias OptimisContext OptimisPluginContext

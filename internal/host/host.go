@@ -77,6 +77,7 @@ type WidgetSpec struct {
 type Manifest struct {
 	ID             string                  `json:"id"`
 	Title          string                  `json:"title,omitempty"`
+	Icon           string                  `json:"icon,omitempty"`
 	Version        string                  `json:"version"`
 	CoreDALVersion string                  `json:"core_dal_version"`
 	MaxConcurrency int                     `json:"max_concurrency,omitempty"`
@@ -147,6 +148,23 @@ type Host struct {
 	eventsDispatchedTotal  atomic.Uint64
 	eventsDroppedTotal     atomic.Uint64
 	workerInvocationsTotal atomic.Uint64
+
+	structuredStdout io.Writer
+}
+
+func (h *Host) SetStructuredStdout(w io.Writer) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.structuredStdout = w
+}
+
+func (h *Host) emitStructuredStdout(line string) {
+	h.mu.RLock()
+	w := h.structuredStdout
+	h.mu.RUnlock()
+	if w != nil {
+		_, _ = fmt.Fprintln(w, line)
+	}
 }
 
 func NewHost(cfg Config) (*Host, error) {
@@ -645,6 +663,15 @@ func (h *Host) ExecuteRPC(
 				errCode = "PLUGIN_RPC_FAILED"
 			}
 		}
+		h.emitStructuredStdout(fmt.Sprintf(
+			"type=rpc plugin=%s method=%s caller=%s status=error error_code=%s duration_ms=%d sqlite_write_hold_ms=%d",
+			pluginID,
+			methodName,
+			caller.StaffID,
+			errCode,
+			time.Since(start).Milliseconds(),
+			lockTracker.writeHoldDuration.Milliseconds(),
+		))
 		return &RPCResponse{
 			OK:        false,
 			ErrorCode: errCode,
@@ -677,9 +704,25 @@ func (h *Host) ExecuteRPC(
 
 	// Post-commit asynchronous Event Bus dispatch
 	if len(bufferedEvents) > 0 {
+		for _, evt := range bufferedEvents {
+			h.emitStructuredStdout(fmt.Sprintf(
+				"type=event_emit plugin=%s event=%s hop=%d",
+				pluginID,
+				evt.Name,
+				evt.Hop,
+			))
+		}
 		h.dispatchEvents(bufferedEvents)
 	}
 
+	h.emitStructuredStdout(fmt.Sprintf(
+		"type=rpc plugin=%s method=%s caller=%s status=ok duration_ms=%d sqlite_write_hold_ms=%d",
+		pluginID,
+		methodName,
+		caller.StaffID,
+		time.Since(start).Milliseconds(),
+		lockTracker.writeHoldDuration.Milliseconds(),
+	))
 	h.logInfo(fmt.Sprintf("Executed RPC %s.%s in %dms", pluginID, methodName, time.Since(start).Milliseconds()))
 	return &RPCResponse{
 		OK:      true,
@@ -796,6 +839,12 @@ func (h *Host) buildLuaCtxTable(
 	L.SetField(ctxTbl, "dal", dalTbl)
 
 	// 3. ctx.plugin_db (scoped to attached plugin_<name>.db)
+	if plugin != nil && plugin.Manifest.Database != nil && strings.TrimSpace(plugin.Manifest.Database.Alias) != "" {
+		alias := strings.TrimSpace(plugin.Manifest.Database.Alias)
+		if !h.coreDAL.IsPluginDBAttached(alias) {
+			_ = h.provisionAndMigratePluginDB(execCtx, plugin)
+		}
+	}
 	pluginDBTbl := L.NewTable()
 	L.SetField(pluginDBTbl, "query", L.NewFunction(func(L *lua.LState) int {
 		sqlQuery := strings.TrimSpace(L.OptString(1, ""))

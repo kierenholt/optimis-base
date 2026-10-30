@@ -274,6 +274,50 @@ func parsePluginSARSections(plugin *LoadedPlugin, rawData any) ([]dal.SARSection
 	return sections, nil
 }
 
+func (h *Host) InvokePluginExportHook(ctx context.Context, pluginID string, caller CallerContext, pupilID string) ([]dal.SARSection, error) {
+	h.mu.RLock()
+	plugin, exists := h.plugins[strings.TrimSpace(pluginID)]
+	h.mu.RUnlock()
+	if !exists {
+		return nil, fmt.Errorf("plugin not found: %s", pluginID)
+	}
+	if plugin.Manifest.GDPRHooks == nil || strings.TrimSpace(plugin.Manifest.GDPRHooks.ExportPupilData) == "" {
+		return nil, fmt.Errorf("plugin %s is missing gdpr_hooks.export_pupil_data", plugin.Manifest.ID)
+	}
+	rawExport, err := h.invokePluginGDPRHook(
+		ctx,
+		plugin,
+		strings.TrimSpace(plugin.Manifest.GDPRHooks.ExportPupilData),
+		false,
+		caller,
+		strings.TrimSpace(pupilID),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return parsePluginSARSections(plugin, rawExport)
+}
+
+func (h *Host) InvokePluginPurgeHook(ctx context.Context, pluginID string, caller CallerContext, pupilID string) (any, error) {
+	h.mu.RLock()
+	plugin, exists := h.plugins[strings.TrimSpace(pluginID)]
+	h.mu.RUnlock()
+	if !exists {
+		return nil, fmt.Errorf("plugin not found: %s", pluginID)
+	}
+	if plugin.Manifest.GDPRHooks == nil || strings.TrimSpace(plugin.Manifest.GDPRHooks.PurgePupilData) == "" {
+		return nil, fmt.Errorf("plugin %s is missing gdpr_hooks.purge_pupil_data", plugin.Manifest.ID)
+	}
+	return h.invokePluginGDPRHook(
+		ctx,
+		plugin,
+		strings.TrimSpace(plugin.Manifest.GDPRHooks.PurgePupilData),
+		true,
+		caller,
+		strings.TrimSpace(pupilID),
+	)
+}
+
 func (h *Host) ExportPupilSAR(ctx context.Context, caller CallerContext, pupilID string) (*SARExportBundle, error) {
 	trimmedPupilID := strings.TrimSpace(pupilID)
 	if trimmedPupilID == "" {

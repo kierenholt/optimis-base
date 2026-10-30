@@ -1,0 +1,9 @@
+{
+  "name": "@ukmis/bridge",
+  "version": "1.0.0",
+  "description": "Lightweight untyped JSON RPC + declarative DOM bridge for Optimis School MIS sandboxed plugin iframes (Section 10C).",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "sideEffects": true,
+  "license": "MIT"
+}

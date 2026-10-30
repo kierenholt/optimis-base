@@ -45,10 +45,13 @@ type SeedPupilInput struct {
 	EffectiveFrom  string `json:"effective_from"`
 }
 
+const maxSQLiteAttachedDBs = 10
+
 type AttachedPluginDB struct {
 	Alias        string
 	FilePath     string
 	MaxPageCount int
+	AttachSeq    uint64
 }
 
 type ConnectHook func(ctx context.Context, conn driver.Conn) error
@@ -98,6 +101,7 @@ type CoreDAL struct {
 	numCPU              int
 	attachMu            sync.RWMutex
 	attachedDBs         map[string]AttachedPluginDB
+	attachSeq           uint64
 	connectHook         ConnectHook
 	postCommitEventHook PostCommitEventHook
 }
@@ -221,13 +225,29 @@ func (d *CoreDAL) AttachPluginDB(ctx context.Context, alias string, dbFilePath s
 		return fmt.Errorf("invalid maxPageCount %d: must be > 0", maxPageCount)
 	}
 
-	d.attachMu.Lock()
-	d.attachedDBs[alias] = AttachedPluginDB{
-		Alias:        alias,
-		FilePath:     dbFilePath,
-		MaxPageCount: maxPageCount,
+	for {
+		d.attachMu.RLock()
+		_, alreadyAttached := d.attachedDBs[alias]
+		currentCount := len(d.attachedDBs)
+		var evictAlias string
+		var lowestSeq uint64
+		if !alreadyAttached && currentCount >= maxSQLiteAttachedDBs {
+			for k, v := range d.attachedDBs {
+				if evictAlias == "" || v.AttachSeq < lowestSeq {
+					evictAlias = k
+					lowestSeq = v.AttachSeq
+				}
+			}
+		}
+		d.attachMu.RUnlock()
+
+		if evictAlias == "" {
+			break
+		}
+		if err := d.DetachPluginDB(ctx, evictAlias); err != nil {
+			return fmt.Errorf("failed to evict attached plugin DB %s to make room for %s: %w", evictAlias, alias, err)
+		}
 	}
-	d.attachMu.Unlock()
 
 	var attachedCount int
 	if err := d.writeDB.QueryRowContext(
@@ -250,6 +270,16 @@ func (d *CoreDAL) AttachPluginDB(ctx context.Context, alias string, dbFilePath s
 	if _, err := d.writeDB.ExecContext(ctx, pragmaSQL); err != nil {
 		return fmt.Errorf("failed to enforce max_page_count on WriteDB for %s: %w", alias, err)
 	}
+
+	d.attachMu.Lock()
+	d.attachSeq++
+	d.attachedDBs[alias] = AttachedPluginDB{
+		Alias:        alias,
+		FilePath:     dbFilePath,
+		MaxPageCount: maxPageCount,
+		AttachSeq:    d.attachSeq,
+	}
+	d.attachMu.Unlock()
 
 	// Cycle idle connections in ReadDB so all subsequent connections execute ConnectHook
 	d.readDB.SetMaxIdleConns(0)

@@ -42,7 +42,8 @@ export function App() {
   const initialSlotId = params.get('slot_id') || '';
   const initialReferenceDate = params.get('reference_date') || '';
   const initialAcademicYearId = params.get('academic_year_id') || '';
-  const initialStaffId = params.get('staff_id') || '';
+  const initialPersonaParam = params.get('__persona') || '';
+  const initialStaffId = initialPersonaParam || params.get('staff_id') || '';
 
   // Host Theme & School Branding state (Sections 9.4 & 9.5)
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -394,7 +395,14 @@ export function App() {
   useEffect(() => {
     const loadSessionAndSafeguarding = async () => {
       try {
-        const sessQuery = activeStaffId ? `?staff_id=${encodeURIComponent(activeStaffId)}` : '';
+        if (initialPersonaParam && activeStaffId === initialPersonaParam) {
+          await fetch('/api/auth/persona', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staff_id: initialPersonaParam }),
+          }).catch(() => {});
+        }
+        const sessQuery = activeStaffId ? `?__persona=${encodeURIComponent(activeStaffId)}` : '';
         const sessRes = await fetch(`/api/auth/session${sessQuery}`);
         if (!sessRes.ok) {
           return;
@@ -415,7 +423,14 @@ export function App() {
 
         if (scopes.includes('dal.safeguarding.read')) {
           setHasSafeguardingRead(true);
-          const query = activePupilId ? `?pupil_id=${encodeURIComponent(activePupilId)}` : '';
+          const notesParams = new URLSearchParams();
+          if (activePupilId) {
+            notesParams.set('pupil_id', activePupilId);
+          }
+          if (activeStaffId) {
+            notesParams.set('__persona', activeStaffId);
+          }
+          const query = notesParams.toString() ? `?${notesParams.toString()}` : '';
           const notesRes = await fetch(`/api/safeguarding/notes${query}`);
           if (notesRes.ok) {
             const notesBody = await notesRes.json();
@@ -433,7 +448,7 @@ export function App() {
       }
     };
     void loadSessionAndSafeguarding();
-  }, [activePupilId, activeStaffId]);
+  }, [activePupilId, activeStaffId, initialPersonaParam]);
 
   const handleSelectPersona = async (nextStaffId: string) => {
     const trimmed = nextStaffId.trim();

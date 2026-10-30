@@ -15,7 +15,7 @@
 * `npm start`: Start the compiled Go Host server (`./bin/mis-server`). Preloads plugins based on `PLUGINS_DIR` in `.env` (or pass `--no-plugins` / `--plugins <list>`).
 * `npm run build`: Build the embedded React UI (`build:ui`) and compile the Go Host binary (`build:go`).
 * `npm run build:ui`: Build the Vite + React Host UI Shell into `internal/host/ui_dist`.
-* `npm run build:go`: Compile the Go Host server binary into `bin/mis-server`.
+* `npm run build:go`: Compile the Go Host server binary (`bin/mis-server`) and the four SDK Toolchain CLI binaries (`bin/mis-verify`, `bin/mis-test`, `bin/mis-pack`, and `bin/mis-dev-server`).
 * `npm run seed`: Build and populate the 45-table synthetic UK All-Through school QA database (`go run ./cmd/mis-seed-qa`). Does not read from `.env`; interactively prompts the user for the target database path if none is passed (defaulting to `.data/core.db`), or accepts a path argument (e.g. `-- .data/core.db` or `-- -db <path>`).
 * `npm run plugins:all`: Hot-install and activate all production plugins in `PLUGINS_DIR` against the running local server (`node scripts/manage_plugins.mjs all`).
 * `npm run plugins:none`: Remove all active plugins from the running local server (`node scripts/manage_plugins.mjs none`).

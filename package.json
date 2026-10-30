@@ -6,7 +6,7 @@
     "dev": "node scripts/dev_watch.mjs",
     "start": "./bin/mis-server",
     "build:ui": "vite build --config ui/vite.config.ts",
-    "build:go": "go build -o bin/mis-server ./cmd/mis-server",
+    "build:go": "go build -o bin/mis-server ./cmd/mis-server && go build -o bin/mis-verify ./cmd/mis-verify && go build -o bin/mis-test ./cmd/mis-test && go build -o bin/mis-pack ./cmd/mis-pack && go build -o bin/mis-dev-server ./cmd/mis-dev-server",
     "build": "npm run build:ui && npm run build:go",
     "seed": "go run ./cmd/mis-seed-qa",
     "plugins:all": "node scripts/manage_plugins.mjs all",

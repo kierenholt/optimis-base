@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -36,18 +37,37 @@ func validatePluginFolderName(pluginFolder string) (string, error) {
 }
 
 func (h *Host) InstallPlugin(ctx context.Context, pluginFolder string) (*LoadedPlugin, error) {
-	if strings.TrimSpace(h.cfg.PluginsDir) == "" {
-		return nil, errors.New("cannot install plugin: PluginsDir is not configured")
-	}
 	cleanFolder, err := validatePluginFolderName(pluginFolder)
 	if err != nil {
 		return nil, err
 	}
 
-	dirPath := filepath.Join(h.cfg.PluginsDir, cleanFolder)
-	loaded, err := readPluginFromDisk(dirPath, cleanFolder)
-	if err != nil {
-		return nil, err
+	var candidateDirs []string
+	for _, part := range strings.FieldsFunc(h.cfg.PluginsDir, func(r rune) bool { return r == ',' || r == ';' }) {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			candidateDirs = append(candidateDirs, trimmed)
+		}
+	}
+	candidateDirs = append(candidateDirs, "plugins", "test_fixtures/plugins")
+
+	var loaded *LoadedPlugin
+	var lastErr error
+	for _, baseDir := range candidateDirs {
+		dirPath := filepath.Join(baseDir, cleanFolder)
+		if info, statErr := os.Stat(dirPath); statErr == nil && info.IsDir() {
+			loaded, lastErr = readPluginFromDisk(dirPath, cleanFolder)
+			if lastErr == nil {
+				break
+			}
+		} else if lastErr == nil {
+			lastErr = statErr
+		}
+	}
+	if loaded == nil {
+		if lastErr != nil {
+			return nil, lastErr
+		}
+		return nil, fmt.Errorf("plugin folder not found: %s", cleanFolder)
 	}
 
 	if err := h.provisionAndMigratePluginDB(ctx, loaded); err != nil {

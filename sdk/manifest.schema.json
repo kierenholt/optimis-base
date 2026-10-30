@@ -1,0 +1,245 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://optimis.org.uk/schemas/manifest.schema.json",
+  "title": "Optimis School MIS Plugin Manifest (manifest.json)",
+  "description": "Default-deny routing, capability scope, resource envelope, and lifecycle contract for an Optimis .mispkg plugin.",
+  "type": "object",
+  "required": [
+    "id",
+    "version",
+    "core_dal_version",
+    "endpoints"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional JSON Schema reference."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)+$",
+      "description": "Reverse-DNS plugin identifier (e.g., uk.co.sparx.maths)."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable display title shown in the Host UI Shell sidebar."
+    },
+    "icon": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "description": "Lucide icon name (e.g., award, calendar, shield-alert,calculator) extracted by mis-pack into icon.svg."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[a-zA-Z0-9.-]+)?$",
+      "description": "SemVer plugin version."
+    },
+    "core_dal_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Compatible Core DAL SemVer range (e.g., ~1.0)."
+    },
+    "max_concurrency": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64,
+      "default": 4,
+      "description": "Max simultaneous Lua VMs executing for this plugin."
+    },
+    "max_memory_mb": {
+      "type": "integer",
+      "minimum": 4,
+      "maximum": 256,
+      "default": 16,
+      "description": "Per-invocation Lua VM heap ceiling in MB."
+    },
+    "database": {
+      "type": "object",
+      "required": ["alias"],
+      "additionalProperties": false,
+      "properties": {
+        "alias": {
+          "type": "string",
+          "pattern": "^plugin_[a-z0-9_]+$",
+          "description": "Attached SQLite database alias (must match ^plugin_[a-z0-9_]+$)."
+        },
+        "max_size_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2048,
+          "default": 100,
+          "description": "Disk quota enforced via SQLite PRAGMA max_page_count."
+        },
+        "max_db_size_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2048,
+          "default": 100,
+          "description": "Disk quota enforced via SQLite PRAGMA max_page_count."
+        }
+      }
+    },
+    "gdpr_hooks": {
+      "type": "object",
+      "required": ["export_pupil_data", "purge_pupil_data"],
+      "additionalProperties": false,
+      "properties": {
+        "export_pupil_data": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exported Lua function name for UK GDPR SAR export."
+        },
+        "purge_pupil_data": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exported Lua function name for UK GDPR retention purge."
+        }
+      }
+    },
+    "egress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed_domains": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^https://[a-zA-Z0-9.-]+(:[0-9]+)?$"
+          },
+          "description": "Explicit HTTPS origins permitted for ctx.http calls."
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 30000,
+          "default": 5000,
+          "description": "Outbound HTTP timeout in milliseconds."
+        }
+      }
+    },
+    "endpoints": {
+      "type": "object",
+      "description": "Interactive RPC endpoints mapped to Lua functions.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["scopes", "mutates"],
+        "additionalProperties": false,
+        "properties": {
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "require_roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mutates": {
+            "type": "boolean"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 30000
+          },
+          "max_concurrency": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          }
+        }
+      }
+    },
+    "workers": {
+      "type": "object",
+      "description": "Background event listeners and cron workers mapped to Lua functions.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["scopes"],
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "type": "string"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cron": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "require_roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mutates": {
+            "type": "boolean"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 60000
+          },
+          "max_concurrency": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "retries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          }
+        }
+      }
+    },
+    "widgets": {
+      "type": "array",
+      "description": "Mini-iframe widgets exposed on the Home Dashboard Grid.",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "entry"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entry": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default_col_span": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "default_row_span": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          }
+        }
+      }
+    }
+  }
+}

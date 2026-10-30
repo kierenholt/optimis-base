@@ -408,6 +408,26 @@
     rpc: function (method, args) {
       return rpc(method, args, null);
     },
+    useMisRpc: function (method, defaultArgs) {
+      if (typeof method !== 'string' || method.trim() === '') {
+        throw new Error('MISSING_RPC_METHOD: useMisRpc requires a non-empty method name');
+      }
+      var normalizedMethod = method.trim();
+      var baseArgs =
+        defaultArgs && typeof defaultArgs === 'object' && !Array.isArray(defaultArgs)
+          ? Object.assign({}, defaultArgs)
+          : {};
+      return {
+        method: normalizedMethod,
+        call: function (overrideArgs) {
+          var finalArgs =
+            overrideArgs !== undefined
+              ? overrideArgs
+              : Object.assign({}, baseArgs);
+          return rpc(normalizedMethod, finalArgs, null);
+        },
+      };
+    },
     navigate: navigate,
   };
 

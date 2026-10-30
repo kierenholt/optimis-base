@@ -95,6 +95,33 @@ func (h *Host) ResetDevPersonaSessions() {
 	st.activeDevStaffID = ""
 }
 
+func (h *Host) SetActiveDevPersona(staffID string) {
+	st := h.getAuthState()
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.activeDevStaffID = strings.TrimSpace(staffID)
+}
+
+func extractRequestPersonaOverride(r *http.Request, explicitStaffID string) string {
+	if trimmed := strings.TrimSpace(explicitStaffID); trimmed != "" {
+		return trimmed
+	}
+	if r == nil {
+		return ""
+	}
+	for _, qKey := range []string{"__persona", "staff_id"} {
+		if val := strings.TrimSpace(r.URL.Query().Get(qKey)); val != "" {
+			return val
+		}
+	}
+	for _, hKey := range []string{"X-MIS-Persona", "X-MIS-Staff-ID"} {
+		if val := strings.TrimSpace(r.Header.Get(hKey)); val != "" {
+			return val
+		}
+	}
+	return ""
+}
+
 func (h *Host) ResolveRequestCaller(r *http.Request, explicitStaffID string) (CallerContext, error) {
 	if !h.isDevPersonaSwitcherEnabled() {
 		if err := h.loadRealSSOProvider(r.Context()); err != nil {
@@ -104,8 +131,8 @@ func (h *Host) ResolveRequestCaller(r *http.Request, explicitStaffID string) (Ca
 
 	st := h.getAuthState()
 
-	// 1. If an explicit staff_id was provided in request/query, resolve it directly
-	if trimmedStaff := strings.TrimSpace(explicitStaffID); trimmedStaff != "" {
+	// 1. If an explicit staff_id / __persona / X-MIS-Persona was provided in request/query/header, resolve it directly
+	if trimmedStaff := extractRequestPersonaOverride(r, explicitStaffID); trimmedStaff != "" {
 		if persona, pErr := h.coreDAL.ResolveStaffPersonaByID(r.Context(), trimmedStaff); pErr == nil {
 			return CallerContext{
 				Type:        "USER",

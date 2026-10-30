@@ -238,6 +238,20 @@ func (h *Host) recordDiagnosticDetailed(
 		h.diagnostics = append([]string(nil), h.diagnostics[overflow:]...)
 	}
 	h.appendLogLineToFileLocked(legacyLine)
+	if h.structuredStdout != nil {
+		_, _ = fmt.Fprintf(
+			h.structuredStdout,
+			"type=lua_err plugin=%s method=%s file=%s line=%d error_class=%s duration_ms=%d sqlite_write_hold_ms=%d stack=%q\n",
+			entry.PluginID,
+			entry.Method,
+			entry.File,
+			entry.Line,
+			entry.ErrorClass,
+			entry.DurationMS,
+			entry.SQLiteWriteHoldMS,
+			entry.StackTrace,
+		)
+	}
 }
 
 func (h *Host) ResetDiagnostics(capacity int) {
