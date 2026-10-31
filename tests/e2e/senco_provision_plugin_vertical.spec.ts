@@ -35,6 +35,8 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
   let logCursor: string = '';
   let m1Seed: Milestone1SeedResponse | null = null;
   let personaSeed: PersonaSeedResponse | null = null;
+  let testPlugId: string = '';
+  let senPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
@@ -42,6 +44,8 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     logCursor = '';
     m1Seed = null;
     personaSeed = null;
+    testPlugId = '';
+    senPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -118,11 +122,12 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     if (!installTestRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installTestRes.status()}`);
     }
-    const activateTestRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+    testPlugId = (await installTestRes.json()).plug_id;
+    const activateTestRes = await request.post(`/api/admin/plugins/${encodeURIComponent(testPlugId)}/activate`, {
       data: { staff_id: personaSeed.admin_staff_id },
     });
     if (!activateTestRes.ok()) {
-      throw new Error(`Failed to activate uk.org.optimis.test: ${activateTestRes.status()}`);
+      throw new Error(`Failed to activate test_plugin (${testPlugId}): ${activateTestRes.status()}`);
     }
 
     const installSenRes = await request.post('/api/admin/plugins/install', {
@@ -133,24 +138,25 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
         `Failed to install senco_provision_plugin: ${installSenRes.status()} ${await installSenRes.text()}`
       );
     }
+    senPlugId = (await installSenRes.json()).plug_id;
     const activateSenRes = await request.post(
-      '/api/admin/plugins/uk.org.optimis.sen.provision/activate',
+      `/api/admin/plugins/${encodeURIComponent(senPlugId)}/activate`,
       {
         data: { staff_id: personaSeed.admin_staff_id },
       }
     );
     if (!activateSenRes.ok()) {
-      throw new Error(`Failed to activate uk.org.optimis.sen.provision: ${activateSenRes.status()}`);
+      throw new Error(`Failed to activate senco_provision_plugin (${senPlugId}): ${activateSenRes.status()}`);
     }
   });
 
   test.afterEach(async ({ request }, testInfo) => {
     // 1. Clean up sen_provisions in plugin_sen_provision.db
-    if (personaSeed && m1Seed) {
+    if (personaSeed && m1Seed && senPlugId) {
       await request.post('/api/auth/persona', {
         data: { staff_id: personaSeed.admin_staff_id },
       });
-      await request.post('/api/admin/plugins/uk.org.optimis.sen.provision/activate', {
+      await request.post(`/api/admin/plugins/${encodeURIComponent(senPlugId)}/activate`, {
         data: { staff_id: personaSeed.admin_staff_id },
       });
       for (const pid of [
@@ -159,7 +165,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
         m1Seed.transferred_pupil_id,
         m1Seed.other_group_pupil_id,
       ]) {
-        await request.post('/api/plugins/uk.org.optimis.sen.provision/rpc/purge_pupil_data', {
+        await request.post(`/api/p/${encodeURIComponent(senPlugId)}/rpc/purge_pupil_data`, {
           data: { args: { pupil_id: pid } },
         });
       }
@@ -186,8 +192,12 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
     });
-    await request.delete('/api/admin/plugins/uk.org.optimis.sen.provision');
-    await request.delete('/api/admin/plugins/uk.org.optimis.test');
+    if (senPlugId) {
+      await request.delete(`/api/admin/plugins/${encodeURIComponent(senPlugId)}`);
+    }
+    if (testPlugId) {
+      await request.delete(`/api/admin/plugins/${encodeURIComponent(testPlugId)}`);
+    }
 
     // 5. Clean up seeded fixtures in core.db
     if (m1Seed?.fixture_id) {
@@ -218,7 +228,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
       throw new Error('Missing mandatory seeded state');
     }
 
-    // 1. Verify GET /api/system/ui-config exposes uk.org.optimis.sen.provision and its sen_differentiation widget
+    // 1. Verify GET /api/system/ui-config exposes senPlugId and its sen_differentiation widget
     const uiConfigRes = await request.get(
       `/api/system/ui-config?staff_id=${encodeURIComponent(personaSeed.hod_staff_id)}`
     );
@@ -227,7 +237,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     expect(uiConfigBody.ok).toBe(true);
 
     const senPlugin = uiConfigBody.plugins.find(
-      (p: { id: string }) => p.id === 'uk.org.optimis.sen.provision'
+      (p: { id: string }) => p.id === senPlugId
     );
     expect(senPlugin).toBeDefined();
     expect(senPlugin.permitted_methods).toEqual(
@@ -236,9 +246,9 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     expect(senPlugin.widgets).toEqual([
       expect.objectContaining({
         id: 'sen_differentiation',
-        plugin_id: 'uk.org.optimis.sen.provision',
+        plugin_id: senPlugId,
         entry: 'ui/dist/widget.html',
-        entry_url: '/plugins/uk.org.optimis.sen.provision/ui/widget.html',
+        entry_url: `/p/${senPlugId}/ui/widget.html`,
       }),
     ]);
 
@@ -249,7 +259,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     expect(teacherUiConfigRes.ok()).toBe(true);
     const teacherUiConfigBody = await teacherUiConfigRes.json();
     const teacherSenPlugin = teacherUiConfigBody.plugins.find(
-      (p: { id: string }) => p.id === 'uk.org.optimis.sen.provision'
+      (p: { id: string }) => p.id === senPlugId
     );
     expect(teacherSenPlugin).toBeDefined();
     expect(teacherSenPlugin.permitted_methods).toEqual(['get_sen_differentiation_summary']);
@@ -294,15 +304,15 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     ).toContainText('K (SPLD)');
 
     // 3. SENCO navigates to the SEN Provision workspace tab and logs an IEP classroom adjustment & TA allocation for the E (EHCP) pupil (`active_pupil_id`, Ada Lovelace)
-    const senNavBtn = page.getByTestId('nav-item-plugin-uk.org.optimis.sen.provision');
+    const senNavBtn = page.getByTestId(`nav-item-plugin-${senPlugId}`);
     await expect(senNavBtn).toBeVisible();
     await senNavBtn.click();
 
-    const senIframeEl = page.getByTestId('plugin-iframe-uk.org.optimis.sen.provision');
+    const senIframeEl = page.getByTestId(`plugin-iframe-${senPlugId}`);
     await expect(senIframeEl).toBeVisible();
     await expect(senIframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const senFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.sen.provision"]');
+    const senFrame = page.frameLocator(`[data-testid="plugin-iframe-${senPlugId}"]`);
 
     await expect(senFrame.getByTestId('sen-provision-code-badge')).toHaveText('E');
     await expect(senFrame.getByTestId('sen-primary-need-badge')).toHaveText('ASD');
@@ -379,7 +389,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
       widgetFrame.getByTestId(`widget-sen-ta-${m1Seed.second_active_pupil_id}`)
     ).toContainText('5 hrs/wk — Mr Thomas Wright');
 
-    // 5. Teacher clicks a pupil badge (`data-mis-link="student" data-mis-plugin="self"`) inside the SEN Differentiation Mini-Widget and verifies it directly wakes `uk.org.optimis.sen.provision` in the Keep-Alive LRU pool for that pupil (1H)
+    // 5. Teacher clicks a pupil badge (`data-mis-link="student" data-mis-plugin="self"`) inside the SEN Differentiation Mini-Widget and verifies it directly wakes `senPlugId` in the Keep-Alive LRU pool for that pupil (1H)
     const firstPupilLink = widgetFrame.getByTestId(
       `widget-sen-student-link-${m1Seed.active_pupil_id}`
     );
@@ -390,18 +400,18 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
 
     await firstPupilLink.click();
 
-    // Verify Keep-Alive LRU pool directly wakes `uk.org.optimis.sen.provision` (1H `data-mis-plugin="self"`) and updates context to `active_pupil_id` without needing an intermediate student profile plugin
+    // Verify Keep-Alive LRU pool directly wakes `senPlugId` (1H `data-mis-plugin="self"`) and updates context to `active_pupil_id` without needing an intermediate student profile plugin
     const lruPool = page.getByTestId('keep-alive-lru-pool');
-    await expect(lruPool).toHaveAttribute('data-lru-order', /uk\.org\.optimis\.sen\.provision$/);
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.sen.provision')).toBeVisible();
+    await expect(lruPool).toHaveAttribute('data-lru-order', new RegExp(`${senPlugId}$`));
+    await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeVisible();
     await expect(page.getByTestId('active-entity-context-pill')).toContainText(
       `student:${m1Seed.active_pupil_id}`
     );
     await expect(page.getByTestId('deep-link-navigation-status')).toContainText(
-      `student:${m1Seed.active_pupil_id} -> uk.org.optimis.sen.provision`
+      `student:${m1Seed.active_pupil_id} -> ${senPlugId}`
     );
 
-    // Verify `uk.org.optimis.sen.provision` immediately reflects `active_pupil_id` (Ada Lovelace, E / ASD)
+    // Verify `senPlugId` immediately reflects `active_pupil_id` (Ada Lovelace, E / ASD)
     await expect(senFrame.getByTestId('sen-context-status')).toContainText(
       `PUPIL:${m1Seed.active_pupil_id}`
     );
@@ -410,7 +420,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
 
     // 6. Verify 1G (`ctx.dal.sen.list_register` & expanded SEN fields): calling `get_sen_differentiation_summary` without `pupil_id` or `group_id` returns the scoped SEN register (`K` and `E` pupils) with `ehcp_start_date` and `sen_needs`
     const registerRpcRes = await request.post(
-      `/api/plugins/uk.org.optimis.sen.provision/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
       )}`,
       {
@@ -447,7 +457,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
 
     // 1. Verify Classroom Teacher (`m1Seed.teacher_staff_id`, who holds only `dal.sen.read:own_groups`) is blocked with 403 from calling `log_iep_provision` (`dal.sen.read:all`)
     const teacherWriteRes = await request.post(
-      `/api/plugins/uk.org.optimis.sen.provision/rpc/log_iep_provision?staff_id=${encodeURIComponent(
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/log_iep_provision?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
       )}`,
       {
@@ -471,7 +481,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
 
     // 2. Verify Attendance Officer (`personaSeed.attendance_officer_staff_id`, `SUPPORT` role without `dal.sen.read`) is blocked with 403 from `get_sen_differentiation_summary`
     const supportReadRes = await request.post(
-      `/api/plugins/uk.org.optimis.sen.provision/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
         personaSeed.attendance_officer_staff_id
       )}`,
       {
@@ -491,7 +501,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
 
     // 3. Verify Classroom Teacher calling `get_sen_differentiation_summary` with `strict_own_groups: true` is blocked from reading another group's pupil (`other_group_pupil_id`) or a transferred pupil (`transferred_pupil_id`)
     const crossGroupRes = await request.post(
-      `/api/plugins/uk.org.optimis.sen.provision/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
       )}`,
       {
@@ -511,7 +521,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     expect(crossGroupBody.error_code).toContain('access denied under own_groups scope');
 
     const transferredRes = await request.post(
-      `/api/plugins/uk.org.optimis.sen.provision/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
       )}`,
       {
@@ -532,7 +542,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
 
     // 4. Verify fail-fast validation when SENCO attempts to log an IEP provision for a pupil with SEN provision `'N'` (No SEN)
     const nonSenLogRes = await request.post(
-      `/api/plugins/uk.org.optimis.sen.provision/rpc/log_iep_provision?staff_id=${encodeURIComponent(
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/log_iep_provision?staff_id=${encodeURIComponent(
         personaSeed.hod_staff_id
       )}`,
       {
@@ -556,7 +566,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
 
     // 5. SENCO logs a valid IEP provision for `active_pupil_id` containing a third-party pupil name in `review_notes`, then Admin runs UK GDPR SAR Redaction UI and purges the record
     const validLogRes = await request.post(
-      `/api/plugins/uk.org.optimis.sen.provision/rpc/log_iep_provision?staff_id=${encodeURIComponent(
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/log_iep_provision?staff_id=${encodeURIComponent(
         personaSeed.hod_staff_id
       )}`,
       {
@@ -635,7 +645,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
 
     // Purge pupil data and verify zero orphaned rows remain
     const purgeRes = await request.post(
-      `/api/plugins/uk.org.optimis.sen.provision/rpc/purge_pupil_data?staff_id=${encodeURIComponent(
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/purge_pupil_data?staff_id=${encodeURIComponent(
         personaSeed.admin_staff_id
       )}`,
       {
@@ -648,7 +658,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     expect(purgeBody.data.purged_rows).toBe(1);
 
     const exportAfterPurgeRes = await request.post(
-      `/api/plugins/uk.org.optimis.sen.provision/rpc/export_pupil_data?staff_id=${encodeURIComponent(
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
         personaSeed.admin_staff_id
       )}`,
       {

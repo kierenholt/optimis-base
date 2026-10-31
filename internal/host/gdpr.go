@@ -71,6 +71,17 @@ func (h *Host) SetPluginState(pluginID string, state PluginState) error {
 
 	h.mu.Lock()
 	p, exists := h.plugins[trimmedID]
+	canonicalKey := trimmedID
+	if !exists {
+		for mID, candidate := range h.plugins {
+			if candidate.PlugID == trimmedID {
+				p = candidate
+				canonicalKey = mID
+				exists = true
+				break
+			}
+		}
+	}
 	if !exists {
 		h.mu.Unlock()
 		return fmt.Errorf("plugin not found: %s", trimmedID)
@@ -78,12 +89,12 @@ func (h *Host) SetPluginState(pluginID string, state PluginState) error {
 	p.State = state
 	var poolToStop *pluginEventWorkerPool
 	if state == PluginStateUninstalledDormant {
-		poolToStop = h.workerPools[trimmedID]
-		delete(h.workerPools, trimmedID)
+		poolToStop = h.workerPools[canonicalKey]
+		delete(h.workerPools, canonicalKey)
 	}
 	h.serviceLogs = append(
 		h.serviceLogs,
-		fmt.Sprintf("[%s] INFO Plugin %s state transitioned to %s", time.Now().UTC().Format(time.RFC3339Nano), trimmedID, state),
+		fmt.Sprintf("[%s] INFO Plugin %s (%s) state transitioned to %s", time.Now().UTC().Format(time.RFC3339Nano), canonicalKey, p.PlugID, state),
 	)
 	h.mu.Unlock()
 

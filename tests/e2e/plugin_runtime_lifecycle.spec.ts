@@ -143,11 +143,13 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     expect(installRes.status()).toBe(201);
     const installBody = await installRes.json();
     expect(installBody.ok).toBe(true);
-    expect(installBody.plugin_id).toBe('uk.org.optimis.test');
+    expect(installBody.plug_id).toMatch(/^[a-z0-9]{8}$/);
+    const testPlugId: string = installBody.plug_id;
+    expect(installBody.plugin_id).toBe(testPlugId);
     expect(installBody.folder).toBe('test_plugin');
     expect(installBody.state).toBe('UNINSTALLED_DORMANT');
 
-    // 4. Verify GET /api/admin/plugins lists uk.org.optimis.test in UNINSTALLED_DORMANT state
+    // 4. Verify GET /api/admin/plugins lists testPlugId in UNINSTALLED_DORMANT state
     const listDormantRes = await request.get(
       `/api/admin/plugins?staff_id=${encodeURIComponent(seeded.admin_staff_id)}`
     );
@@ -155,7 +157,7 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     const listDormantBody = await listDormantRes.json();
     expect(listDormantBody.ok).toBe(true);
     const dormantEntry = (listDormantBody.plugins || []).find(
-      (p: { id: string }) => p.id === 'uk.org.optimis.test'
+      (p: { id: string }) => p.id === testPlugId
     );
     expect(dormantEntry).toBeDefined();
     expect(dormantEntry.state).toBe('UNINSTALLED_DORMANT');
@@ -167,11 +169,11 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     expect(uiConfigBeforeRes.ok()).toBe(true);
     const uiConfigBeforeBody = await uiConfigBeforeRes.json();
     const exposedBefore = (uiConfigBeforeBody.plugins || []).find(
-      (p: { id: string }) => p.id === 'uk.org.optimis.test'
+      (p: { id: string }) => p.id === testPlugId
     );
     expect(exposedBefore).toBeUndefined();
 
-    const dormantRpcRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/get_pupil_record', {
+    const dormantRpcRes = await request.post(`/api/p/${encodeURIComponent(testPlugId)}/rpc/get_pupil_record`, {
       data: {
         args: {
           pupil_id: seeded.pupil_id,
@@ -185,7 +187,7 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     expect(dormantRpcBody.error_code).toContain('PLUGIN_DORMANT_QUARANTINE');
 
     // 6. Verify RBAC on activate: Non-Admin teacher is rejected with 403
-    const unauthActivateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+    const unauthActivateRes = await request.post(`/api/admin/plugins/${encodeURIComponent(testPlugId)}/activate`, {
       data: {
         staff_id: seeded.teacher_staff_id,
       },
@@ -194,8 +196,8 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     const unauthActivateBody = await unauthActivateRes.json();
     expect(unauthActivateBody.error_code).toContain('UNAUTHORIZED_ADMIN_PLUGIN_SCOPE');
 
-    // 7. Admin activates uk.org.optimis.test -> transitions to ACTIVE and starts Event Bus workers
-    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+    // 7. Admin activates testPlugId -> transitions to ACTIVE and starts Event Bus workers
+    const activateRes = await request.post(`/api/admin/plugins/${encodeURIComponent(testPlugId)}/activate`, {
       data: {
         staff_id: seeded.admin_staff_id,
       },
@@ -203,20 +205,20 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     expect(activateRes.status()).toBe(200);
     const activateBody = await activateRes.json();
     expect(activateBody.ok).toBe(true);
-    expect(activateBody.plugin_id).toBe('uk.org.optimis.test');
+    expect(activateBody.plugin_id).toBe(testPlugId);
     expect(activateBody.state).toBe('ACTIVE');
 
-    // 8. Load Host UI Shell and verify plugin-iframe-uk.org.optimis.test mounts and executes get_pupil_record RPC cleanly
+    // 8. Load Host UI Shell and verify plugin-iframe-${testPlugId} mounts and executes get_pupil_record RPC cleanly
     await page.goto(
       `/?pupil_id=${encodeURIComponent(seeded.pupil_id)}&staff_id=${encodeURIComponent(seeded.admin_staff_id)}`
     );
     await expect(page.getByTestId('host-shell')).toBeVisible();
 
-    const iframeEl = page.getByTestId('plugin-iframe-uk.org.optimis.test');
+    const iframeEl = page.getByTestId(`plugin-iframe-${testPlugId}`);
     await expect(iframeEl).toBeVisible();
     await expect(iframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const printBtn = pluginFrame.getByTestId('print-record-btn');
     await expect(printBtn).toBeVisible();
     await printBtn.click();
@@ -231,34 +233,34 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
 
     // 9. Verify RBAC on remove: Non-Admin teacher is rejected with 403
     const unauthRemoveRes = await request.delete(
-      `/api/admin/plugins/uk.org.optimis.test?staff_id=${encodeURIComponent(seeded.teacher_staff_id)}`
+      `/api/admin/plugins/${encodeURIComponent(testPlugId)}?staff_id=${encodeURIComponent(seeded.teacher_staff_id)}`
     );
     expect(unauthRemoveRes.status()).toBe(403);
     const unauthRemoveBody = await unauthRemoveRes.json();
     expect(unauthRemoveBody.error_code).toContain('UNAUTHORIZED_ADMIN_PLUGIN_SCOPE');
 
-    // 10. Admin removes uk.org.optimis.test -> stops workers, detaches plugin_test.db, removes from loaded plugins
+    // 10. Admin removes testPlugId -> stops workers, detaches plugin_test.db, removes from loaded plugins
     const removeRes = await request.delete(
-      `/api/admin/plugins/uk.org.optimis.test?staff_id=${encodeURIComponent(seeded.admin_staff_id)}`
+      `/api/admin/plugins/${encodeURIComponent(testPlugId)}?staff_id=${encodeURIComponent(seeded.admin_staff_id)}`
     );
     expect(removeRes.status()).toBe(200);
     const removeBody = await removeRes.json();
     expect(removeBody.ok).toBe(true);
-    expect(removeBody.plugin_id).toBe('uk.org.optimis.test');
+    expect(removeBody.plugin_id).toBe(testPlugId);
     expect(removeBody.removed).toBe(true);
 
-    // 11. Verify GET /api/admin/plugins no longer includes uk.org.optimis.test and RPC calls fail with plugin not loaded
+    // 11. Verify GET /api/admin/plugins no longer includes testPlugId and RPC calls fail with plugin not loaded
     const listAfterRemoveRes = await request.get(
       `/api/admin/plugins?staff_id=${encodeURIComponent(seeded.admin_staff_id)}`
     );
     expect(listAfterRemoveRes.status()).toBe(200);
     const listAfterRemoveBody = await listAfterRemoveRes.json();
     const afterEntry = (listAfterRemoveBody.plugins || []).find(
-      (p: { id: string }) => p.id === 'uk.org.optimis.test'
+      (p: { id: string }) => p.id === testPlugId
     );
     expect(afterEntry).toBeUndefined();
 
-    const rpcAfterRemoveRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/get_pupil_record', {
+    const rpcAfterRemoveRes = await request.post(`/api/p/${encodeURIComponent(testPlugId)}/rpc/get_pupil_record`, {
       data: {
         args: {
           pupil_id: seeded.pupil_id,

@@ -55,5 +55,22 @@
       "mutates": true,
       "timeout_ms": 2500
     }
-  }
+  },
+  "views": [
+    {
+      "id": "home",
+      "path": "/",
+      "title": "DfE Statutory School Census",
+      "entry": "ui/dist/index.html",
+      "query_params": [
+        "tab",
+        "pupil_id",
+        "second_pupil_id",
+        "group_id",
+        "other_group_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    }
+  ]
 }

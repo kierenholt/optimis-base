@@ -208,6 +208,44 @@
         }
       }
     },
+    "views": {
+      "type": "array",
+      "description": "Declared plugin UI view routes and allowed query parameters under /p/<plugid>.",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "entry"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^/([a-zA-Z0-9_:.-]+(/[a-zA-Z0-9_:.-]+)*)?$",
+            "not": {
+              "pattern": "^/ui(/|$)"
+            },
+            "description": "Declared plugin view sub-path (must start with '/' and must not start with the reserved '/ui' static asset prefix)."
+          },
+          "entry": {
+            "type": "string",
+            "minLength": 1
+          },
+          "query_params": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
     "widgets": {
       "type": "array",
       "description": "Mini-iframe widgets exposed on the Home Dashboard Grid.",

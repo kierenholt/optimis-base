@@ -6,6 +6,8 @@ test.describe.configure({ mode: 'serial' });
 test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-Iframe Widget Grid (Section 9B)', () => {
   let seededPupilId: string = '';
   let secondPupilId: string = '';
+  let testPlugId: string = '';
+  let lruPlugIds: string[] = [];
   let browserLogs: string[] = [];
   let pageErrors: string[] = [];
   let logCursor: string = '';
@@ -24,6 +26,8 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     pageErrors = [];
     seededPupilId = '';
     secondPupilId = '';
+    testPlugId = '';
+    lruPlugIds = [];
     logCursor = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
@@ -51,11 +55,13 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
     }
-    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+    const installBody = await installRes.json();
+    testPlugId = installBody.plug_id;
+    const activateRes = await request.post(`/api/admin/plugins/${encodeURIComponent(testPlugId)}/activate`, {
       data: {},
     });
     if (!activateRes.ok()) {
-      throw new Error(`Failed to activate uk.org.optimis.test: ${activateRes.status()}`);
+      throw new Error(`Failed to activate test_plugin (${testPlugId}): ${activateRes.status()}`);
     }
 
     // 4. Seed two isolated test pupils for RPC and deep-link verification across LRU pool and widgets
@@ -104,6 +110,8 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     if (!seedLruRes.ok()) {
       throw new Error(`Failed to seed synthetic LRU plugins: ${seedLruRes.status()}`);
     }
+    const seedLruBody = await seedLruRes.json();
+    lruPlugIds = seedLruBody.seeded_plugin_ids;
   });
 
   test.afterEach(async ({ request }, testInfo) => {
@@ -129,7 +137,9 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
     });
-    await request.delete('/api/admin/plugins/uk.org.optimis.test');
+    if (testPlugId) {
+      await request.delete(`/api/admin/plugins/${encodeURIComponent(testPlugId)}`);
+    }
 
     // 4. Clean up seeded pupil records
     if (seededPupilId) {
@@ -156,20 +166,22 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     const lruPool = page.getByTestId('keep-alive-lru-pool');
     await expect(lruPool).toBeVisible();
 
-    // Initially, default plugin uk.org.optimis.test is mounted and active (pool size = 1)
-    const defaultIframe = page.getByTestId('plugin-iframe-uk.org.optimis.test');
+    const [lru1, lru2, lru3, lru4, lru5] = lruPlugIds;
+
+    // Initially, default plugin testPlugId is mounted and active (pool size = 1)
+    const defaultIframe = page.getByTestId(`plugin-iframe-${testPlugId}`);
     await expect(defaultIframe).toBeVisible();
     await expect(lruPool).toHaveAttribute('data-pool-size', '1');
 
-    // Mutate in-memory DOM state inside uk.org.optimis.test via Promise RPC to prove zero-reload preservation later
-    const defaultFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    // Mutate in-memory DOM state inside testPlugId via Promise RPC to prove zero-reload preservation later
+    const defaultFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     await defaultFrame.getByTestId('sdk-promise-rpc-btn').click();
     await expect(defaultFrame.getByTestId('sdk-promise-rpc-result')).toHaveText(
       'PROMISE_OK:Grace Hopper:W100000000001'
     );
 
-    // Visit lru1, lru2, lru3, lru4 -> Pool now holds 5 mounted iframes: [uk.org.optimis.test, lru1, lru2, lru3, lru4]
-    for (const pid of ['uk.org.optimis.lru1', 'uk.org.optimis.lru2', 'uk.org.optimis.lru3', 'uk.org.optimis.lru4']) {
+    // Visit lru1, lru2, lru3, lru4 -> Pool now holds 5 mounted iframes: [testPlugId, lru1, lru2, lru3, lru4]
+    for (const pid of [lru1, lru2, lru3, lru4]) {
       await page.getByTestId(`nav-item-plugin-${pid}`).click();
       await expect(page.getByTestId(`plugin-iframe-${pid}`)).toBeVisible();
     }
@@ -182,42 +194,42 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     const defaultDisplay = await defaultIframe.evaluate((el) => getComputedStyle(el).display);
     expect(defaultDisplay).toBe('none');
 
-    // Mutate in-memory DOM state inside lru1 and switch back to uk.org.optimis.test to refresh uk.org.optimis.test as Most-Recently-Used (MRU)
-    await page.getByTestId('nav-item-plugin-uk.org.optimis.lru1').click();
-    const lru1Frame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.lru1"]');
+    // Mutate in-memory DOM state inside lru1 and switch back to testPlugId to refresh testPlugId as Most-Recently-Used (MRU)
+    await page.getByTestId(`nav-item-plugin-${lru1}`).click();
+    const lru1Frame = page.frameLocator(`[data-testid="plugin-iframe-${lru1}"]`);
     await lru1Frame.getByTestId('sdk-promise-rpc-btn').click();
     await expect(lru1Frame.getByTestId('sdk-promise-rpc-result')).toHaveText(
       'PROMISE_OK:Grace Hopper:W100000000001'
     );
 
-    // Switch back to uk.org.optimis.test: verify instant zero-reload tab switch (previous RPC result text is still intact without re-clicking!)
-    await page.getByTestId('nav-item-plugin-uk.org.optimis.test').click();
+    // Switch back to testPlugId: verify instant zero-reload tab switch (previous RPC result text is still intact without re-clicking!)
+    await page.getByTestId(`nav-item-plugin-${testPlugId}`).click();
     await expect(defaultIframe).toBeVisible();
     await expect(defaultFrame.getByTestId('sdk-promise-rpc-result')).toHaveText(
       'PROMISE_OK:Grace Hopper:W100000000001'
     );
 
-    // Current LRU order from oldest to newest is now: [lru2, lru3, lru4, lru1, uk.org.optimis.test]
+    // Current LRU order from oldest to newest is now: [lru2, lru3, lru4, lru1, testPlugId]
     await expect(lruPool).toHaveAttribute(
       'data-lru-order',
-      'uk.org.optimis.lru2,uk.org.optimis.lru3,uk.org.optimis.lru4,uk.org.optimis.lru1,uk.org.optimis.test'
+      `${lru2},${lru3},${lru4},${lru1},${testPlugId}`
     );
 
     // Visit a 6th distinct plugin (lru5): pool is full (N=5), so the Least-Recently-Used (lru2) must be evicted from the DOM!
-    await page.getByTestId('nav-item-plugin-uk.org.optimis.lru5').click();
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.lru5')).toBeVisible();
+    await page.getByTestId(`nav-item-plugin-${lru5}`).click();
+    await expect(page.getByTestId(`plugin-iframe-${lru5}`)).toBeVisible();
     await expect(lruPool).toHaveAttribute('data-pool-size', '5');
 
-    // Verify lru2 was evicted (detached from DOM), while uk.org.optimis.test and lru1 remain mounted with their state intact
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.lru2')).toHaveCount(0);
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.test')).toBeAttached();
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.lru1')).toBeAttached();
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.lru3')).toBeAttached();
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.lru4')).toBeAttached();
+    // Verify lru2 was evicted (detached from DOM), while testPlugId and lru1 remain mounted with their state intact
+    await expect(page.getByTestId(`plugin-iframe-${lru2}`)).toHaveCount(0);
+    await expect(page.getByTestId(`plugin-iframe-${testPlugId}`)).toBeAttached();
+    await expect(page.getByTestId(`plugin-iframe-${lru1}`)).toBeAttached();
+    await expect(page.getByTestId(`plugin-iframe-${lru3}`)).toBeAttached();
+    await expect(page.getByTestId(`plugin-iframe-${lru4}`)).toBeAttached();
 
     // Switch back to lru1 and confirm its in-memory DOM state was never reloaded when lru5 mounted
-    await page.getByTestId('nav-item-plugin-uk.org.optimis.lru1').click();
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.lru1')).toBeVisible();
+    await page.getByTestId(`nav-item-plugin-${lru1}`).click();
+    await expect(page.getByTestId(`plugin-iframe-${lru1}`)).toBeVisible();
     await expect(lru1Frame.getByTestId('sdk-promise-rpc-result')).toHaveText(
       'PROMISE_OK:Grace Hopper:W100000000001'
     );
@@ -227,13 +239,15 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     page,
     request,
   }) => {
-    // 1. Verify GET /api/system/ui-config includes manifest widgets for uk.org.optimis.test
+    const [lru1] = lruPlugIds;
+
+    // 1. Verify GET /api/system/ui-config includes manifest widgets for testPlugId
     const uiConfigRes = await request.get('/api/system/ui-config');
     expect(uiConfigRes.ok()).toBe(true);
     const uiConfigBody = await uiConfigRes.json();
     expect(uiConfigBody.ok).toBe(true);
 
-    const testPlugin = uiConfigBody.plugins.find((p: { id: string }) => p.id === 'uk.org.optimis.test');
+    const testPlugin = uiConfigBody.plugins.find((p: { id: string }) => p.id === testPlugId);
     expect(testPlugin).toBeDefined();
     expect(Array.isArray(testPlugin.widgets)).toBe(true);
     expect(testPlugin.widgets).toEqual(
@@ -242,13 +256,13 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
           id: 'attendance_pulse',
           title: 'Statutory Attendance Pulse',
           entry: 'ui/dist/widget.html',
-          entry_url: '/plugins/uk.org.optimis.test/ui/widget.html',
+          entry_url: `/p/${testPlugId}/ui/widget.html`,
         }),
         expect.objectContaining({
           id: 'pastoral_watch',
           title: 'Pastoral & Behaviour Watch',
           entry: 'ui/dist/widget.html',
-          entry_url: '/plugins/uk.org.optimis.test/ui/widget.html',
+          entry_url: `/p/${testPlugId}/ui/widget.html`,
         }),
       ])
     );
@@ -329,18 +343,18 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     );
 
     // 5. Switch active workspace tab to lru1, then click <a data-mis-link="student"> inside the mini-iframe widget
-    // Verify it wakes the designated Student Handler Plugin (uk.org.optimis.test) in the Keep-Alive LRU Pool with secondPupilId!
-    await page.getByTestId('nav-item-plugin-uk.org.optimis.lru1').click();
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.lru1')).toBeVisible();
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.test')).toBeHidden();
+    // Verify it wakes the designated Student Handler Plugin (testPlugId) in the Keep-Alive LRU Pool with secondPupilId!
+    await page.getByTestId(`nav-item-plugin-${lru1}`).click();
+    await expect(page.getByTestId(`plugin-iframe-${lru1}`)).toBeVisible();
+    await expect(page.getByTestId(`plugin-iframe-${testPlugId}`)).toBeHidden();
 
     await attendanceWidgetFrame.getByTestId('widget-deep-link-student').click();
 
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.test')).toBeVisible();
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.lru1')).toBeHidden();
+    await expect(page.getByTestId(`plugin-iframe-${testPlugId}`)).toBeVisible();
+    await expect(page.getByTestId(`plugin-iframe-${lru1}`)).toBeHidden();
     await expect(page.getByTestId('active-entity-context-pill')).toContainText(`student:${secondPupilId}`);
 
-    const mainPluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const mainPluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     await expect(mainPluginFrame.getByTestId('sdk-context-status')).toContainText(`PUPIL:${secondPupilId}`);
   });
 });

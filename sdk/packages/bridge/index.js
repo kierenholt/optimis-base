@@ -52,6 +52,7 @@ var DECLARATIVE_ATTRIBUTES = {
   GROUP_ID: 'data-group-id',
   STAFF_ID: 'data-staff-id',
   PLUGIN_TARGET: 'data-mis-plugin',
+  ROUTE_TAB: 'data-mis-route-tab',
 };
 
 module.exports = {
@@ -62,5 +63,8 @@ module.exports = {
   },
   navigate: function (entityType, params) {
     return getGlobalMis().navigate(entityType, params);
+  },
+  setRouteState: function (nextState, options) {
+    return getGlobalMis().setRouteState(nextState, options);
   },
 };

@@ -5,6 +5,7 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('MVP Plugin Sandboxed UI & Lua DAL Console Print', () => {
   let seededPupilId: string;
+  let testPlugId: string = '';
   let browserLogs: string[] = [];
   let pageErrors: string[] = [];
   let logCursor: string;
@@ -13,6 +14,7 @@ test.describe('MVP Plugin Sandboxed UI & Lua DAL Console Print', () => {
     browserLogs = [];
     pageErrors = [];
     seededPupilId = '';
+    testPlugId = '';
     logCursor = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
@@ -40,11 +42,12 @@ test.describe('MVP Plugin Sandboxed UI & Lua DAL Console Print', () => {
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
     }
-    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+    testPlugId = (await installRes.json()).plug_id;
+    const activateRes = await request.post(`/api/admin/plugins/${encodeURIComponent(testPlugId)}/activate`, {
       data: {},
     });
     if (!activateRes.ok()) {
-      throw new Error(`Failed to activate uk.org.optimis.test: ${activateRes.status()}`);
+      throw new Error(`Failed to activate test_plugin (${testPlugId}): ${activateRes.status()}`);
     }
 
     // 4. Seed required test data explicitly during setup
@@ -89,7 +92,9 @@ test.describe('MVP Plugin Sandboxed UI & Lua DAL Console Print', () => {
     await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
     });
-    await request.delete('/api/admin/plugins/uk.org.optimis.test');
+    if (testPlugId) {
+      await request.delete(`/api/admin/plugins/${encodeURIComponent(testPlugId)}`);
+    }
 
     // 4. Always clean up seeded mock data at the end of the test
     if (seededPupilId) {
@@ -108,11 +113,11 @@ test.describe('MVP Plugin Sandboxed UI & Lua DAL Console Print', () => {
     const hostShell = page.getByTestId('host-shell');
     await expect(hostShell).toBeVisible();
 
-    const iframeEl = page.getByTestId('plugin-iframe-uk.org.optimis.test');
+    const iframeEl = page.getByTestId(`plugin-iframe-${testPlugId}`);
     await expect(iframeEl).toBeVisible();
     await expect(iframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const printBtn = pluginFrame.getByTestId('print-record-btn');
     await expect(printBtn).toBeVisible();
     await expect(printBtn).toHaveAttribute('data-mis-rpc', 'get_pupil_record');

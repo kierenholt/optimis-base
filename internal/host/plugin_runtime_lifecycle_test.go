@@ -118,13 +118,13 @@ func TestInstallActivateAndRemovePlugin_RuntimeLifecycle_ProvisionsAttachesActiv
 	}
 
 	// 4. Activate plugin -> transitions to ACTIVE, allows ExecuteRPC and attached DB operations
-	if err := h.ActivatePlugin("uk.org.optimis.test"); err != nil {
-		t.Fatalf("ActivatePlugin(uk.org.optimis.test) failed: %v", err)
+	if err := h.ActivatePlugin(loaded.PlugID); err != nil {
+		t.Fatalf("ActivatePlugin(%s) failed: %v", loaded.PlugID, err)
 	}
 
 	plugins := h.ListPlugins()
-	if len(plugins) != 1 || plugins[0].ID != "uk.org.optimis.test" || plugins[0].State != string(host.PluginStateActive) {
-		t.Fatalf("expected 1 ACTIVE plugin in ListPlugins(), got %+v", plugins)
+	if len(plugins) != 1 || plugins[0].ID != loaded.PlugID || plugins[0].PlugID != loaded.PlugID || plugins[0].State != string(host.PluginStateActive) {
+		t.Fatalf("expected 1 ACTIVE plugin (%s) in ListPlugins(), got %+v", loaded.PlugID, plugins)
 	}
 
 	rpcRes, err := h.ExecuteRPC(ctx, "uk.org.optimis.test", "get_pupil_record", adminCaller, map[string]any{
@@ -135,8 +135,8 @@ func TestInstallActivateAndRemovePlugin_RuntimeLifecycle_ProvisionsAttachesActiv
 	}
 
 	// 5. Remove plugin -> stops workers, removes from ListPlugins(), and detaches plugin_test.db
-	if err := h.RemovePlugin(ctx, "uk.org.optimis.test"); err != nil {
-		t.Fatalf("RemovePlugin(uk.org.optimis.test) failed: %v", err)
+	if err := h.RemovePlugin(ctx, loaded.PlugID); err != nil {
+		t.Fatalf("RemovePlugin(%s) failed: %v", loaded.PlugID, err)
 	}
 	if got := h.ListPlugins(); len(got) != 0 {
 		t.Fatalf("expected 0 plugins after RemovePlugin, got %+v", got)
@@ -187,7 +187,7 @@ func TestAdminPluginLifecycleHTTP_NonAdminCallerRejectedAndAdminSucceeds_test(t 
 		t.Fatalf("expected 403 UNAUTHORIZED_ADMIN_PLUGIN_SCOPE for teacher on install, got %d (%s)", recUnauthInstall.Code, recUnauthInstall.Body.String())
 	}
 
-	// 2. Admin installs test_plugin -> 201 Created, state: UNINSTALLED_DORMANT
+	// 2. Admin installs test_plugin -> 201 Created, state: UNINSTALLED_DORMANT, opaque plug_id returned
 	installAdminBody, _ := json.Marshal(map[string]any{
 		"folder":   "test_plugin",
 		"staff_id": seeded.AdminStaffID,
@@ -200,6 +200,7 @@ func TestAdminPluginLifecycleHTTP_NonAdminCallerRejectedAndAdminSucceeds_test(t 
 	}
 	var installResp struct {
 		OK       bool   `json:"ok"`
+		PlugID   string `json:"plug_id"`
 		PluginID string `json:"plugin_id"`
 		Folder   string `json:"folder"`
 		State    string `json:"state"`
@@ -207,7 +208,7 @@ func TestAdminPluginLifecycleHTTP_NonAdminCallerRejectedAndAdminSucceeds_test(t 
 	if err := json.Unmarshal(recInstall.Body.Bytes(), &installResp); err != nil {
 		t.Fatalf("failed to decode install response: %v", err)
 	}
-	if !installResp.OK || installResp.PluginID != "uk.org.optimis.test" || installResp.State != "UNINSTALLED_DORMANT" {
+	if !installResp.OK || len(installResp.PlugID) != 8 || installResp.PluginID != installResp.PlugID || installResp.State != "UNINSTALLED_DORMANT" {
 		t.Fatalf("unexpected install response: %+v", installResp)
 	}
 
@@ -222,18 +223,18 @@ func TestAdminPluginLifecycleHTTP_NonAdminCallerRejectedAndAdminSucceeds_test(t 
 	activateTeacherBody, _ := json.Marshal(map[string]any{
 		"staff_id": seeded.TeacherStaffID,
 	})
-	reqUnauthActivate := httptest.NewRequest(http.MethodPost, "/api/admin/plugins/uk.org.optimis.test/activate", bytes.NewReader(activateTeacherBody))
+	reqUnauthActivate := httptest.NewRequest(http.MethodPost, "/api/admin/plugins/"+installResp.PlugID+"/activate", bytes.NewReader(activateTeacherBody))
 	recUnauthActivate := httptest.NewRecorder()
 	handler.ServeHTTP(recUnauthActivate, reqUnauthActivate)
 	if recUnauthActivate.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 Forbidden for teacher on activate, got %d", recUnauthActivate.Code)
 	}
 
-	// 4. Admin activates uk.org.optimis.test -> 200 OK, state: ACTIVE
+	// 4. Admin activates plug_id -> 200 OK, state: ACTIVE
 	activateAdminBody, _ := json.Marshal(map[string]any{
 		"staff_id": seeded.AdminStaffID,
 	})
-	reqActivate := httptest.NewRequest(http.MethodPost, "/api/admin/plugins/uk.org.optimis.test/activate", bytes.NewReader(activateAdminBody))
+	reqActivate := httptest.NewRequest(http.MethodPost, "/api/admin/plugins/"+installResp.PlugID+"/activate", bytes.NewReader(activateAdminBody))
 	recActivate := httptest.NewRecorder()
 	handler.ServeHTTP(recActivate, reqActivate)
 	if recActivate.Code != http.StatusOK {
@@ -241,15 +242,15 @@ func TestAdminPluginLifecycleHTTP_NonAdminCallerRejectedAndAdminSucceeds_test(t 
 	}
 
 	// 5. Non-Admin (TEACHER) rejected with 403 on DELETE /api/admin/plugins/{id}
-	reqUnauthDelete := httptest.NewRequest(http.MethodDelete, "/api/admin/plugins/uk.org.optimis.test?staff_id="+seeded.TeacherStaffID, nil)
+	reqUnauthDelete := httptest.NewRequest(http.MethodDelete, "/api/admin/plugins/"+installResp.PlugID+"?staff_id="+seeded.TeacherStaffID, nil)
 	recUnauthDelete := httptest.NewRecorder()
 	handler.ServeHTTP(recUnauthDelete, reqUnauthDelete)
 	if recUnauthDelete.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 Forbidden for teacher on delete, got %d", recUnauthDelete.Code)
 	}
 
-	// 6. Admin removes uk.org.optimis.test -> 200 OK, removed: true
-	reqDelete := httptest.NewRequest(http.MethodDelete, "/api/admin/plugins/uk.org.optimis.test?staff_id="+seeded.AdminStaffID, nil)
+	// 6. Admin removes plug_id -> 200 OK, removed: true
+	reqDelete := httptest.NewRequest(http.MethodDelete, "/api/admin/plugins/"+installResp.PlugID+"?staff_id="+seeded.AdminStaffID, nil)
 	recDelete := httptest.NewRecorder()
 	handler.ServeHTTP(recDelete, reqDelete)
 	if recDelete.Code != http.StatusOK {
@@ -257,13 +258,14 @@ func TestAdminPluginLifecycleHTTP_NonAdminCallerRejectedAndAdminSucceeds_test(t 
 	}
 	var deleteResp struct {
 		OK       bool   `json:"ok"`
+		PlugID   string `json:"plug_id"`
 		PluginID string `json:"plugin_id"`
 		Removed  bool   `json:"removed"`
 	}
 	if err := json.Unmarshal(recDelete.Body.Bytes(), &deleteResp); err != nil {
 		t.Fatalf("failed to decode delete response: %v", err)
 	}
-	if !deleteResp.OK || !deleteResp.Removed || deleteResp.PluginID != "uk.org.optimis.test" {
+	if !deleteResp.OK || !deleteResp.Removed || deleteResp.PlugID != installResp.PlugID {
 		t.Fatalf("unexpected delete response: %+v", deleteResp)
 	}
 }

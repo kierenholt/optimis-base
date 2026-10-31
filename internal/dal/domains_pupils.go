@@ -6,73 +6,210 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
-type PupilMedicalConditionAlert struct {
-	ID                    string `json:"id"`
-	ConditionName         string `json:"condition_name"`
-	ConditionCategory     string `json:"condition_category"`
-	AlertLevelID          string `json:"alert_level_id"`
-	HasIHCP               bool   `json:"has_ihcp"`
-	Triggers              string `json:"triggers"`
-	ReactionSymptoms      string `json:"reaction_symptoms"`
-	EmergencyResponsePlan string `json:"emergency_response_plan"`
-	MedicationNameAndDose string `json:"medication_name_and_dose"`
-	MedicationLocation    string `json:"medication_location"`
-	ParentalConsentGiven  bool   `json:"parental_consent_given"`
-	EffectiveFrom         string `json:"effective_from"`
-	EffectiveTo           string `json:"effective_to"`
+type Pupil struct {
+	ID                 string  `json:"id"`
+	PupilID            string  `json:"pupil_id,omitempty"`
+	UPN                string  `json:"upn"`
+	FirstName          string  `json:"first_name"`
+	LastName           string  `json:"last_name"`
+	LegalFirstName     string  `json:"legal_first_name,omitempty"`
+	LegalLastName      string  `json:"legal_last_name,omitempty"`
+	PreferredFirstName string  `json:"preferred_first_name,omitempty"`
+	PreferredLastName  string  `json:"preferred_last_name,omitempty"`
+	NCYearGroup        string  `json:"nc_year_group,omitempty"`
+	EnrolmentStatus    string  `json:"enrolment_status,omitempty"`
+	AcademicYearID     string  `json:"academic_year_id"`
+	EffectiveFrom      string  `json:"effective_from"`
+	EffectiveTo        *string `json:"effective_to,omitempty"`
 }
 
-type PupilSenNeedSummary struct {
-	ID            string `json:"id"`
-	SenNeedCode   string `json:"sen_need_code"`
-	Ranking       int    `json:"ranking"`
-	AlertLevelID  string `json:"alert_level_id"`
-	EffectiveFrom string `json:"effective_from"`
+type SeedPupilInput struct {
+	UPN            string `json:"upn"`
+	FirstName      string `json:"first_name"`
+	LastName       string `json:"last_name"`
+	AcademicYearID string `json:"academic_year_id"`
+	EffectiveFrom  string `json:"effective_from"`
 }
 
-type PupilSenAssistantSummary struct {
-	ID              string `json:"id"`
-	StaffID         string `json:"staff_id"`
-	DisplayName     string `json:"display_name"`
-	AllocationNotes string `json:"allocation_notes"`
-	EffectiveFrom   string `json:"effective_from"`
+func (d *CoreDAL) SeedPupil(ctx context.Context, in SeedPupilInput) (*Pupil, error) {
+	if strings.TrimSpace(in.UPN) == "" {
+		return nil, errors.New("missing mandatory field: upn")
+	}
+	if strings.TrimSpace(in.FirstName) == "" {
+		return nil, errors.New("missing mandatory field: first_name")
+	}
+	if strings.TrimSpace(in.LastName) == "" {
+		return nil, errors.New("missing mandatory field: last_name")
+	}
+	if strings.TrimSpace(in.AcademicYearID) == "" {
+		return nil, errors.New("missing mandatory field: academic_year_id")
+	}
+	if strings.TrimSpace(in.EffectiveFrom) == "" {
+		return nil, errors.New("missing mandatory field: effective_from")
+	}
+
+	uid := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	personID := "per_" + uid
+	pupilID := "pup_" + uid
+	enrolmentID := "enr_" + uid
+
+	tx, err := d.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin SeedPupil transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO academic_years (id, name, status, sequence_number, first_day, last_day)
+		 VALUES (?, ?, 'CURRENT', (SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM academic_years), ?, '2099-08-31')
+		 ON CONFLICT(id) DO NOTHING`,
+		in.AcademicYearID, in.AcademicYearID, in.EffectiveFrom,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ensure academic_year %s: %w", in.AcademicYearID, err)
+	}
+
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO persons (id, legal_first_name, legal_last_name, sex, status)
+		 VALUES (?, ?, ?, 'U', 'ACTIVE')`,
+		personID, in.FirstName, in.LastName,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert person for pupil: %w", err)
+	}
+
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO pupils (id, person_id, upn)
+		 VALUES (?, ?, ?)`,
+		pupilID, personID, in.UPN,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert pupil: %w", err)
+	}
+
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO pupil_year_enrolments (id, pupil_id, academic_year_id, nc_year_group, effective_from, effective_to)
+		 VALUES (?, ?, ?, '7', ?, NULL)`,
+		enrolmentID, pupilID, in.AcademicYearID, in.EffectiveFrom,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert pupil_year_enrolment: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit SeedPupil transaction: %w", err)
+	}
+
+	d.emitPostCommitEvent(ctx, EventCorePupilEnrolled, map[string]any{
+		"pupil_id":         pupilID,
+		"upn":              in.UPN,
+		"academic_year_id": in.AcademicYearID,
+		"effective_from":   in.EffectiveFrom,
+	})
+
+	return &Pupil{
+		ID:                 pupilID,
+		PupilID:            pupilID,
+		UPN:                in.UPN,
+		FirstName:          in.FirstName,
+		LastName:           in.LastName,
+		LegalFirstName:     in.FirstName,
+		LegalLastName:      in.LastName,
+		PreferredFirstName: in.FirstName,
+		PreferredLastName:  in.LastName,
+		NCYearGroup:        "7",
+		EnrolmentStatus:    "C",
+		AcademicYearID:     in.AcademicYearID,
+		EffectiveFrom:      in.EffectiveFrom,
+	}, nil
 }
 
-type PupilSenAndMedicalSummary struct {
-	PupilID              string                       `json:"pupil_id"`
-	SenProvisionCode     string                       `json:"sen_provision_code"`
-	PrimarySenNeedCode   string                       `json:"primary_sen_need_code"`
-	SecondarySenNeedCode string                       `json:"secondary_sen_need_code"`
-	TeachingStrategies   string                       `json:"teaching_strategies"`
-	PupilTargets         string                       `json:"pupil_targets"`
-	SencoNotes           string                       `json:"senco_notes"`
-	EHCPStartDate        string                       `json:"ehcp_start_date"`
-	EHCPReviewDueDate    string                       `json:"ehcp_review_due_date"`
-	SenNeeds             []PupilSenNeedSummary        `json:"sen_needs"`
-	SenAssistants        []PupilSenAssistantSummary   `json:"sen_assistants"`
-	MedicalConditions    []PupilMedicalConditionAlert `json:"medical_conditions"`
+func (d *CoreDAL) DeletePupil(ctx context.Context, pupilID string) error {
+	if strings.TrimSpace(pupilID) == "" {
+		return errors.New("missing mandatory parameter: pupil_id")
+	}
+
+	tx, err := d.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin DeletePupil transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	var personID string
+	err = tx.QueryRowContext(ctx, `SELECT person_id FROM pupils WHERE id = ?`, pupilID).Scan(&personID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("failed to look up person_id for pupil %s: %w", pupilID, err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM pupil_year_enrolments WHERE pupil_id = ?`, pupilID); err != nil {
+		return fmt.Errorf("failed to delete pupil_year_enrolments: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM pupils WHERE id = ?`, pupilID); err != nil {
+		return fmt.Errorf("failed to delete pupil: %w", err)
+	}
+	if personID != "" {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM persons WHERE id = ?`, personID); err != nil {
+			return fmt.Errorf("failed to delete person: %w", err)
+		}
+	}
+
+	return tx.Commit()
 }
 
-type SenRegisterFilterOptions struct {
-	GroupID        string   `json:"group_id"`
-	NCYearGroup    string   `json:"nc_year_group"`
-	ProvisionCodes []string `json:"provision_codes"`
-}
+func (d *CoreDAL) GetPupilByID(ctx context.Context, pupilID string) (*Pupil, error) {
+	if strings.TrimSpace(pupilID) == "" {
+		return nil, errors.New("missing mandatory parameter: pupil_id")
+	}
 
-type PupilSenRegisterEntry struct {
-	Pupil
-	SenProvisionCode     string                     `json:"sen_provision_code"`
-	PrimarySenNeedCode   string                     `json:"primary_sen_need_code"`
-	SecondarySenNeedCode string                     `json:"secondary_sen_need_code"`
-	TeachingStrategies   string                     `json:"teaching_strategies"`
-	PupilTargets         string                     `json:"pupil_targets"`
-	SencoNotes           string                     `json:"senco_notes"`
-	EHCPStartDate        string                     `json:"ehcp_start_date"`
-	EHCPReviewDueDate    string                     `json:"ehcp_review_due_date"`
-	SenNeeds             []PupilSenNeedSummary      `json:"sen_needs"`
-	SenAssistants        []PupilSenAssistantSummary `json:"sen_assistants"`
+	row := d.readDB.QueryRowContext(
+		ctx,
+		`SELECT p.id, p.upn, per.legal_first_name, per.legal_last_name,
+		        COALESCE(NULLIF(TRIM(per.preferred_first_name), ''), per.legal_first_name),
+		        COALESCE(NULLIF(TRIM(per.preferred_last_name), ''), per.legal_last_name),
+		        COALESCE(enr.nc_year_group, ''), COALESCE(enr.enrolment_status, 'C'),
+		        enr.academic_year_id, enr.effective_from, enr.effective_to
+		 FROM pupils p
+		 JOIN persons per ON per.id = p.person_id
+		 JOIN pupil_year_enrolments enr ON enr.pupil_id = p.id
+		 WHERE p.id = ? AND (enr.effective_to IS NULL OR enr.effective_to >= date('now'))
+		 ORDER BY enr.effective_from DESC
+		 LIMIT 1`,
+		pupilID,
+	)
+
+	var p Pupil
+	var effTo sql.NullString
+	if err := row.Scan(
+		&p.ID, &p.UPN, &p.FirstName, &p.LastName,
+		&p.PreferredFirstName, &p.PreferredLastName,
+		&p.NCYearGroup, &p.EnrolmentStatus,
+		&p.AcademicYearID, &p.EffectiveFrom, &effTo,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("pupil not found: %s", pupilID)
+		}
+		return nil, fmt.Errorf("failed to query pupil: %w", err)
+	}
+	p.PupilID = p.ID
+	p.LegalFirstName = p.FirstName
+	p.LegalLastName = p.LastName
+	if effTo.Valid {
+		val := effTo.String
+		p.EffectiveTo = &val
+	}
+	return &p, nil
 }
 
 func (d *CoreDAL) GetPupilByIDScoped(ctx context.Context, scope DALQueryScope, pupilID string) (*Pupil, error) {
@@ -344,395 +481,3 @@ func (d *CoreDAL) ListPupilsByGroupScoped(ctx context.Context, scope DALQuerySco
 	}
 	return result, nil
 }
-
-func (d *CoreDAL) ListPupilSenAndMedicalBatch(
-	ctx context.Context,
-	scope DALQueryScope,
-	pupilIDs []string,
-) (map[string]PupilSenAndMedicalSummary, error) {
-	if err := validateScope(scope); err != nil {
-		return nil, err
-	}
-	if len(pupilIDs) == 0 {
-		return map[string]PupilSenAndMedicalSummary{}, nil
-	}
-
-	uniqueIDs := make([]string, 0, len(pupilIDs))
-	seen := make(map[string]struct{}, len(pupilIDs))
-	result := make(map[string]PupilSenAndMedicalSummary, len(pupilIDs))
-
-	for _, rawID := range pupilIDs {
-		pupilID := strings.TrimSpace(rawID)
-		if pupilID == "" {
-			return nil, errors.New("pupilIDs contains an empty pupil_id")
-		}
-		if err := d.ensurePupilInOwnGroups(ctx, scope, pupilID); err != nil {
-			return nil, err
-		}
-		if _, ok := seen[pupilID]; !ok {
-			seen[pupilID] = struct{}{}
-			uniqueIDs = append(uniqueIDs, pupilID)
-		}
-		result[pupilID] = PupilSenAndMedicalSummary{
-			PupilID:           pupilID,
-			SenProvisionCode:  "N",
-			SenNeeds:          []PupilSenNeedSummary{},
-			SenAssistants:     []PupilSenAssistantSummary{},
-			MedicalConditions: []PupilMedicalConditionAlert{},
-		}
-	}
-
-	placeholders := strings.Repeat("?,", len(uniqueIDs))
-	placeholders = strings.TrimSuffix(placeholders, ",")
-
-	buildInArgs := func(trailing ...any) []any {
-		args := make([]any, 0, len(uniqueIDs)+len(trailing))
-		for _, id := range uniqueIDs {
-			args = append(args, id)
-		}
-		args = append(args, trailing...)
-		return args
-	}
-
-	// 1. Batched query for pupil_sen_records (ordered by effective_from DESC so first seen per pupil is active latest)
-	senRows, err := d.readDB.QueryContext(
-		ctx,
-		fmt.Sprintf(
-			`SELECT pupil_id, provision_code, COALESCE(teaching_strategies, ''),
-			        COALESCE(pupil_targets, ''), COALESCE(senco_notes, ''),
-			        COALESCE(ehcp_start_date, ''), COALESCE(ehcp_review_due_date, '')
-			 FROM pupil_sen_records
-			 WHERE pupil_id IN (%s)
-			   AND effective_from <= ?
-			   AND (effective_to IS NULL OR effective_to >= ?)
-			 ORDER BY pupil_id ASC, effective_from DESC`,
-			placeholders,
-		),
-		buildInArgs(scope.ReferenceDate, scope.ReferenceDate)...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query SEN records batch: %w", err)
-	}
-	seenSenRec := make(map[string]struct{}, len(uniqueIDs))
-	for senRows.Next() {
-		var pid, provCode, strategies, targets, notes, ehcpStart, ehcpReview string
-		if scanErr := senRows.Scan(&pid, &provCode, &strategies, &targets, &notes, &ehcpStart, &ehcpReview); scanErr != nil {
-			_ = senRows.Close()
-			return nil, fmt.Errorf("failed to scan SEN record row: %w", scanErr)
-		}
-		if _, already := seenSenRec[pid]; already {
-			continue
-		}
-		seenSenRec[pid] = struct{}{}
-		summary := result[pid]
-		summary.SenProvisionCode = provCode
-		summary.TeachingStrategies = strategies
-		summary.PupilTargets = targets
-		summary.SencoNotes = notes
-		summary.EHCPStartDate = ehcpStart
-		summary.EHCPReviewDueDate = ehcpReview
-		result[pid] = summary
-	}
-	if err := senRows.Err(); err != nil {
-		_ = senRows.Close()
-		return nil, fmt.Errorf("error iterating SEN records batch: %w", err)
-	}
-	_ = senRows.Close()
-
-	// 2. Batched query for pupil_sen_needs (ranking 1 and 2)
-	needRows, err := d.readDB.QueryContext(
-		ctx,
-		fmt.Sprintf(
-			`SELECT id, pupil_id, sen_need_code, ranking, COALESCE(alert_level_id, ''), effective_from
-			 FROM pupil_sen_needs
-			 WHERE pupil_id IN (%s)
-			   AND effective_from <= ?
-			   AND (effective_to IS NULL OR effective_to >= ?)
-			 ORDER BY pupil_id ASC, ranking ASC, effective_from DESC`,
-			placeholders,
-		),
-		buildInArgs(scope.ReferenceDate, scope.ReferenceDate)...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query SEN needs batch: %w", err)
-	}
-	for needRows.Next() {
-		var need PupilSenNeedSummary
-		var pid string
-		if scanErr := needRows.Scan(&need.ID, &pid, &need.SenNeedCode, &need.Ranking, &need.AlertLevelID, &need.EffectiveFrom); scanErr != nil {
-			_ = needRows.Close()
-			return nil, fmt.Errorf("failed to scan SEN need row: %w", scanErr)
-		}
-		summary := result[pid]
-		if need.Ranking == 1 && summary.PrimarySenNeedCode == "" {
-			summary.PrimarySenNeedCode = need.SenNeedCode
-		} else if need.Ranking == 2 && summary.SecondarySenNeedCode == "" {
-			summary.SecondarySenNeedCode = need.SenNeedCode
-		}
-		summary.SenNeeds = append(summary.SenNeeds, need)
-		result[pid] = summary
-	}
-	if err := needRows.Err(); err != nil {
-		_ = needRows.Close()
-		return nil, fmt.Errorf("error iterating SEN needs batch: %w", err)
-	}
-	_ = needRows.Close()
-
-	// 3. Batched query for pupil_sen_assistants
-	taRows, err := d.readDB.QueryContext(
-		ctx,
-		fmt.Sprintf(
-			`SELECT psa.id, psa.pupil_id, psa.staff_id,
-			        TRIM(COALESCE(per.title || ' ', '') || COALESCE(NULLIF(TRIM(per.preferred_first_name), ''), per.legal_first_name) || ' ' || COALESCE(NULLIF(TRIM(per.preferred_last_name), ''), per.legal_last_name)),
-			        COALESCE(psa.allocation_notes, ''), psa.effective_from
-			 FROM pupil_sen_assistants psa
-			 JOIN staff st ON st.id = psa.staff_id
-			 JOIN persons per ON per.id = st.person_id
-			 WHERE psa.pupil_id IN (%s)
-			   AND psa.effective_from <= ?
-			   AND (psa.effective_to IS NULL OR psa.effective_to >= ?)
-			 ORDER BY psa.pupil_id ASC, psa.id ASC`,
-			placeholders,
-		),
-		buildInArgs(scope.ReferenceDate, scope.ReferenceDate)...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query SEN assistants batch: %w", err)
-	}
-	for taRows.Next() {
-		var ta PupilSenAssistantSummary
-		var pid string
-		if scanErr := taRows.Scan(&ta.ID, &pid, &ta.StaffID, &ta.DisplayName, &ta.AllocationNotes, &ta.EffectiveFrom); scanErr != nil {
-			_ = taRows.Close()
-			return nil, fmt.Errorf("failed to scan SEN assistant row: %w", scanErr)
-		}
-		summary := result[pid]
-		summary.SenAssistants = append(summary.SenAssistants, ta)
-		result[pid] = summary
-	}
-	if err := taRows.Err(); err != nil {
-		_ = taRows.Close()
-		return nil, fmt.Errorf("error iterating SEN assistants batch: %w", err)
-	}
-	_ = taRows.Close()
-
-	// 4. Batched query for pupil_medical_conditions
-	medRows, err := d.readDB.QueryContext(
-		ctx,
-		fmt.Sprintf(
-			`SELECT id, pupil_id, condition_name, condition_category, COALESCE(alert_level_id, ''), has_ihcp,
-			        COALESCE(triggers, ''), COALESCE(reaction_symptoms, ''), COALESCE(emergency_response_plan, ''),
-			        COALESCE(medication_name_and_dose, ''), COALESCE(medication_location, ''),
-			        parental_consent_given, effective_from, COALESCE(effective_to, '')
-			 FROM pupil_medical_conditions
-			 WHERE pupil_id IN (%s)
-			   AND effective_from <= ?
-			   AND (effective_to IS NULL OR effective_to >= ?)
-			 ORDER BY pupil_id ASC, id ASC`,
-			placeholders,
-		),
-		buildInArgs(scope.ReferenceDate, scope.ReferenceDate)...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query medical conditions batch: %w", err)
-	}
-	for medRows.Next() {
-		var cond PupilMedicalConditionAlert
-		var pid string
-		var hasIHCPInt int
-		var consentInt int
-		if scanErr := medRows.Scan(
-			&cond.ID,
-			&pid,
-			&cond.ConditionName,
-			&cond.ConditionCategory,
-			&cond.AlertLevelID,
-			&hasIHCPInt,
-			&cond.Triggers,
-			&cond.ReactionSymptoms,
-			&cond.EmergencyResponsePlan,
-			&cond.MedicationNameAndDose,
-			&cond.MedicationLocation,
-			&consentInt,
-			&cond.EffectiveFrom,
-			&cond.EffectiveTo,
-		); scanErr != nil {
-			_ = medRows.Close()
-			return nil, fmt.Errorf("failed to scan medical condition: %w", scanErr)
-		}
-		cond.HasIHCP = hasIHCPInt == 1
-		cond.ParentalConsentGiven = consentInt == 1
-		summary := result[pid]
-		summary.MedicalConditions = append(summary.MedicalConditions, cond)
-		result[pid] = summary
-	}
-	if err := medRows.Err(); err != nil {
-		_ = medRows.Close()
-		return nil, fmt.Errorf("error iterating medical conditions batch: %w", err)
-	}
-	_ = medRows.Close()
-
-	return result, nil
-}
-
-func (d *CoreDAL) ListSenRegisterScoped(
-	ctx context.Context,
-	scope DALQueryScope,
-	opts SenRegisterFilterOptions,
-) ([]PupilSenRegisterEntry, error) {
-	if err := validateScope(scope); err != nil {
-		return nil, err
-	}
-
-	groupID := strings.TrimSpace(opts.GroupID)
-	if groupID != "" && scope.Mode == ScopeOwnGroups {
-		if err := d.ensureGroupInOwnGroups(ctx, scope, groupID); err != nil {
-			return nil, err
-		}
-	}
-
-	provCodes := opts.ProvisionCodes
-	if len(provCodes) == 0 {
-		provCodes = []string{"K", "E"}
-	}
-	cleanCodes := make([]string, 0, len(provCodes))
-	for _, c := range provCodes {
-		trimmed := strings.ToUpper(strings.TrimSpace(c))
-		if trimmed != "" {
-			cleanCodes = append(cleanCodes, trimmed)
-		}
-	}
-	if len(cleanCodes) == 0 {
-		cleanCodes = []string{"K", "E"}
-	}
-
-	codePlaceholders := strings.Repeat("?,", len(cleanCodes))
-	codePlaceholders = strings.TrimSuffix(codePlaceholders, ",")
-
-	query := fmt.Sprintf(
-		`SELECT DISTINCT p.id, p.upn, per.legal_first_name, per.legal_last_name,
-		        COALESCE(NULLIF(TRIM(per.preferred_first_name), ''), per.legal_first_name),
-		        COALESCE(NULLIF(TRIM(per.preferred_last_name), ''), per.legal_last_name),
-		        COALESCE(enr.nc_year_group, ''), COALESCE(enr.enrolment_status, 'C'),
-		        enr.academic_year_id, enr.effective_from, enr.effective_to
-		 FROM pupil_sen_records psr
-		 JOIN pupils p ON p.id = psr.pupil_id
-		 JOIN persons per ON per.id = p.person_id
-		 JOIN pupil_year_enrolments enr ON enr.pupil_id = p.id
-		 WHERE psr.provision_code IN (%s)
-		   AND psr.effective_from <= ?
-		   AND (psr.effective_to IS NULL OR psr.effective_to >= ?)
-		   AND enr.academic_year_id = ?
-		   AND enr.effective_from <= ?
-		   AND (enr.effective_to IS NULL OR enr.effective_to >= ?)`,
-		codePlaceholders,
-	)
-
-	args := make([]any, 0, len(cleanCodes)+8)
-	for _, c := range cleanCodes {
-		args = append(args, c)
-	}
-	args = append(args, scope.ReferenceDate, scope.ReferenceDate, scope.AcademicYearID, scope.ReferenceDate, scope.ReferenceDate)
-
-	if ncYear := strings.TrimSpace(opts.NCYearGroup); ncYear != "" {
-		query += ` AND enr.nc_year_group = ?`
-		args = append(args, ncYear)
-	}
-
-	if groupID != "" {
-		query += ` AND EXISTS (
-			SELECT 1 FROM group_pupil_memberships gpm
-			WHERE gpm.pupil_id = p.id
-			  AND gpm.group_id = ?
-			  AND gpm.academic_year_id = ?
-			  AND gpm.effective_from <= ?
-			  AND (gpm.effective_to IS NULL OR gpm.effective_to >= ?)
-		)`
-		args = append(args, groupID, scope.AcademicYearID, scope.ReferenceDate, scope.ReferenceDate)
-	} else if scope.Mode == ScopeOwnGroups {
-		query += ` AND EXISTS (
-			SELECT 1 FROM group_pupil_memberships gpm
-			JOIN group_staff_assignments gsa ON gsa.group_id = gpm.group_id
-			WHERE gpm.pupil_id = p.id
-			  AND gpm.academic_year_id = ?
-			  AND gpm.effective_from <= ?
-			  AND (gpm.effective_to IS NULL OR gpm.effective_to >= ?)
-			  AND gsa.staff_id = ?
-			  AND gsa.academic_year_id = ?
-			  AND gsa.effective_from <= ?
-			  AND (gsa.effective_to IS NULL OR gsa.effective_to >= ?)
-		)`
-		args = append(args,
-			scope.AcademicYearID, scope.ReferenceDate, scope.ReferenceDate,
-			scope.StaffID,
-			scope.AcademicYearID, scope.ReferenceDate, scope.ReferenceDate,
-		)
-	}
-
-	query += ` ORDER BY per.legal_last_name ASC, per.legal_first_name ASC, p.id ASC`
-
-	rows, err := d.readDB.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query SEN register: %w", err)
-	}
-	defer rows.Close()
-
-	var pupils []Pupil
-	var pupilIDs []string
-	for rows.Next() {
-		var p Pupil
-		var effTo sql.NullString
-		if err := rows.Scan(
-			&p.ID, &p.UPN, &p.FirstName, &p.LastName,
-			&p.PreferredFirstName, &p.PreferredLastName,
-			&p.NCYearGroup, &p.EnrolmentStatus,
-			&p.AcademicYearID, &p.EffectiveFrom, &effTo,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan SEN register pupil row: %w", err)
-		}
-		p.PupilID = p.ID
-		p.LegalFirstName = p.FirstName
-		p.LegalLastName = p.LastName
-		if effTo.Valid {
-			val := effTo.String
-			p.EffectiveTo = &val
-		}
-		pupils = append(pupils, p)
-		pupilIDs = append(pupilIDs, p.ID)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating SEN register rows: %w", err)
-	}
-
-	if len(pupils) == 0 {
-		return []PupilSenRegisterEntry{}, nil
-	}
-
-	batchScope := scope
-	batchScope.Mode = ScopeAll
-	summaries, err := d.ListPupilSenAndMedicalBatch(ctx, batchScope, pupilIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	entries := make([]PupilSenRegisterEntry, 0, len(pupils))
-	for _, p := range pupils {
-		s := summaries[p.ID]
-		entries = append(entries, PupilSenRegisterEntry{
-			Pupil:                p,
-			SenProvisionCode:     s.SenProvisionCode,
-			PrimarySenNeedCode:   s.PrimarySenNeedCode,
-			SecondarySenNeedCode: s.SecondarySenNeedCode,
-			TeachingStrategies:   s.TeachingStrategies,
-			PupilTargets:         s.PupilTargets,
-			SencoNotes:           s.SencoNotes,
-			EHCPStartDate:        s.EHCPStartDate,
-			EHCPReviewDueDate:    s.EHCPReviewDueDate,
-			SenNeeds:             s.SenNeeds,
-			SenAssistants:        s.SenAssistants,
-		})
-	}
-
-	return entries, nil
-}
-

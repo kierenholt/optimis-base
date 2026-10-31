@@ -1,0 +1,11 @@
+# Host UI Shell Components & Bridge (`ui/src/components`)
+
+This folder contains the global navigation chrome, route validation utilities, and `window.postMessage` iframe RPC/route bridge for the Optimis Host UI Shell.
+
+## Key Files
+
+* [`HostSidebar.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/components/HostSidebar.tsx): Renders the Left Navigation Sidebar (`data-testid="host-sidebar"`), school identity & URN (`data-testid="host-school-name"`), installed plugin buttons with caller-permitted method counts (`data-testid="nav-item-plugin-<plug_id>"` and `data-testid="nav-item-plugin-methods-count-<plug_id>"`), and the Active Entity Context indicator (`data-testid="active-entity-context-pill"`).
+* [`HostTopbar.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/components/HostTopbar.tsx): Renders the Top Workspace Header (`data-testid="host-topbar"`), deep-link routing status (`data-testid="deep-link-navigation-status"`), current browser route (`data-testid="host-active-route-url"`), the Section 8A Dev Persona Switcher (`data-testid="persona-switcher-container"`, `data-testid="persona-switcher-select"`, `data-testid="active-persona-badge"`), and the `--mis-*` Light / WCAG AAA High-Contrast theme switcher (`data-testid="theme-mode-toggle-btn"`).
+* [`routeUtils.ts`](file:///home/kieren/Documents/code/optimis/ui/src/components/routeUtils.ts): Browser URL parser (`parseBrowserRoute`), manifest `views[]` path and query parameter validator (`validatePluginViewRoute`), `HOST_ALLOWED_QUERY_KEYS`, and `checkCallerAdminOrDpo` RBAC helper.
+* [`iframeMessageHandlers.ts`](file:///home/kieren/Documents/code/optimis/ui/src/components/iframeMessageHandlers.ts): Constructs `mis:init` payloads (`createInitPayload`) and processes `mis:route:state` (`handleRouteStateMessage`) and `mis:link:navigate` (`handleLinkNavigateMessage`) cross-plugin deep-link messages.
+* [`useHostIframeBridge.ts`](file:///home/kieren/Documents/code/optimis/ui/src/components/useHostIframeBridge.ts): React hook managing `pluginIframeRefs` and `widgetIframeRefs`, broadcasting `mis:init` on mount/state changes, synchronizing browser `popstate` events, and handling `window.postMessage` (`mis:ready`, `mis:route:state`, `mis:link:navigate`, and `mis:rpc:request` with `X-MIS-Staff-ID` propagation and `mis:plugin:invalidated` broadcast on `mutates: true` calls).

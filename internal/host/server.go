@@ -9,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"optimis/internal/dal"
 )
 
 //go:embed all:ui_dist
@@ -30,109 +28,7 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /api/test/logs/cursor", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"cursor": h.LogCursor(),
-		})
-	})
-
-	mux.HandleFunc("GET /api/test/logs", func(w http.ResponseWriter, r *http.Request) {
-		since := strings.TrimSpace(r.URL.Query().Get("since"))
-		if since == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": "missing mandatory query parameter: since",
-			})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"entries": h.LogsSince(since),
-		})
-	})
-
-	mux.HandleFunc("POST /api/test/seed-pupil", func(w http.ResponseWriter, r *http.Request) {
-		var in dal.SeedPupilInput
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": fmt.Sprintf("invalid JSON body: %v", err),
-			})
-			return
-		}
-		pupil, err := h.coreDAL.SeedPupil(r.Context(), in)
-		if err != nil {
-			h.logError(fmt.Sprintf("Failed to seed pupil: %v", err))
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": err.Error(),
-			})
-			return
-		}
-		h.logInfo(fmt.Sprintf("Seeded pupil record %s", pupil.ID))
-		writeJSON(w, http.StatusCreated, map[string]any{
-			"pupil_id": pupil.ID,
-			"pupil":    pupil,
-		})
-	})
-
-	mux.HandleFunc("DELETE /api/test/seed-pupil/{pupil_id}", func(w http.ResponseWriter, r *http.Request) {
-		pupilID := strings.TrimSpace(r.PathValue("pupil_id"))
-		if pupilID == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": "missing mandatory path parameter: pupil_id",
-			})
-			return
-		}
-		if err := h.coreDAL.DeletePupil(r.Context(), pupilID); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": err.Error(),
-			})
-			return
-		}
-		h.logInfo(fmt.Sprintf("Deleted seeded pupil record %s", pupilID))
-		writeJSON(w, http.StatusOK, map[string]any{
-			"deleted": true,
-		})
-	})
-
-	mux.HandleFunc("POST /api/test/seed-milestone1-fixtures", func(w http.ResponseWriter, r *http.Request) {
-		var in dal.Milestone1SeedInput
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": fmt.Sprintf("invalid JSON body: %v", err),
-			})
-			return
-		}
-		seeded, err := h.coreDAL.SeedMilestone1Fixtures(r.Context(), in)
-		if err != nil {
-			h.logError(fmt.Sprintf("Failed to seed Milestone 1 fixtures: %v", err))
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": err.Error(),
-			})
-			return
-		}
-		h.logInfo(fmt.Sprintf("Seeded Milestone 1 fixtures %s", seeded.FixtureID))
-		writeJSON(w, http.StatusCreated, seeded)
-	})
-
-	mux.HandleFunc("DELETE /api/test/seed-milestone1-fixtures/{fixture_id}", func(w http.ResponseWriter, r *http.Request) {
-		fixtureID := strings.TrimSpace(r.PathValue("fixture_id"))
-		if fixtureID == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": "missing mandatory path parameter: fixture_id",
-			})
-			return
-		}
-		if err := h.coreDAL.DeleteMilestone1Fixtures(r.Context(), fixtureID); err != nil {
-			h.logError(fmt.Sprintf("Failed to delete Milestone 1 fixtures %s: %v", fixtureID, err))
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": err.Error(),
-			})
-			return
-		}
-		h.logInfo(fmt.Sprintf("Deleted Milestone 1 fixtures %s", fixtureID))
-		writeJSON(w, http.StatusOK, map[string]any{
-			"deleted": true,
-		})
-	})
-
+	h.registerHostLogAndFixtureRoutes(mux)
 	h.RegisterAuthAndPersonaRoutes(mux)
 	h.RegisterSafeguardingRoutes(mux)
 	h.RegisterGDPRRoutes(mux)
@@ -144,74 +40,44 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 	h.RegisterExternalSyncAndTestRoutes(mux)
 	h.RegisterPluginLifecycleRoutes(mux)
 
-	mux.HandleFunc("POST /api/plugins/{plugin_id}/rpc/{method}", func(w http.ResponseWriter, r *http.Request) {
-		pluginID := strings.TrimSpace(r.PathValue("plugin_id"))
-		method := strings.TrimSpace(r.PathValue("method"))
-		if pluginID == "" || method == "" {
-			writeJSON(w, http.StatusBadRequest, RPCResponse{
-				OK:        false,
-				ErrorCode: "MISSING_PLUGIN_OR_METHOD",
-			})
-			return
-		}
-
-		var body struct {
-			Args map[string]any `json:"args"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, RPCResponse{
-				OK:        false,
-				ErrorCode: "INVALID_JSON_PAYLOAD",
-			})
-			return
-		}
-		if body.Args == nil {
-			body.Args = map[string]any{}
-		}
-
-		explicitStaffID := ""
-		if s, ok := body.Args["staff_id"].(string); ok && strings.TrimSpace(s) != "" {
-			explicitStaffID = strings.TrimSpace(s)
-		} else if s, ok := body.Args["__caller_staff_id"].(string); ok && strings.TrimSpace(s) != "" {
-			explicitStaffID = strings.TrimSpace(s)
-		} else if hStaff := strings.TrimSpace(r.Header.Get("X-MIS-Staff-ID")); hStaff != "" {
-			explicitStaffID = hStaff
-		} else if qStaff := strings.TrimSpace(r.URL.Query().Get("staff_id")); qStaff != "" {
-			explicitStaffID = qStaff
-		}
-
-		caller, callerErr := h.ResolveRequestCaller(r, explicitStaffID)
-		if callerErr != nil {
-			writeJSON(w, http.StatusBadRequest, RPCResponse{
-				OK:        false,
-				ErrorCode: callerErr.Error(),
-			})
-			return
-		}
-
-		res, err := h.ExecuteRPC(r.Context(), pluginID, method, caller, body.Args)
-		if err != nil {
-			status := http.StatusBadRequest
-			if pluginID != "uk.org.optimis.test" && strings.Contains(err.Error(), "caller lacks required DAL scopes") {
-				status = http.StatusForbidden
+	serveHostIndexHTMLWithStatus := func(w http.ResponseWriter, r *http.Request, statusCode int) {
+		if stat, statErr := os.Stat("internal/host/ui_dist/index.html"); statErr == nil && !stat.IsDir() {
+			content, readErr := os.ReadFile("internal/host/ui_dist/index.html")
+			if readErr == nil {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.WriteHeader(statusCode)
+				_, _ = w.Write(content)
+				return
 			}
-			writeJSON(w, status, RPCResponse{
-				OK:        false,
-				ErrorCode: err.Error(),
-			})
+		}
+		content, readErr := fs.ReadFile(uiSubFS, "index.html")
+		if readErr != nil {
+			http.Error(w, "host index.html not found", http.StatusNotFound)
 			return
 		}
-		writeJSON(w, http.StatusOK, res)
-	})
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(statusCode)
+		_, _ = w.Write(content)
+	}
 
-	mux.HandleFunc("GET /plugins/{plugin_id}/ui/{asset_path...}", func(w http.ResponseWriter, r *http.Request) {
-		pluginID := strings.TrimSpace(r.PathValue("plugin_id"))
-		assetPath := strings.TrimSpace(r.PathValue("asset_path"))
-		if pluginID == "" || assetPath == "" {
-			http.Error(w, "missing plugin_id or asset_path", http.StatusBadRequest)
+	respondPluginViewRouteError := func(w http.ResponseWriter, r *http.Request, status int, errCode string) {
+		if strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html") {
+			w.Header().Set("X-MIS-Route-Error", errCode)
+			serveHostIndexHTMLWithStatus(w, r, status)
 			return
 		}
-		plugin, ok := h.GetLoadedPlugin(pluginID)
+		writeJSON(w, status, map[string]any{
+			"ok":         false,
+			"error_code": errCode,
+		})
+	}
+
+	servePluginUIAsset := func(w http.ResponseWriter, r *http.Request, plugID string, assetPath string) {
+		if plugID == "" || assetPath == "" {
+			http.Error(w, "missing plug_id or asset_path", http.StatusBadRequest)
+			return
+		}
+		plugin, ok := h.GetLoadedPluginByPlugID(plugID)
 		if !ok {
 			http.Error(w, "plugin not found", http.StatusNotFound)
 			return
@@ -255,9 +121,78 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(content)
+	}
+
+	handlePluginViewRoute := func(w http.ResponseWriter, r *http.Request, plugID string, subpath string) {
+		if plugID == "" {
+			respondPluginViewRouteError(
+				w,
+				r,
+				http.StatusBadRequest,
+				"MISSING_PLUG_ID: missing mandatory plug_id path parameter",
+			)
+			return
+		}
+		plugin, ok := h.GetLoadedPluginByPlugID(plugID)
+		if !ok {
+			errCode := fmt.Sprintf("PLUGIN_NOT_FOUND: unknown plug_id %s", plugID)
+			h.logError(fmt.Sprintf("Blocked unknown plugin route /p/%s/%s: %s", plugID, subpath, errCode))
+			respondPluginViewRouteError(w, r, http.StatusNotFound, errCode)
+			return
+		}
+		if plugin.State == PluginStateUninstalledDormant {
+			errCode := "PLUGIN_DORMANT_QUARANTINE: plugin UI disabled in dormant quarantine"
+			h.logError(fmt.Sprintf("Blocked dormant plugin route /p/%s/%s: %s", plugID, subpath, errCode))
+			respondPluginViewRouteError(w, r, http.StatusForbidden, errCode)
+			return
+		}
+
+		_, status, errCode := MatchPluginViewRoute(plugin, subpath, r.URL.Query())
+		if status != http.StatusOK {
+			h.logError(fmt.Sprintf("Blocked undeclared plugin route /p/%s/%s: %s", plugID, subpath, errCode))
+			respondPluginViewRouteError(w, r, status, errCode)
+			return
+		}
+
+		serveHostIndexHTMLWithStatus(w, r, http.StatusOK)
+	}
+
+	mux.HandleFunc("POST /api/p/{plug_id}/rpc/{method}", h.handlePluginRPCRequest)
+
+	mux.HandleFunc("GET /_p_assets/{plug_id}/{asset_path...}", func(w http.ResponseWriter, r *http.Request) {
+		plugID := strings.TrimSpace(r.PathValue("plug_id"))
+		assetPath := strings.TrimSpace(r.PathValue("asset_path"))
+		servePluginUIAsset(w, r, plugID, assetPath)
 	})
 
-	mux.Handle("/", fileServer)
+	mux.HandleFunc("GET /p/{plug_id}/ui/{asset_path...}", func(w http.ResponseWriter, r *http.Request) {
+		plugID := strings.TrimSpace(r.PathValue("plug_id"))
+		assetPath := strings.TrimSpace(r.PathValue("asset_path"))
+		servePluginUIAsset(w, r, plugID, assetPath)
+	})
+
+	mux.HandleFunc("GET /p/{plug_id}", func(w http.ResponseWriter, r *http.Request) {
+		plugID := strings.TrimSpace(r.PathValue("plug_id"))
+		handlePluginViewRoute(w, r, plugID, "/")
+	})
+
+	mux.HandleFunc("GET /p/{plug_id}/{subpath...}", func(w http.ResponseWriter, r *http.Request) {
+		plugID := strings.TrimSpace(r.PathValue("plug_id"))
+		subpath := strings.TrimSpace(r.PathValue("subpath"))
+		if subpath == "ui" || strings.HasPrefix(subpath, "ui/") {
+			servePluginUIAsset(w, r, plugID, strings.TrimSpace(strings.TrimPrefix(subpath, "ui/")))
+			return
+		}
+		handlePluginViewRoute(w, r, plugID, subpath)
+	})
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/plugins/") || strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 
 	return mux, nil
 }

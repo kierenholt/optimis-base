@@ -28,6 +28,51 @@
       "timeout_ms": 2500
     }
   },
+  "views": [
+    {
+      "id": "home",
+      "path": "/",
+      "title": "Behaviour & Pastoral Points",
+      "entry": "ui/dist/index.html",
+      "query_params": [
+        "tab",
+        "pupil_id",
+        "second_pupil_id",
+        "group_id",
+        "other_group_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    },
+    {
+      "id": "student",
+      "path": "/student/:pupil_id",
+      "title": "Pupil Behaviour Profile",
+      "entry": "ui/dist/index.html",
+      "query_params": [
+        "tab",
+        "second_pupil_id",
+        "group_id",
+        "other_group_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    },
+    {
+      "id": "group",
+      "path": "/group/:group_id",
+      "title": "Group Behaviour Summary",
+      "entry": "ui/dist/index.html",
+      "query_params": [
+        "tab",
+        "pupil_id",
+        "second_pupil_id",
+        "other_group_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    }
+  ],
   "widgets": [
     {
       "id": "behaviour_summary",

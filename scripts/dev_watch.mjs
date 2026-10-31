@@ -50,13 +50,18 @@ for (const dir of ['cmd', 'internal']) {
   if (!fs.existsSync(targetDir)) continue;
 
   const watcher = fs.watch(targetDir, { recursive: true }, (_eventType, filename) => {
-    if (!filename || !filename.endsWith('.go') || filename.endsWith('_test.go')) {
+    if (!filename || filename.endsWith('_test.go')) {
+      return;
+    }
+    const isGoSource = filename.endsWith('.go');
+    const isEmbeddedUIDist = filename.includes('ui_dist');
+    if (!isGoSource && !isEmbeddedUIDist) {
       return;
     }
     if (rebuildTimer) {
       clearTimeout(rebuildTimer);
     }
-    rebuildTimer = setTimeout(() => rebuildAndRestartGo(path.join(dir, filename)), 150);
+    rebuildTimer = setTimeout(() => rebuildAndRestartGo(path.join(dir, filename)), 250);
   });
   watcher.on('error', (err) => {
     console.warn(`[dev] Watcher warning on ${dir}:`, err.message);

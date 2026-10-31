@@ -15,6 +15,7 @@ import (
 
 type PluginStatusSummary struct {
 	ID            string `json:"id"`
+	PlugID        string `json:"plug_id"`
 	Folder        string `json:"folder"`
 	Title         string `json:"title"`
 	Version       string `json:"version"`
@@ -74,6 +75,11 @@ func (h *Host) InstallPlugin(ctx context.Context, pluginFolder string) (*LoadedP
 		return nil, err
 	}
 
+	plugID, err := h.ensurePluginInstanceID(ctx, loaded.Manifest.ID)
+	if err != nil {
+		return nil, err
+	}
+	loaded.PlugID = plugID
 	loaded.State = PluginStateUninstalledDormant
 
 	h.mu.Lock()
@@ -86,7 +92,7 @@ func (h *Host) InstallPlugin(ctx context.Context, pluginFolder string) (*LoadedP
 		prevPool.stop()
 	}
 
-	h.logInfo(fmt.Sprintf("Installed plugin %s v%s from folder %s (state=%s)", loaded.Manifest.ID, loaded.Manifest.Version, cleanFolder, loaded.State))
+	h.logInfo(fmt.Sprintf("Installed plugin %s (%s) v%s from folder %s (state=%s)", loaded.Manifest.ID, loaded.PlugID, loaded.Manifest.Version, cleanFolder, loaded.State))
 	return loaded, nil
 }
 
@@ -102,16 +108,27 @@ func (h *Host) RemovePlugin(ctx context.Context, pluginID string) error {
 
 	h.mu.Lock()
 	p, exists := h.plugins[trimmedID]
+	canonicalKey := trimmedID
+	if !exists {
+		for mID, candidate := range h.plugins {
+			if candidate.PlugID == trimmedID {
+				p = candidate
+				canonicalKey = mID
+				exists = true
+				break
+			}
+		}
+	}
 	if !exists {
 		h.mu.Unlock()
 		return fmt.Errorf("plugin not found: %s", trimmedID)
 	}
 
-	pool := h.workerPools[trimmedID]
-	delete(h.workerPools, trimmedID)
-	delete(h.plugins, trimmedID)
+	pool := h.workerPools[canonicalKey]
+	delete(h.workerPools, canonicalKey)
+	delete(h.plugins, canonicalKey)
 
-	if trimmedID == "uk.org.optimis.test" {
+	if canonicalKey == "uk.org.optimis.test" {
 		for pid, candidate := range h.plugins {
 			if candidate.IsSyntheticClone {
 				if cPool := h.workerPools[pid]; cPool != nil {
@@ -149,7 +166,7 @@ func (h *Host) RemovePlugin(ctx context.Context, pluginID string) error {
 		}
 	}
 
-	h.logInfo(fmt.Sprintf("Removed plugin %s", trimmedID))
+	h.logInfo(fmt.Sprintf("Removed plugin %s (%s)", canonicalKey, p.PlugID))
 	return nil
 }
 
@@ -162,7 +179,7 @@ func (h *Host) ListPlugins() []PluginStatusSummary {
 		}
 		title := strings.TrimSpace(p.Manifest.Title)
 		if title == "" {
-			title = p.Manifest.ID
+			title = p.Folder
 			if p.Manifest.ID == "uk.org.optimis.test" {
 				title = "Pupil & Classroom Workspace"
 			}
@@ -171,8 +188,13 @@ func (h *Host) ListPlugins() []PluginStatusSummary {
 		if p.Manifest.Database != nil {
 			alias = strings.TrimSpace(p.Manifest.Database.Alias)
 		}
+		plugID := strings.TrimSpace(p.PlugID)
+		if plugID == "" {
+			plugID = p.Manifest.ID
+		}
 		out = append(out, PluginStatusSummary{
-			ID:            p.Manifest.ID,
+			ID:            plugID,
+			PlugID:        plugID,
 			Folder:        p.Folder,
 			Title:         title,
 			Version:       p.Manifest.Version,
@@ -183,7 +205,7 @@ func (h *Host) ListPlugins() []PluginStatusSummary {
 	h.mu.RUnlock()
 
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].ID < out[j].ID
+		return out[i].Folder < out[j].Folder
 	})
 	return out
 }
@@ -282,7 +304,8 @@ func (h *Host) RegisterPluginLifecycleRoutes(mux *http.ServeMux) {
 
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"ok":             true,
-			"plugin_id":      loaded.Manifest.ID,
+			"plug_id":        loaded.PlugID,
+			"plugin_id":      loaded.PlugID,
 			"folder":         loaded.Folder,
 			"version":        loaded.Manifest.Version,
 			"state":          string(loaded.State),
@@ -343,6 +366,7 @@ func (h *Host) RegisterPluginLifecycleRoutes(mux *http.ServeMux) {
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":        true,
+			"plug_id":   pluginID,
 			"plugin_id": pluginID,
 			"state":     string(PluginStateActive),
 		})
@@ -401,6 +425,7 @@ func (h *Host) RegisterPluginLifecycleRoutes(mux *http.ServeMux) {
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":        true,
+			"plug_id":   pluginID,
 			"plugin_id": pluginID,
 			"removed":   true,
 		})

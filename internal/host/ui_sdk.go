@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,13 +22,127 @@ type PluginUIWidgetDescriptor struct {
 	EntryURL string `json:"entry_url"`
 }
 
+type PluginUIViewDescriptor struct {
+	ID          string   `json:"id"`
+	PluginID    string   `json:"plugin_id"`
+	Title       string   `json:"title"`
+	Path        string   `json:"path"`
+	Entry       string   `json:"entry"`
+	EntryURL    string   `json:"entry_url"`
+	QueryParams []string `json:"query_params"`
+}
+
 type PluginUINavDescriptor struct {
 	ID               string                     `json:"id"`
+	PlugID           string                     `json:"plug_id"`
 	Title            string                     `json:"title"`
 	Version          string                     `json:"version"`
 	EntryURL         string                     `json:"entry_url"`
 	PermittedMethods []string                   `json:"permitted_methods"`
+	Views            []PluginUIViewDescriptor   `json:"views"`
 	Widgets          []PluginUIWidgetDescriptor `json:"widgets"`
+	 isDefaultTest    bool
+}
+
+type MatchedPluginView struct {
+	View        ViewSpec          `json:"view"`
+	EntryRel    string            `json:"entry_rel"`
+	PathParams  map[string]string `json:"path_params"`
+	QueryParams map[string]string `json:"query_params"`
+}
+
+func MatchPluginViewRoute(plugin *LoadedPlugin, rawSubpath string, query url.Values) (*MatchedPluginView, int, string) {
+	if plugin == nil {
+		return nil, http.StatusNotFound, "PLUGIN_NOT_FOUND: plugin is nil"
+	}
+	trimmedSub := strings.Trim(strings.TrimSpace(rawSubpath), "/")
+	normalizedPath := "/"
+	var targetSegs []string
+	if trimmedSub != "" {
+		normalizedPath = "/" + trimmedSub
+		targetSegs = strings.Split(trimmedSub, "/")
+	}
+
+	views := plugin.Manifest.Views
+	if len(views) == 0 {
+		views = defaultPluginViews()
+	}
+
+	var matchedView *ViewSpec
+	var extractedParams map[string]string
+
+	for i := range views {
+		v := &views[i]
+		patTrimmed := strings.Trim(strings.TrimSpace(v.Path), "/")
+		var patSegs []string
+		if patTrimmed != "" {
+			patSegs = strings.Split(patTrimmed, "/")
+		}
+		if len(patSegs) != len(targetSegs) {
+			continue
+		}
+		params := make(map[string]string)
+		matched := true
+		for idx, pSeg := range patSegs {
+			tSeg := strings.TrimSpace(targetSegs[idx])
+			if tSeg == "" {
+				matched = false
+				break
+			}
+			if strings.HasPrefix(pSeg, ":") && len(pSeg) > 1 {
+				params[pSeg[1:]] = tSeg
+			} else if pSeg != tSeg {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			matchedView = v
+			extractedParams = params
+			break
+		}
+	}
+
+	if matchedView == nil {
+		return nil, http.StatusNotFound, fmt.Sprintf("UNDECLARED_PLUGIN_VIEW_PATH: path %q is not declared in manifest.json views", normalizedPath)
+	}
+
+	allowedQuery := map[string]bool{
+		"__persona": true,
+		"staff_id":  true,
+	}
+	for _, qp := range matchedView.QueryParams {
+		trimmedQP := strings.TrimSpace(qp)
+		if trimmedQP != "" {
+			allowedQuery[trimmedQP] = true
+		}
+	}
+
+	validatedQuery := make(map[string]string, len(query))
+	for k, vals := range query {
+		if !allowedQuery[k] {
+			return nil, http.StatusBadRequest, fmt.Sprintf(
+				"UNDECLARED_PLUGIN_VIEW_QUERY_PARAM: query parameter %q is not declared in manifest.json views for path %q",
+				k,
+				matchedView.Path,
+			)
+		}
+		if len(vals) > 0 {
+			validatedQuery[k] = vals[0]
+		}
+	}
+
+	relEntry, err := normalizeWidgetEntryRelPath(matchedView.Entry)
+	if err != nil {
+		relEntry = "index.html"
+	}
+
+	return &MatchedPluginView{
+		View:        *matchedView,
+		EntryRel:    relEntry,
+		PathParams:  extractedParams,
+		QueryParams: validatedQuery,
+	}, http.StatusOK, ""
 }
 
 func DefaultThemeTokens() map[string]map[string]string {
@@ -148,10 +263,10 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 			return
 		}
 
-		h.mu.Lock()
+		h.mu.RLock()
 		basePlugin, ok := h.plugins["uk.org.optimis.test"]
+		h.mu.RUnlock()
 		if !ok {
-			h.mu.Unlock()
 			writeJSON(w, http.StatusBadRequest, map[string]any{
 				"ok":    false,
 				"error": "base plugin uk.org.optimis.test is not loaded",
@@ -162,15 +277,30 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 		seededIDs := make([]string, 0, len(in.PluginIDs))
 		for _, rawID := range in.PluginIDs {
 			pid := strings.TrimSpace(rawID)
-			if pid == "" || pid == "uk.org.optimis.test" {
+			if pid == "" || pid == "uk.org.optimis.test" || pid == basePlugin.PlugID {
 				continue
 			}
+			plugID := pid
+			if !opaquePlugIDPattern.MatchString(plugID) {
+				var genErr error
+				plugID, genErr = h.ensurePluginInstanceID(r.Context(), pid)
+				if genErr != nil {
+					writeJSON(w, http.StatusInternalServerError, map[string]any{
+						"ok":    false,
+						"error": genErr.Error(),
+					})
+					return
+				}
+			}
+
 			cloneManifest := basePlugin.Manifest
 			cloneManifest.ID = pid
-			cloneManifest.Title = fmt.Sprintf("Synthetic Workspace (%s)", pid)
+			cloneManifest.Title = fmt.Sprintf("Synthetic Workspace (%s)", plugID)
 			cloneManifest.Widgets = nil
 
+			h.mu.Lock()
 			h.plugins[pid] = &LoadedPlugin{
+				PlugID:           plugID,
 				Manifest:         cloneManifest,
 				LuaSource:        basePlugin.LuaSource,
 				DirPath:          basePlugin.DirPath,
@@ -180,9 +310,9 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 				LuaModTime:       basePlugin.LuaModTime,
 				IsSyntheticClone: true,
 			}
-			seededIDs = append(seededIDs, pid)
+			h.mu.Unlock()
+			seededIDs = append(seededIDs, plugID)
 		}
-		h.mu.Unlock()
 
 		h.logInfo(fmt.Sprintf("Seeded %d synthetic LRU plugin(s)", len(seededIDs)))
 		writeJSON(w, http.StatusCreated, map[string]any{
@@ -224,7 +354,7 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 		schoolName := "Oakridge All-Through Academy"
 		academicYearID := "ay_2026_2027"
 
-		entityHandlers := map[string]string{
+		rawEntityHandlers := map[string]string{
 			"student": "uk.org.optimis.test",
 			"group":   "uk.org.optimis.test",
 			"staff":   "uk.org.optimis.test",
@@ -249,17 +379,12 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 						if strings.TrimSpace(v) != "" {
 							academicYearID = strings.TrimSpace(v)
 						}
-					case "entity_handler.student":
-						if strings.TrimSpace(v) != "" {
-							entityHandlers["student"] = strings.TrimSpace(v)
-						}
-					case "entity_handler.group":
-						if strings.TrimSpace(v) != "" {
-							entityHandlers["group"] = strings.TrimSpace(v)
-						}
-					case "entity_handler.staff":
-						if strings.TrimSpace(v) != "" {
-							entityHandlers["staff"] = strings.TrimSpace(v)
+					default:
+						if strings.HasPrefix(k, "entity_handler.") {
+							entityKey := strings.TrimSpace(strings.TrimPrefix(k, "entity_handler."))
+							if entityKey != "" && strings.TrimSpace(v) != "" {
+								rawEntityHandlers[entityKey] = strings.TrimSpace(v)
+							}
 						}
 					}
 				}
@@ -267,11 +392,19 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 		}
 
 		h.mu.RLock()
+		activeManifestToPlugID := make(map[string]string, len(h.plugins))
+		activePlugIDs := make(map[string]bool, len(h.plugins))
+		var firstActivePlugID string
 		pluginDescriptors := make([]PluginUINavDescriptor, 0, len(h.plugins))
 		for _, p := range h.plugins {
 			if p.State != PluginStateActive {
 				continue
 			}
+			plugID := strings.TrimSpace(p.PlugID)
+			if plugID == "" {
+				plugID = p.Manifest.ID
+			}
+
 			methods := make([]string, 0, len(p.Manifest.Endpoints))
 			for m, spec := range p.Manifest.Endpoints {
 				if (hasAllScopes(caller.Scopes, spec.Scopes) && hasRequiredEndpointRoles(caller, spec.RequireRoles)) || isCallerAdminOrDPO(caller, false) {
@@ -283,12 +416,46 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 			}
 			sort.Strings(methods)
 
+			activeManifestToPlugID[p.Manifest.ID] = plugID
+			activePlugIDs[plugID] = true
+
 			title := strings.TrimSpace(p.Manifest.Title)
 			if title == "" {
-				title = p.Manifest.ID
+				title = p.Folder
 				if p.Manifest.ID == "uk.org.optimis.test" {
 					title = "Pupil & Classroom Workspace"
 				}
+			}
+
+			viewsList := p.Manifest.Views
+			if len(viewsList) == 0 {
+				viewsList = defaultPluginViews()
+			}
+			views := make([]PluginUIViewDescriptor, 0, len(viewsList))
+			for _, vSpec := range viewsList {
+				relEntry, err := normalizeWidgetEntryRelPath(vSpec.Entry)
+				if err != nil {
+					continue
+				}
+				qParams := make([]string, 0, len(vSpec.QueryParams))
+				for _, qp := range vSpec.QueryParams {
+					if trimmedQP := strings.TrimSpace(qp); trimmedQP != "" {
+						qParams = append(qParams, trimmedQP)
+					}
+				}
+				vTitle := strings.TrimSpace(vSpec.Title)
+				if vTitle == "" {
+					vTitle = title
+				}
+				views = append(views, PluginUIViewDescriptor{
+					ID:          vSpec.ID,
+					PluginID:    plugID,
+					Title:       vTitle,
+					Path:        vSpec.Path,
+					Entry:       vSpec.Entry,
+					EntryURL:    fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
+					QueryParams: qParams,
+				})
 			}
 
 			widgets := make([]PluginUIWidgetDescriptor, 0, len(p.Manifest.Widgets))
@@ -299,33 +466,52 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 				}
 				widgets = append(widgets, PluginUIWidgetDescriptor{
 					ID:       wSpec.ID,
-					PluginID: p.Manifest.ID,
+					PluginID: plugID,
 					Title:    wSpec.Title,
 					Entry:    wSpec.Entry,
-					EntryURL: fmt.Sprintf("/plugins/%s/ui/%s", p.Manifest.ID, relEntry),
+					EntryURL: fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
 				})
 			}
 
 			pluginDescriptors = append(pluginDescriptors, PluginUINavDescriptor{
-				ID:               p.Manifest.ID,
+				ID:               plugID,
+				PlugID:           plugID,
 				Title:            title,
 				Version:          p.Manifest.Version,
-				EntryURL:         fmt.Sprintf("/plugins/%s/ui/index.html", p.Manifest.ID),
+				EntryURL:         fmt.Sprintf("/p/%s/ui/index.html", plugID),
 				PermittedMethods: methods,
+				Views:            views,
 				Widgets:          widgets,
+				isDefaultTest:    p.Manifest.ID == "uk.org.optimis.test",
 			})
 		}
 		h.mu.RUnlock()
 
 		sort.Slice(pluginDescriptors, func(i, j int) bool {
-			if pluginDescriptors[i].ID == "uk.org.optimis.test" {
+			if pluginDescriptors[i].isDefaultTest {
 				return true
 			}
-			if pluginDescriptors[j].ID == "uk.org.optimis.test" {
+			if pluginDescriptors[j].isDefaultTest {
 				return false
 			}
-			return pluginDescriptors[i].ID < pluginDescriptors[j].ID
+			return pluginDescriptors[i].Title < pluginDescriptors[j].Title
 		})
+		if len(pluginDescriptors) > 0 {
+			firstActivePlugID = pluginDescriptors[0].PlugID
+		}
+
+		entityHandlers := make(map[string]string, len(rawEntityHandlers))
+		for entityType, rawTarget := range rawEntityHandlers {
+			if mappedPlugID, ok := activeManifestToPlugID[rawTarget]; ok {
+				entityHandlers[entityType] = mappedPlugID
+			} else if activePlugIDs[rawTarget] {
+				entityHandlers[entityType] = rawTarget
+			} else if firstActivePlugID != "" {
+				entityHandlers[entityType] = firstActivePlugID
+			} else {
+				entityHandlers[entityType] = ""
+			}
+		}
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":                   true,
@@ -338,4 +524,5 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 		})
 	})
 }
+
 

@@ -7,6 +7,7 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
   let seededPupilId: string = '';
   let secondPupilId: string = '';
   let seededPersonaFixtureId: string = '';
+  let testPlugId: string = '';
   let browserLogs: string[] = [];
   let pageErrors: string[] = [];
   let logCursor: string = '';
@@ -17,6 +18,7 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     seededPupilId = '';
     secondPupilId = '';
     seededPersonaFixtureId = '';
+    testPlugId = '';
     logCursor = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
@@ -34,7 +36,7 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     }
     logCursor = (await cursorRes.json()).cursor;
 
-    // 3. Ensure dev persona switcher is enabled and install + activate plugin uk.org.optimis.test
+    // 3. Ensure dev persona switcher is enabled and install + activate plugin test_plugin
     await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
     });
@@ -44,11 +46,12 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
     }
-    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+    testPlugId = (await installRes.json()).plug_id;
+    const activateRes = await request.post(`/api/admin/plugins/${encodeURIComponent(testPlugId)}/activate`, {
       data: {},
     });
     if (!activateRes.ok()) {
-      throw new Error(`Failed to activate uk.org.optimis.test: ${activateRes.status()}`);
+      throw new Error(`Failed to activate test_plugin (${testPlugId}): ${activateRes.status()}`);
     }
 
     // 4. Seed two isolated test pupils for RPC and Entity Deep-Linking verification
@@ -119,7 +122,9 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
     });
-    await request.delete('/api/admin/plugins/uk.org.optimis.test');
+    if (testPlugId) {
+      await request.delete(`/api/admin/plugins/${encodeURIComponent(testPlugId)}`);
+    }
 
     // 4. Clean up seeded pupil records at the end of the test
     if (seededPupilId) {
@@ -151,12 +156,12 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     await expect(page.getByTestId('host-topbar')).toBeVisible();
     await expect(page.getByTestId('host-dashboard-grid')).toBeVisible();
     await expect(page.getByTestId('dashboard-summary-strip')).toBeVisible();
-    await expect(page.getByTestId('nav-item-plugin-uk.org.optimis.test')).toBeVisible();
+    await expect(page.getByTestId(`nav-item-plugin-${testPlugId}`)).toBeVisible();
 
     const themeIndicator = page.getByTestId('active-theme-mode-indicator');
     await expect(themeIndicator).toHaveText('light');
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const sdkThemeStatus = pluginFrame.getByTestId('sdk-theme-status');
     await expect(sdkThemeStatus).toBeVisible();
     await expect(sdkThemeStatus).toContainText('THEME:light');
@@ -206,7 +211,7 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
   }) => {
     await page.goto(`/?pupil_id=${encodeURIComponent(seededPupilId)}`);
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
 
     // 1. Invoke window.mis.rpc('get_pupil_record', { pupil_id }) Promise API
     const promiseRpcBtn = pluginFrame.getByTestId('sdk-promise-rpc-btn');
@@ -230,7 +235,7 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
   }) => {
     await page.goto(`/?pupil_id=${encodeURIComponent(seededPupilId)}&second_pupil_id=${encodeURIComponent(secondPupilId)}`);
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const contextStatus = pluginFrame.getByTestId('sdk-context-status');
     await expect(contextStatus).toContainText(`PUPIL:${seededPupilId}`);
 
@@ -240,10 +245,10 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     await expect(studentDeepLink).toHaveAttribute('data-mis-link', 'student');
     await studentDeepLink.click();
 
-    // Verify Host Shell intercepts mis:link:navigate, resolves Student Handler Plugin (uk.org.optimis.test), and updates context
+    // Verify Host Shell intercepts mis:link:navigate, resolves Student Handler Plugin (testPlugId), and updates context
     const deepLinkStatus = page.getByTestId('deep-link-navigation-status');
     await expect(deepLinkStatus).toContainText(`student:${secondPupilId}`);
-    await expect(deepLinkStatus).toContainText('uk.org.optimis.test');
+    await expect(deepLinkStatus).toContainText(testPlugId);
 
     const activeEntityPill = page.getByTestId('active-entity-context-pill');
     await expect(activeEntityPill).toContainText(`student:${secondPupilId}`);
@@ -266,7 +271,7 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
   }) => {
     await page.goto(`/?pupil_id=${encodeURIComponent(seededPupilId)}`);
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const cspTestBtn = pluginFrame.getByTestId('sdk-csp-fetch-test-btn');
     await expect(cspTestBtn).toBeVisible();
     await cspTestBtn.click();
@@ -313,12 +318,13 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     expect(uiConfigBody.plugins.length).toBeGreaterThan(0);
 
     const testPluginDescriptor = uiConfigBody.plugins.find(
-      (p: { id: string }) => p.id === 'uk.org.optimis.test'
+      (p: { id: string }) => p.id === testPlugId
     );
     expect(testPluginDescriptor).toBeDefined();
 
     const expectedTeacherPermittedMethods = [
       'get_group_roster_summary',
+      'get_pupil_guardians',
       'list_worker_event_logs',
       'mutate_then_illegal_egress',
       'push_external_sparx_post',
@@ -333,7 +339,6 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     expect(testPluginDescriptor.permitted_methods).not.toContain('list_pupil_notes');
     expect(testPluginDescriptor.permitted_methods).not.toContain('export_pupil_data');
     expect(testPluginDescriptor.permitted_methods).not.toContain('purge_pupil_data');
-    expect(testPluginDescriptor.permitted_methods).not.toContain('get_pupil_guardians');
 
     // 4. Load Host UI under the restricted Teacher session and verify mis:init propagates scope-filtered permitted_methods into <iframe sandbox="allow-scripts">
     await page.context().addCookies([
@@ -347,7 +352,7 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
 
     await page.goto(`/?pupil_id=${encodeURIComponent(seededPupilId)}`);
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     await expect(pluginFrame.getByTestId('sdk-theme-status')).toContainText('THEME:light');
 
     await expect

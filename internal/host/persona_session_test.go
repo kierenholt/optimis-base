@@ -117,8 +117,12 @@ func TestSessionCookieResolution_SwitchPersonaAndExecuteRPC_EnforcesSessionCalle
 	}
 
 	// 2. Execute RPC get_pupil_record (requires dal.pupils.read:all) with Teacher session cookie -> must fail fast
+	testPlugin, ok := h.GetLoadedPlugin("uk.org.optimis.test")
+	if !ok || testPlugin.PlugID == "" {
+		t.Fatalf("expected uk.org.optimis.test to be loaded with non-empty PlugID")
+	}
 	rpcPayload, _ := json.Marshal(map[string]any{"args": map[string]any{"pupil_id": seeded.PupilID}})
-	reqRPC := httptest.NewRequest(http.MethodPost, "/api/plugins/uk.org.optimis.test/rpc/get_pupil_record", bytes.NewReader(rpcPayload))
+	reqRPC := httptest.NewRequest(http.MethodPost, "/api/p/"+testPlugin.PlugID+"/rpc/get_pupil_record", bytes.NewReader(rpcPayload))
 	reqRPC.AddCookie(cookies[0])
 	recRPC := httptest.NewRecorder()
 	handler.ServeHTTP(recRPC, reqRPC)

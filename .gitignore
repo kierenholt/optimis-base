@@ -42,5 +42,5 @@ Thumbs.db
 ignore
 user-stories
 
-
-.data/qa_core.db
+# Local SQLite databases and runtime data
+.data/

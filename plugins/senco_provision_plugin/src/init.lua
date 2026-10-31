@@ -237,7 +237,7 @@ function get_sen_differentiation_summary(ctx, args)
     local sen_summary = sen_batch and sen_batch[pupil.id] or nil
     local rollup = build_pupil_sen_rollup(ctx, pupil, sen_summary)
     if #sen_pupils == 0 and (rollup.sen_provision_code == "K" or rollup.sen_provision_code == "E") then
-      sen_pupils = { rollup }
+      sen_pupils = { build_pupil_sen_rollup(ctx, pupil, sen_summary) }
     end
     rollup.sen_pupils = sen_pupils
     return {

@@ -1,5 +1,3 @@
-export const PLUGIN_ID = 'uk.org.optimis.test';
-
 export type ThemeMode = 'light' | 'high-contrast';
 
 export const DEFAULT_THEME_TOKENS: Record<ThemeMode, Record<string, string>> = {
@@ -138,6 +136,15 @@ export interface PluginWidgetDescriptor {
   entry_url: string;
 }
 
+export interface PluginViewDescriptor {
+  id: string;
+  path: string;
+  title?: string;
+  entry: string;
+  entry_url: string;
+  query_params?: string[];
+}
+
 export interface PlacedDashboardWidget {
   id: string;
   plugin_id: string;
@@ -148,23 +155,6 @@ export interface PlacedDashboardWidget {
   rowSpan: number;
 }
 
-export const DEFAULT_PLUGIN_WIDGETS: PluginWidgetDescriptor[] = [
-  {
-    id: 'attendance_pulse',
-    plugin_id: PLUGIN_ID,
-    title: 'Statutory Attendance Pulse',
-    entry: 'ui/dist/widget.html',
-    entry_url: `/plugins/${PLUGIN_ID}/ui/widget.html`,
-  },
-  {
-    id: 'pastoral_watch',
-    plugin_id: PLUGIN_ID,
-    title: 'Pastoral & Behaviour Watch',
-    entry: 'ui/dist/widget.html',
-    entry_url: `/plugins/${PLUGIN_ID}/ui/widget.html`,
-  },
-];
-
 export interface PluginNavEntry {
   id: string;
   title: string;
@@ -172,6 +162,7 @@ export interface PluginNavEntry {
   entry_url: string;
   permitted_methods: string[];
   widgets?: PluginWidgetDescriptor[];
+  views?: PluginViewDescriptor[];
 }
 
 export interface StaffPersonaSummary {

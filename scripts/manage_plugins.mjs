@@ -71,11 +71,11 @@ async function installAndActivateFolder(folder) {
     folder,
     staff_id: adminStaffId,
   });
-  const pluginId = installRes.plugin_id;
-  await apiRequest('POST', `/api/admin/plugins/${encodeURIComponent(pluginId)}/activate`, {
+  const plugId = installRes.plug_id || installRes.plugin_id;
+  await apiRequest('POST', `/api/admin/plugins/${encodeURIComponent(plugId)}/activate`, {
     staff_id: adminStaffId,
   });
-  console.log(`  [+] Installed & Activated: ${pluginId.padEnd(36)} (folder: ${folder})`);
+  console.log(`  [+] Installed & Activated: ${plugId.padEnd(12)} (folder: ${folder})`);
 }
 
 async function removeAllPlugins() {
@@ -85,10 +85,11 @@ async function removeAllPlugins() {
     return;
   }
   for (const p of current) {
-    await apiRequest('DELETE', `/api/admin/plugins/${encodeURIComponent(p.id)}`, {
+    const plugId = p.plug_id || p.id;
+    await apiRequest('DELETE', `/api/admin/plugins/${encodeURIComponent(plugId)}`, {
       staff_id: adminStaffId,
     });
-    console.log(`  [-] Removed plugin:        ${p.id.padEnd(36)} (folder: ${p.folder})`);
+    console.log(`  [-] Removed plugin:        ${plugId.padEnd(12)} (folder: ${p.folder})`);
   }
 }
 
@@ -100,11 +101,12 @@ async function printStatus() {
     console.log('  (Zero plugins currently installed — clean Host UI Shell mode)');
     return;
   }
-  console.log('  PLUGIN ID                            STATE     VERSION  FOLDER');
-  console.log('  -----------------------------------  --------  -------  ------------------------------');
+  console.log('  PLUG ID       STATE     VERSION  FOLDER');
+  console.log('  ------------  --------  -------  ------------------------------');
   for (const p of current) {
+    const plugId = p.plug_id || p.id || '';
     console.log(
-      `  ${(p.id || '').padEnd(35)}  ${(p.state || '').padEnd(8)}  ${(p.version || '').padEnd(7)}  ${p.folder || ''}`
+      `  ${plugId.padEnd(12)}  ${(p.state || '').padEnd(8)}  ${(p.version || '').padEnd(7)}  ${p.folder || ''}`
     );
   }
   console.log('');

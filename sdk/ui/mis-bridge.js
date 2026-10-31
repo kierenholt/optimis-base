@@ -15,6 +15,7 @@
   var requestCounter = 0;
   var pendingRequests = Object.create(null);
   var initListeners = [];
+  var routeChangedListeners = [];
   var personaChangedListeners = [];
   var invalidationListeners = [];
   var readyResolved = false;
@@ -29,6 +30,16 @@
     themeMode: 'light',
     themeTokens: Object.create(null),
     context: Object.create(null),
+    route: {
+      plug_id: '',
+      view_id: 'home',
+      path: '/',
+      search: '',
+      url: '/',
+      tab: null,
+      params: Object.create(null),
+      query: Object.create(null),
+    },
     permittedMethods: [],
     scopes: [],
     activeRoles: [],
@@ -70,10 +81,34 @@
       theme_mode: state.themeMode,
       theme: Object.assign({}, state.themeTokens),
       context: Object.assign({}, state.context),
+      route: {
+        plug_id: state.route.plug_id || '',
+        view_id: state.route.view_id || 'home',
+        path: state.route.path || '/',
+        search: state.route.search || '',
+        url: state.route.url || '/',
+        tab: state.route.tab || null,
+        params: Object.assign({}, state.route.params || {}),
+        query: Object.assign({}, state.route.query || {}),
+      },
       permitted_methods: state.permittedMethods.slice(),
       scopes: state.scopes.slice(),
       active_roles: state.activeRoles.slice(),
     };
+  }
+
+  function notifyRouteChangedListeners() {
+    var snapshot = buildSnapshot();
+    for (var i = 0; i < routeChangedListeners.length; i++) {
+      try {
+        routeChangedListeners[i](snapshot);
+      } catch (err) {
+        console.error('[mis-bridge] Error in onRouteChanged listener:', err);
+      }
+    }
+    if (typeof CustomEvent === 'function') {
+      global.dispatchEvent(new CustomEvent('mis:route:changed', { detail: snapshot }));
+    }
   }
 
   function notifyInitListeners() {
@@ -138,6 +173,108 @@
     });
   }
 
+  function setRouteState(nextState, options) {
+    if (!nextState || typeof nextState !== 'object') {
+      throw new Error('INVALID_ROUTE_STATE: nextState must be an object');
+    }
+
+    var entityType = typeof nextState.entity_type === 'string' ? nextState.entity_type.trim().toLowerCase() : '';
+    var pupilId = typeof nextState.pupil_id === 'string' ? nextState.pupil_id.trim() : '';
+    var groupId = typeof nextState.group_id === 'string' ? nextState.group_id.trim() : '';
+    var staffId = typeof nextState.staff_id === 'string' ? nextState.staff_id.trim() : '';
+    var entityId =
+      (typeof nextState.entity_id === 'string' && nextState.entity_id.trim()) ||
+      pupilId ||
+      groupId ||
+      staffId;
+    var tab = typeof nextState.tab === 'string' && nextState.tab.trim() !== '' ? nextState.tab.trim() : '';
+    var customPath = typeof nextState.path === 'string' && nextState.path.trim() !== '' ? nextState.path.trim() : '';
+
+    if (pupilId) {
+      state.context.pupil_id = pupilId;
+      if (!entityType) {
+        entityType = 'student';
+      }
+    }
+    if (groupId) {
+      state.context.group_id = groupId;
+      if (!entityType) {
+        entityType = 'group';
+      }
+    }
+    if (staffId) {
+      state.context.staff_id = staffId;
+      if (!entityType) {
+        entityType = 'staff';
+      }
+    }
+    if (entityType) {
+      state.context.entity_type = entityType;
+    }
+    if (entityId) {
+      state.context.entity_id = entityId;
+    }
+
+    var nextQuery = Object.assign({}, state.route.query || {});
+    if (nextState.query && typeof nextState.query === 'object') {
+      var qKeys = Object.keys(nextState.query);
+      for (var i = 0; i < qKeys.length; i++) {
+        var k = qKeys[i];
+        var v = nextState.query[k];
+        if (v === null || v === undefined || v === '') {
+          delete nextQuery[k];
+        } else {
+          nextQuery[k] = String(v);
+        }
+      }
+    }
+    if (tab) {
+      nextQuery.tab = tab;
+      state.context.tab = tab;
+      state.route.tab = tab;
+    } else if (nextState.tab === null || nextState.tab === '') {
+      delete nextQuery.tab;
+      state.context.tab = null;
+      state.route.tab = null;
+    }
+
+    var resolvedPath = customPath;
+    if (!resolvedPath) {
+      var effType = entityType || state.context.entity_type || '';
+      var effId =
+        entityId ||
+        (effType === 'student' ? state.context.pupil_id : '') ||
+        (effType === 'group' ? state.context.group_id : '') ||
+        state.context.entity_id ||
+        '';
+      if ((effType === 'student' || effType === 'group' || effType === 'staff') && effId && effId !== 'home') {
+        resolvedPath = '/' + effType + '/' + effId;
+      } else {
+        resolvedPath = state.route.path || '/';
+      }
+    }
+
+    state.route.path = resolvedPath;
+    state.route.query = nextQuery;
+
+    var message = {
+      type: 'mis:route:state',
+      path: resolvedPath,
+      entity_type: entityType || state.context.entity_type || undefined,
+      entity_id: entityId || state.context.entity_id || undefined,
+      pupil_id: pupilId || state.context.pupil_id || undefined,
+      group_id: groupId || state.context.group_id || undefined,
+      staff_id: staffId || undefined,
+      tab: state.route.tab || undefined,
+      query: nextQuery,
+      replace: Boolean(options && options.replace),
+    };
+
+    global.parent.postMessage(message, '*');
+    notifyRouteChangedListeners();
+    return message;
+  }
+
   function navigate(entityType, params) {
     if (typeof entityType !== 'string' || entityType.trim() === '') {
       throw new Error('MISSING_DEEP_LINK_TYPE: entityType must be a non-empty string');
@@ -166,6 +303,7 @@
       (typeof params.target_plugin === 'string' && params.target_plugin.trim()) ||
       (typeof params.plugin_id === 'string' && params.plugin_id.trim()) ||
       '';
+    var tab = typeof params.tab === 'string' && params.tab.trim() !== '' ? params.tab.trim() : '';
 
     var message = {
       type: 'mis:link:navigate',
@@ -175,6 +313,7 @@
       group_id: groupId || (normalizedType === 'group' ? entityId : undefined),
       staff_id: staffId || (normalizedType === 'staff' ? entityId : undefined),
       target_plugin: targetPlugin || undefined,
+      tab: tab || undefined,
     };
 
     global.parent.postMessage(message, '*');
@@ -187,17 +326,36 @@
       return;
     }
 
-    if (msg.type === 'mis:init' || msg.type === 'mis:persona:changed') {
+    if (msg.type === 'mis:init' || msg.type === 'mis:persona:changed' || msg.type === 'mis:route:update') {
       var prevStaffId =
         state.context && typeof state.context.staff_id === 'string'
           ? state.context.staff_id
           : '';
+      var prevUrl = state.route && typeof state.route.url === 'string' ? state.route.url : '';
       var wasReady = state.isReady;
       state.isReady = true;
       state.context =
         msg.context && typeof msg.context === 'object'
           ? Object.assign({}, msg.context)
           : Object.create(null);
+      if (msg.route && typeof msg.route === 'object') {
+        state.route = {
+          plug_id: typeof msg.route.plug_id === 'string' ? msg.route.plug_id : '',
+          view_id: typeof msg.route.view_id === 'string' ? msg.route.view_id : 'home',
+          path: typeof msg.route.path === 'string' ? msg.route.path : '/',
+          search: typeof msg.route.search === 'string' ? msg.route.search : '',
+          url: typeof msg.route.url === 'string' ? msg.route.url : '/',
+          tab: typeof msg.route.tab === 'string' && msg.route.tab !== '' ? msg.route.tab : null,
+          params:
+            msg.route.params && typeof msg.route.params === 'object'
+              ? Object.assign({}, msg.route.params)
+              : Object.create(null),
+          query:
+            msg.route.query && typeof msg.route.query === 'object'
+              ? Object.assign({}, msg.route.query)
+              : Object.create(null),
+        };
+      }
       state.permittedMethods = Array.isArray(msg.permitted_methods)
         ? msg.permitted_methods.slice()
         : [];
@@ -213,6 +371,9 @@
           : [];
       applyThemeTokens(msg.theme_mode, msg.theme_tokens, msg.theme);
       notifyInitListeners();
+      if (msg.type === 'mis:route:update' || (wasReady && prevUrl !== state.route.url)) {
+        notifyRouteChangedListeners();
+      }
       var nextStaffId =
         state.context && typeof state.context.staff_id === 'string'
           ? state.context.staff_id
@@ -314,7 +475,18 @@
       return;
     }
 
-    // 1. Declarative Entity Deep-Linking: [data-mis-link] (Section 9.5 / 9C)
+    // 1. Declarative Route Tab Switching: [data-mis-route-tab]
+    var tabTarget = event.target.closest('[data-mis-route-tab]');
+    if (tabTarget) {
+      event.preventDefault();
+      var tabVal = tabTarget.getAttribute('data-mis-route-tab') || '';
+      if (tabVal.trim() !== '') {
+        setRouteState({ tab: tabVal.trim() });
+      }
+      return;
+    }
+
+    // 2. Declarative Entity Deep-Linking: [data-mis-link] (Section 9.5 / 9C)
     var linkTarget = event.target.closest('[data-mis-link]');
     if (linkTarget) {
       event.preventDefault();
@@ -324,6 +496,7 @@
       var staffId = linkTarget.getAttribute('data-staff-id') || '';
       var entityId = linkTarget.getAttribute('data-entity-id') || '';
       var targetPlugin = linkTarget.getAttribute('data-mis-plugin') || '';
+      var linkTab = linkTarget.getAttribute('data-mis-tab') || '';
 
       navigate(entityType || '', {
         entity_id: entityId,
@@ -331,11 +504,12 @@
         group_id: groupId,
         staff_id: staffId,
         target_plugin: targetPlugin,
+        tab: linkTab,
       });
       return;
     }
 
-    // 2. Declarative RPC Invocation: [data-mis-rpc] (Sections 6C & 9.4)
+    // 3. Declarative RPC Invocation: [data-mis-rpc] (Sections 6C & 9.4)
     var rpcTarget = event.target.closest('[data-mis-rpc]');
     if (rpcTarget) {
       var method = rpcTarget.getAttribute('data-mis-rpc');
@@ -372,6 +546,9 @@
     get context() {
       return Object.assign({}, state.context);
     },
+    get route() {
+      return buildSnapshot().route;
+    },
     get permittedMethods() {
       return state.permittedMethods.slice();
     },
@@ -392,6 +569,12 @@
       if (state.isReady) {
         callback(buildSnapshot());
       }
+    },
+    onRouteChanged: function (callback) {
+      if (typeof callback !== 'function') {
+        throw new Error('window.mis.onRouteChanged requires a function callback');
+      }
+      routeChangedListeners.push(callback);
     },
     onPersonaChanged: function (callback) {
       if (typeof callback !== 'function') {
@@ -429,6 +612,7 @@
       };
     },
     navigate: navigate,
+    setRouteState: setRouteState,
   };
 
   Object.defineProperty(global, 'mis', {

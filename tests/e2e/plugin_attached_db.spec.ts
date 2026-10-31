@@ -5,6 +5,7 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('Per-Plugin Attached SQLite (plugin_test.db) & Migration Snapshots E2E', () => {
   let seededPupilId: string = '';
+  let testPlugId: string = '';
   let browserLogs: string[] = [];
   let pageErrors: string[] = [];
   let logCursor: string = '';
@@ -13,6 +14,7 @@ test.describe('Per-Plugin Attached SQLite (plugin_test.db) & Migration Snapshots
     browserLogs = [];
     pageErrors = [];
     seededPupilId = '';
+    testPlugId = '';
     logCursor = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
@@ -40,11 +42,12 @@ test.describe('Per-Plugin Attached SQLite (plugin_test.db) & Migration Snapshots
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
     }
-    const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+    testPlugId = (await installRes.json()).plug_id;
+    const activateRes = await request.post(`/api/admin/plugins/${encodeURIComponent(testPlugId)}/activate`, {
       data: {},
     });
     if (!activateRes.ok()) {
-      throw new Error(`Failed to activate uk.org.optimis.test: ${activateRes.status()}`);
+      throw new Error(`Failed to activate test_plugin (${testPlugId}): ${activateRes.status()}`);
     }
 
     // 4. Seed required test pupil explicitly during setup
@@ -69,8 +72,8 @@ test.describe('Per-Plugin Attached SQLite (plugin_test.db) & Migration Snapshots
 
   test.afterEach(async ({ request }, testInfo) => {
     // 1. Purge any plugin_test.db rows created for seededPupilId during the test
-    if (seededPupilId) {
-      await request.post('/api/plugins/uk.org.optimis.test/rpc/purge_pupil_data', {
+    if (seededPupilId && testPlugId) {
+      await request.post(`/api/p/${encodeURIComponent(testPlugId)}/rpc/purge_pupil_data`, {
         data: {
           args: { pupil_id: seededPupilId },
         },
@@ -98,7 +101,9 @@ test.describe('Per-Plugin Attached SQLite (plugin_test.db) & Migration Snapshots
     await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
     });
-    await request.delete('/api/admin/plugins/uk.org.optimis.test');
+    if (testPlugId) {
+      await request.delete(`/api/admin/plugins/${encodeURIComponent(testPlugId)}`);
+    }
 
     // 5. Clean up seeded core pupil record at the end of the test
     if (seededPupilId) {
@@ -120,11 +125,11 @@ test.describe('Per-Plugin Attached SQLite (plugin_test.db) & Migration Snapshots
     const hostShell = page.getByTestId('host-shell');
     await expect(hostShell).toBeVisible();
 
-    const iframeEl = page.getByTestId('plugin-iframe-uk.org.optimis.test');
+    const iframeEl = page.getByTestId(`plugin-iframe-${testPlugId}`);
     await expect(iframeEl).toBeVisible();
     await expect(iframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
 
     const saveNoteBtn = pluginFrame.getByTestId('save-plugin-note-btn');
     await expect(saveNoteBtn).toBeVisible();
@@ -154,7 +159,7 @@ test.describe('Per-Plugin Attached SQLite (plugin_test.db) & Migration Snapshots
       .toBe(true);
 
     // Verify GDPR export_pupil_data and purge_pupil_data against the attached plugin_test.db
-    const exportRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/export_pupil_data', {
+    const exportRes = await request.post(`/api/p/${encodeURIComponent(testPlugId)}/rpc/export_pupil_data`, {
       data: {
         args: { pupil_id: seededPupilId },
       },
@@ -168,7 +173,7 @@ test.describe('Per-Plugin Attached SQLite (plugin_test.db) & Migration Snapshots
     expect(exportBody.data[0].records.length).toBe(1);
     expect(exportBody.data[0].records[0].note).toBe('Excellent progress in algebra');
 
-    const purgeRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/purge_pupil_data', {
+    const purgeRes = await request.post(`/api/p/${encodeURIComponent(testPlugId)}/rpc/purge_pupil_data`, {
       data: {
         args: { pupil_id: seededPupilId },
       },
@@ -177,7 +182,7 @@ test.describe('Per-Plugin Attached SQLite (plugin_test.db) & Migration Snapshots
     const purgeBody = await purgeRes.json();
     expect(purgeBody.ok).toBe(true);
 
-    const listAfterPurgeRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/list_pupil_notes', {
+    const listAfterPurgeRes = await request.post(`/api/p/${encodeURIComponent(testPlugId)}/rpc/list_pupil_notes`, {
       data: {
         args: { pupil_id: seededPupilId },
       },

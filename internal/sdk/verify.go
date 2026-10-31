@@ -128,6 +128,29 @@ func ReadAndValidateManifest(pluginDir string) (*host.Manifest, error) {
 		}
 	}
 
+	if len(manifest.Views) > 0 {
+		seenViewIDs := make(map[string]struct{}, len(manifest.Views))
+		for idx, v := range manifest.Views {
+			vid := strings.TrimSpace(v.ID)
+			vpath := strings.TrimSpace(v.Path)
+			ventry := strings.TrimSpace(v.Entry)
+			if vid == "" || vpath == "" || ventry == "" {
+				return nil, fmt.Errorf("manifest.json views[%d] for plugin %s is missing mandatory id, path, or entry", idx, manifest.ID)
+			}
+			if !strings.HasPrefix(vpath, "/") {
+				return nil, fmt.Errorf("manifest.json view %q for plugin %s has invalid path %q: must start with '/'", vid, manifest.ID, vpath)
+			}
+			cleanVPath := "/" + strings.Trim(vpath, "/")
+			if cleanVPath == "/ui" || strings.HasPrefix(cleanVPath, "/ui/") {
+				return nil, fmt.Errorf("RESERVED_PLUGIN_VIEW_PATH: manifest.json view %q for plugin %s has path %q which collides with reserved /ui asset namespace", vid, manifest.ID, vpath)
+			}
+			if _, dup := seenViewIDs[vid]; dup {
+				return nil, fmt.Errorf("manifest.json for plugin %s declares duplicate view id %q", manifest.ID, vid)
+			}
+			seenViewIDs[vid] = struct{}{}
+		}
+	}
+
 	return &manifest, nil
 }
 

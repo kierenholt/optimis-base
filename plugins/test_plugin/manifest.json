@@ -106,6 +106,67 @@
       "max_concurrency": 1
     }
   },
+  "views": [
+    {
+      "id": "home",
+      "path": "/",
+      "title": "Pupil & Classroom Workspace",
+      "entry": "ui/dist/index.html",
+      "query_params": [
+        "tab",
+        "pupil_id",
+        "second_pupil_id",
+        "group_id",
+        "other_group_id",
+        "absent_staff_id",
+        "cover_staff_id",
+        "slot_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    },
+    {
+      "id": "student",
+      "path": "/student/:pupil_id",
+      "title": "Pupil Profile",
+      "entry": "ui/dist/index.html",
+      "query_params": [
+        "tab",
+        "second_pupil_id",
+        "group_id",
+        "other_group_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    },
+    {
+      "id": "group",
+      "path": "/group/:group_id",
+      "title": "Group Roster",
+      "entry": "ui/dist/index.html",
+      "query_params": [
+        "tab",
+        "pupil_id",
+        "second_pupil_id",
+        "other_group_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    },
+    {
+      "id": "staff",
+      "path": "/staff/:staff_id",
+      "title": "Staff Workspace",
+      "entry": "ui/dist/index.html",
+      "query_params": [
+        "tab",
+        "pupil_id",
+        "group_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    }
+  ],
   "widgets": [
     {
       "id": "attendance_pulse",

@@ -17,6 +17,8 @@ This directory contains the sequential Playwright E2E test suites verifying the 
 
 ## 2. E2E Spec Files
 
+* [`strict_url_routing_and_deep_linking.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/strict_url_routing_and_deep_linking.spec.ts):
+  * Verifies **Strict Opaque URL Routing & Deep Linking (`/p/<plugid>/...`)**: instance-local 8-char lowercase alphanumeric `plug_id` generation (`^[a-z0-9]{8}$`) with zero reverse-DNS `manifest.id` leakage in `GET /api/system/ui-config` or DOM attributes, two-way `mis:route:push` / `mis:route:changed` synchronization reflecting full pupil and tab state in the browser URL (`/p/<senPlugId>/student/<pupil_id>?tab=iep`), per-plugin route memory across Keep-Alive LRU Pool tab switches, copying and opening the deep-linked URL in a fresh browser tab (`colleagueTab`) to load the exact pupil and active `tab=iep` panel directly, cross-plugin `[data-mis-link="student"]` deep-linking resolving via `entity_link_handlers` without leaking source query parameters, and fail-fast `404`/`400` enforcement (`UNDECLARED_PLUGIN_VIEW_PATH`, `UNDECLARED_PLUGIN_VIEW_QUERY_PARAM`, `LEGACY_PLUGIN_ROUTE_DISABLED`) rendering `data-testid="host-route-error-banner"` on direct HTML navigation.
 * [`sdk_toolchain_10a_to_10d.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/sdk_toolchain_10a_to_10d.spec.ts):
   * Verifies Sections 8A–8C & 10A–10D Plugin Authoring SDK & Developer Toolchain end-to-end:
     * **10B VS Code & Schema Integration**: `.vscode/settings.json` (`Lua 5.1`, disabled globals, `.mis-types/dal.d.lua`, `sdk/manifest.schema.json`) and schema validation across all 11 production `manifest.json` files.

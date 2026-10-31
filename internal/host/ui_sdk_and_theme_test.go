@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,6 +35,10 @@ func TestServePluginUISDKAssets_MisBridgeJsAndMisThemeCss_ReturnsAssetsWithConne
 	if err := h.LoadPlugin("test_plugin"); err != nil {
 		t.Fatalf("LoadPlugin failed: %v", err)
 	}
+	testPlugin, ok := h.GetLoadedPlugin("uk.org.optimis.test")
+	if !ok || testPlugin.PlugID == "" {
+		t.Fatalf("expected uk.org.optimis.test to be loaded with non-empty PlugID")
+	}
 
 	handler, err := h.NewHTTPHandler()
 	if err != nil {
@@ -56,12 +61,12 @@ func TestServePluginUISDKAssets_MisBridgeJsAndMisThemeCss_ReturnsAssetsWithConne
 			mustContain: "--mis-brand-primary",
 		},
 		{
-			url:         "/plugins/uk.org.optimis.test/ui/mis-bridge.js",
+			url:         "/p/" + testPlugin.PlugID + "/ui/mis-bridge.js",
 			contentType: "application/javascript",
 			mustContain: "mis:rpc:request",
 		},
 		{
-			url:         "/plugins/uk.org.optimis.test/ui/mis-theme.css",
+			url:         "/p/" + testPlugin.PlugID + "/ui/mis-theme.css",
 			contentType: "text/css",
 			mustContain: "high-contrast",
 		},
@@ -112,6 +117,10 @@ func TestGetSystemUIConfig_DefaultAndSeededSystemConfig_ReturnsSchoolThemeTokens
 	if err := h.LoadPlugin("test_plugin"); err != nil {
 		t.Fatalf("LoadPlugin failed: %v", err)
 	}
+	testPlugin, ok := h.GetLoadedPlugin("uk.org.optimis.test")
+	if !ok || testPlugin.PlugID == "" {
+		t.Fatalf("expected uk.org.optimis.test to be loaded with non-empty PlugID")
+	}
 
 	handler, err := h.NewHTTPHandler()
 	if err != nil {
@@ -125,6 +134,9 @@ func TestGetSystemUIConfig_DefaultAndSeededSystemConfig_ReturnsSchoolThemeTokens
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/system/ui-config expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
 	}
+	if strings.Contains(rec.Body.String(), "uk.org.optimis.test") {
+		t.Fatalf("GET /api/system/ui-config must not leak global reverse-DNS manifest ID uk.org.optimis.test: %s", rec.Body.String())
+	}
 
 	var payload struct {
 		OK                 bool                         `json:"ok"`
@@ -135,7 +147,9 @@ func TestGetSystemUIConfig_DefaultAndSeededSystemConfig_ReturnsSchoolThemeTokens
 		EntityLinkHandlers map[string]string            `json:"entity_link_handlers"`
 		Plugins            []struct {
 			ID               string   `json:"id"`
+			PlugID           string   `json:"plug_id"`
 			Title            string   `json:"title"`
+			EntryURL         string   `json:"entry_url"`
 			PermittedMethods []string `json:"permitted_methods"`
 		} `json:"plugins"`
 	}
@@ -155,11 +169,14 @@ func TestGetSystemUIConfig_DefaultAndSeededSystemConfig_ReturnsSchoolThemeTokens
 	if payload.Themes["high-contrast"]["--mis-brand-primary"] != "#facc15" {
 		t.Fatalf("expected high-contrast --mis-brand-primary #facc15, got %q", payload.Themes["high-contrast"]["--mis-brand-primary"])
 	}
-	if payload.EntityLinkHandlers["student"] != "uk.org.optimis.test" {
-		t.Fatalf("expected student entity handler uk.org.optimis.test, got %q", payload.EntityLinkHandlers["student"])
+	if payload.EntityLinkHandlers["student"] != testPlugin.PlugID {
+		t.Fatalf("expected student entity handler %s, got %q", testPlugin.PlugID, payload.EntityLinkHandlers["student"])
 	}
-	if len(payload.Plugins) == 0 || payload.Plugins[0].ID != "uk.org.optimis.test" {
-		t.Fatalf("expected active plugin uk.org.optimis.test in ui-config plugins list")
+	if len(payload.Plugins) == 0 || payload.Plugins[0].ID != testPlugin.PlugID || payload.Plugins[0].PlugID != testPlugin.PlugID {
+		t.Fatalf("expected active plugin %s in ui-config plugins list, got %+v", testPlugin.PlugID, payload.Plugins)
+	}
+	if payload.Plugins[0].EntryURL != "/p/"+testPlugin.PlugID+"/ui/index.html" {
+		t.Fatalf("expected entry_url /p/%s/ui/index.html, got %q", testPlugin.PlugID, payload.Plugins[0].EntryURL)
 	}
 }
 
@@ -193,6 +210,10 @@ func TestGetSystemUIConfig_CallerWithRestrictedPersonaScopes_FiltersPermittedMet
 
 	if err := h.LoadPlugin("test_plugin"); err != nil {
 		t.Fatalf("LoadPlugin failed: %v", err)
+	}
+	testPlugin, ok := h.GetLoadedPlugin("uk.org.optimis.test")
+	if !ok || testPlugin.PlugID == "" {
+		t.Fatalf("expected uk.org.optimis.test to be loaded with non-empty PlugID")
 	}
 
 	// Seed two restricted staff personas in core.db:
@@ -271,8 +292,8 @@ func TestGetSystemUIConfig_CallerWithRestrictedPersonaScopes_FiltersPermittedMet
 	if err := json.Unmarshal(recConfig1.Body.Bytes(), &payload1); err != nil {
 		t.Fatalf("failed to unmarshal ui-config response: %v", err)
 	}
-	if len(payload1.Plugins) != 1 || payload1.Plugins[0].ID != "uk.org.optimis.test" {
-		t.Fatalf("expected 1 plugin (uk.org.optimis.test) for stf_postbox_only, got %+v", payload1.Plugins)
+	if len(payload1.Plugins) != 1 || payload1.Plugins[0].ID != testPlugin.PlugID {
+		t.Fatalf("expected 1 plugin (%s) for stf_postbox_only, got %+v", testPlugin.PlugID, payload1.Plugins)
 	}
 	if len(payload1.Plugins[0].PermittedMethods) != 1 || payload1.Plugins[0].PermittedMethods[0] != "submit_safeguarding_postbox" {
 		t.Fatalf("expected PermittedMethods to be strictly [submit_safeguarding_postbox], got %v", payload1.Plugins[0].PermittedMethods)
@@ -344,18 +365,22 @@ func TestManifestWidgetsAndSeedLruPlugins_ValidAndInvalidWidgetDeclarations_Expo
 	if err := h.LoadPlugin("test_plugin"); err != nil {
 		t.Fatalf("LoadPlugin failed: %v", err)
 	}
+	testPlugin, ok := h.GetLoadedPlugin("uk.org.optimis.test")
+	if !ok || testPlugin.PlugID == "" {
+		t.Fatalf("expected uk.org.optimis.test to be loaded with non-empty PlugID")
+	}
 
 	handler, err := h.NewHTTPHandler()
 	if err != nil {
 		t.Fatalf("NewHTTPHandler failed: %v", err)
 	}
 
-	// 1. Verify GET /plugins/uk.org.optimis.test/ui/widget.html serves widget HTML with connect-src 'none' CSP
-	reqWidget := httptest.NewRequest(http.MethodGet, "/plugins/uk.org.optimis.test/ui/widget.html", nil)
+	// 1. Verify GET /p/{plug_id}/ui/widget.html serves widget HTML with connect-src 'none' CSP
+	reqWidget := httptest.NewRequest(http.MethodGet, "/p/"+testPlugin.PlugID+"/ui/widget.html", nil)
 	recWidget := httptest.NewRecorder()
 	handler.ServeHTTP(recWidget, reqWidget)
 	if recWidget.Code != http.StatusOK {
-		t.Fatalf("GET /plugins/uk.org.optimis.test/ui/widget.html expected 200 OK, got %d: %s", recWidget.Code, recWidget.Body.String())
+		t.Fatalf("GET /p/%s/ui/widget.html expected 200 OK, got %d: %s", testPlugin.PlugID, recWidget.Code, recWidget.Body.String())
 	}
 	if !strings.Contains(recWidget.Header().Get("Content-Security-Policy"), "connect-src 'none'") {
 		t.Fatalf("expected connect-src 'none' CSP on widget.html, got %q", recWidget.Header().Get("Content-Security-Policy"))
@@ -399,19 +424,20 @@ func TestManifestWidgetsAndSeedLruPlugins_ValidAndInvalidWidgetDeclarations_Expo
 	}
 
 	foundTestPlugin := false
+	expectedWidgetEntryURL := "/p/" + testPlugin.PlugID + "/ui/widget.html"
 	for _, p := range configPayload.Plugins {
-		if p.ID == "uk.org.optimis.test" {
+		if p.ID == testPlugin.PlugID {
 			foundTestPlugin = true
 			if len(p.Widgets) < 2 {
-				t.Fatalf("expected at least 2 widgets on uk.org.optimis.test, got %+v", p.Widgets)
+				t.Fatalf("expected at least 2 widgets on %s, got %+v", testPlugin.PlugID, p.Widgets)
 			}
-			if p.Widgets[0].EntryURL != "/plugins/uk.org.optimis.test/ui/widget.html" {
-				t.Fatalf("expected widget entry_url /plugins/uk.org.optimis.test/ui/widget.html, got %q", p.Widgets[0].EntryURL)
+			if p.Widgets[0].EntryURL != expectedWidgetEntryURL {
+				t.Fatalf("expected widget entry_url %s, got %q", expectedWidgetEntryURL, p.Widgets[0].EntryURL)
 			}
 		}
 	}
 	if !foundTestPlugin {
-		t.Fatalf("expected uk.org.optimis.test in ui-config plugins")
+		t.Fatalf("expected %s in ui-config plugins", testPlugin.PlugID)
 	}
 
 	// Clean up synthetic LRU plugins via DELETE /api/test/seed-lru-plugins
@@ -423,3 +449,152 @@ func TestManifestWidgetsAndSeedLruPlugins_ValidAndInvalidWidgetDeclarations_Expo
 	}
 }
 
+func TestOpaquePluginViewRouting_DeclaredAndUndeclaredViewsAndLegacyRoutes_EnforcesDefaultDenyAndServesHostSPA_test(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	pluginsDir, err := filepath.Abs("../../plugins")
+	if err != nil {
+		t.Fatalf("failed to resolve plugins directory: %v", err)
+	}
+
+	h, err := NewHost(Config{
+		DataDirPath:      tempDir,
+		SchoolURN:        "100001",
+		HostKMSKeyHandle: "local-dev-kms-key-01",
+		PluginsDir:       pluginsDir,
+	})
+	if err != nil {
+		t.Fatalf("NewHost failed: %v", err)
+	}
+	defer h.Close()
+
+	if err := h.LoadPlugin("senco_provision_plugin"); err != nil {
+		t.Fatalf("LoadPlugin(senco_provision_plugin) failed: %v", err)
+	}
+	senPlugin, ok := h.GetLoadedPlugin("uk.org.optimis.sen.provision")
+	if !ok || !opaquePlugIDPattern.MatchString(senPlugin.PlugID) {
+		t.Fatalf("expected 8-char opaque PlugID for senco_provision_plugin, got %q", senPlugin.PlugID)
+	}
+	initialPlugID := senPlugin.PlugID
+
+	// Verify PlugID persists across RemovePlugin + LoadPlugin via __system_config
+	if err := h.RemovePlugin(ctx, initialPlugID); err != nil {
+		t.Fatalf("RemovePlugin failed: %v", err)
+	}
+	if err := h.LoadPlugin("senco_provision_plugin"); err != nil {
+		t.Fatalf("Reloading senco_provision_plugin failed: %v", err)
+	}
+	reloaded, ok := h.GetLoadedPlugin("uk.org.optimis.sen.provision")
+	if !ok || reloaded.PlugID != initialPlugID {
+		t.Fatalf("expected persisted PlugID %q across reinstall, got %q", initialPlugID, reloaded.PlugID)
+	}
+
+	handler, err := h.NewHTTPHandler()
+	if err != nil {
+		t.Fatalf("NewHTTPHandler failed: %v", err)
+	}
+
+	// 1. Declared routes GET /p/{plug_id} and GET /p/{plug_id}/student/4092?tab=iep return 200 OK
+	for _, validURL := range []string{
+		"/p/" + initialPlugID,
+		"/p/" + initialPlugID + "/student/4092?tab=iep",
+		"/p/" + initialPlugID + "/group/grp_101?tab=overview",
+	} {
+		req := httptest.NewRequest(http.MethodGet, validURL, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s expected 200 OK, got %d: %s", validURL, rec.Code, rec.Body.String())
+		}
+	}
+
+	// 2. Undeclared view path fails fast with 404 UNDECLARED_PLUGIN_VIEW_PATH (JSON when no Accept: text/html)
+	reqUndeclaredPath := httptest.NewRequest(http.MethodGet, "/p/"+initialPlugID+"/undeclared/subpath", nil)
+	recUndeclaredPath := httptest.NewRecorder()
+	handler.ServeHTTP(recUndeclaredPath, reqUndeclaredPath)
+	if recUndeclaredPath.Code != http.StatusNotFound || !strings.Contains(recUndeclaredPath.Body.String(), "UNDECLARED_PLUGIN_VIEW_PATH") {
+		t.Fatalf("expected 404 UNDECLARED_PLUGIN_VIEW_PATH, got %d: %s", recUndeclaredPath.Code, recUndeclaredPath.Body.String())
+	}
+
+	// 2b. Browser navigation (Accept: text/html) to undeclared view path returns 404 AND serves Host SPA index.html
+	reqUndeclaredPathHTML := httptest.NewRequest(http.MethodGet, "/p/"+initialPlugID+"/undeclared/subpath", nil)
+	reqUndeclaredPathHTML.Header.Set("Accept", "text/html,application/xhtml+xml")
+	recUndeclaredPathHTML := httptest.NewRecorder()
+	handler.ServeHTTP(recUndeclaredPathHTML, reqUndeclaredPathHTML)
+	if recUndeclaredPathHTML.Code != http.StatusNotFound || !strings.Contains(strings.ToLower(recUndeclaredPathHTML.Body.String()), "<!doctype html>") {
+		t.Fatalf("expected 404 with Host SPA HTML on Accept: text/html, got %d: %s", recUndeclaredPathHTML.Code, recUndeclaredPathHTML.Body.String())
+	}
+
+	// 3. Undeclared query param fails fast with 400 UNDECLARED_PLUGIN_VIEW_QUERY_PARAM (JSON when no Accept: text/html)
+	reqUndeclaredQuery := httptest.NewRequest(http.MethodGet, "/p/"+initialPlugID+"/student/4092?tab=iep&bogus_param=1", nil)
+	recUndeclaredQuery := httptest.NewRecorder()
+	handler.ServeHTTP(recUndeclaredQuery, reqUndeclaredQuery)
+	if recUndeclaredQuery.Code != http.StatusBadRequest || !strings.Contains(recUndeclaredQuery.Body.String(), "UNDECLARED_PLUGIN_VIEW_QUERY_PARAM") {
+		t.Fatalf("expected 400 UNDECLARED_PLUGIN_VIEW_QUERY_PARAM, got %d: %s", recUndeclaredQuery.Code, recUndeclaredQuery.Body.String())
+	}
+
+	// 3b. Browser navigation (Accept: text/html) with undeclared query param returns 400 AND serves Host SPA index.html
+	reqUndeclaredQueryHTML := httptest.NewRequest(http.MethodGet, "/p/"+initialPlugID+"/student/4092?tab=iep&bogus_param=1", nil)
+	reqUndeclaredQueryHTML.Header.Set("Accept", "text/html")
+	recUndeclaredQueryHTML := httptest.NewRecorder()
+	handler.ServeHTTP(recUndeclaredQueryHTML, reqUndeclaredQueryHTML)
+	if recUndeclaredQueryHTML.Code != http.StatusBadRequest || !strings.Contains(strings.ToLower(recUndeclaredQueryHTML.Body.String()), "<!doctype html>") {
+		t.Fatalf("expected 400 with Host SPA HTML on Accept: text/html, got %d: %s", recUndeclaredQueryHTML.Code, recUndeclaredQueryHTML.Body.String())
+	}
+
+	// 4. Issue 1: Static UI assets under /p/{plug_id}/ui/... and /_p_assets/{plug_id}/... never collide with views[]
+	for _, assetURL := range []string{
+		"/p/" + initialPlugID + "/ui/index.html",
+		"/_p_assets/" + initialPlugID + "/index.html",
+	} {
+		reqAsset := httptest.NewRequest(http.MethodGet, assetURL, nil)
+		recAsset := httptest.NewRecorder()
+		handler.ServeHTTP(recAsset, reqAsset)
+		if recAsset.Code != http.StatusOK {
+			t.Fatalf("GET %s expected 200 OK without colliding with views[], got %d: %s", assetURL, recAsset.Code, recAsset.Body.String())
+		}
+	}
+
+	// 5. Issue 1: readPluginFromDisk rejects any views[].path starting with /ui (RESERVED_PLUGIN_VIEW_PATH)
+	reservedPluginDir := filepath.Join(tempDir, "reserved_ui_plugin")
+	if err := os.MkdirAll(filepath.Join(reservedPluginDir, "src"), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(reservedPluginDir, "src", "init.lua"), []byte(`function ping(ctx, args) return { ok = true } end`), 0o644); err != nil {
+		t.Fatalf("WriteFile init.lua failed: %v", err)
+	}
+	reservedManifestJSON := `{
+		"id": "uk.org.optimis.reserved.ui",
+		"version": "1.0.0",
+		"core_dal_version": "~1.0",
+		"views": [
+			{ "id": "home", "path": "/", "entry": "ui/dist/index.html" },
+			{ "id": "shadow_ui", "path": "/ui/custom", "entry": "ui/dist/index.html" }
+		],
+		"endpoints": {
+			"ping": { "scopes": ["dal.pupils.read:own_groups"], "mutates": false }
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(reservedPluginDir, "manifest.json"), []byte(reservedManifestJSON), 0o644); err != nil {
+		t.Fatalf("WriteFile manifest.json failed: %v", err)
+	}
+	_, errReserved := readPluginFromDisk(reservedPluginDir, "reserved_ui_plugin")
+	if errReserved == nil || !strings.Contains(errReserved.Error(), "RESERVED_PLUGIN_VIEW_PATH") {
+		t.Fatalf("expected RESERVED_PLUGIN_VIEW_PATH error for views[].path starting with /ui, got %v", errReserved)
+	}
+
+	// 6. Legacy /plugins/... and /api/plugins/... routes are removed (404)
+	reqLegacyUI := httptest.NewRequest(http.MethodGet, "/plugins/uk.org.optimis.sen.provision/ui/index.html", nil)
+	recLegacyUI := httptest.NewRecorder()
+	handler.ServeHTTP(recLegacyUI, reqLegacyUI)
+	if recLegacyUI.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on legacy /plugins/... UI route, got %d", recLegacyUI.Code)
+	}
+
+	reqLegacyRPC := httptest.NewRequest(http.MethodPost, "/api/plugins/uk.org.optimis.sen.provision/rpc/get_sen_differentiation_summary", strings.NewReader(`{"args":{}}`))
+	recLegacyRPC := httptest.NewRecorder()
+	handler.ServeHTTP(recLegacyRPC, reqLegacyRPC)
+	if recLegacyRPC.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on legacy /api/plugins/... RPC route, got %d", recLegacyRPC.Code)
+	}
+}

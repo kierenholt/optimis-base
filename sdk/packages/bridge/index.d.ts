@@ -21,7 +21,22 @@ export function navigate(
     group_id?: string;
     staff_id?: string;
     target_plugin?: string;
+    tab?: string;
   }
+): void;
+
+export function setRouteState(
+  nextState: {
+    path?: string;
+    entity_type?: string;
+    entity_id?: string;
+    pupil_id?: string;
+    group_id?: string;
+    staff_id?: string;
+    tab?: string | null;
+    query?: Record<string, string | null | undefined>;
+  },
+  options?: { replace?: boolean }
 ): void;
 
 export const DECLARATIVE_ATTRIBUTES: {
@@ -32,4 +47,5 @@ export const DECLARATIVE_ATTRIBUTES: {
   readonly GROUP_ID: 'data-group-id';
   readonly STAFF_ID: 'data-staff-id';
   readonly PLUGIN_TARGET: 'data-mis-plugin';
+  readonly ROUTE_TAB: 'data-mis-route-tab';
 };

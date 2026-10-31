@@ -47,5 +47,36 @@
       "mutates": false,
       "timeout_ms": 2500
     }
-  }
+  },
+  "views": [
+    {
+      "id": "home",
+      "path": "/",
+      "title": "Parent Portal DMZ Sync",
+      "entry": "ui/dist/index.html",
+      "query_params": [
+        "tab",
+        "pupil_id",
+        "second_pupil_id",
+        "group_id",
+        "other_group_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    },
+    {
+      "id": "student",
+      "path": "/student/:pupil_id",
+      "title": "Pupil DMZ Sync History",
+      "entry": "ui/dist/index.html",
+      "query_params": [
+        "tab",
+        "second_pupil_id",
+        "group_id",
+        "other_group_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    }
+  ]
 }

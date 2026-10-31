@@ -59,5 +59,36 @@
       "timeout_ms": 30000,
       "max_concurrency": 2
     }
-  }
+  },
+  "views": [
+    {
+      "id": "home",
+      "path": "/",
+      "title": "Google Classroom LMS Sync",
+      "entry": "ui/dist/index.html",
+      "query_params": [
+        "tab",
+        "pupil_id",
+        "second_pupil_id",
+        "group_id",
+        "other_group_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    },
+    {
+      "id": "group",
+      "path": "/group/:group_id",
+      "title": "Course Roster Sync",
+      "entry": "ui/dist/index.html",
+      "query_params": [
+        "tab",
+        "pupil_id",
+        "second_pupil_id",
+        "other_group_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    }
+  ]
 }

@@ -11,11 +11,11 @@ This directory houses the official client-side SDK assets, Lua type stubs, JSON 
 
 ## Files & Subdirectories
 
-* [`manifest.schema.json`](file:///home/kieren/Documents/code/optimis/sdk/manifest.schema.json): JSON Schema Draft-07 specification for `manifest.json` (Section 10B).
+* [`manifest.schema.json`](file:///home/kieren/Documents/code/optimis/sdk/manifest.schema.json): JSON Schema Draft-07 specification for `manifest.json` (Section 10B), including `views[]` route pattern declarations (`^/(?!ui(?:/|$))` forbidding `/ui` prefix collisions with `/p/{plug_id}/ui/{asset_path...}`).
 * [`lua/`](file:///home/kieren/Documents/code/optimis/sdk/lua/GEMINI.md):
   * [`ctx_types.lua`](file:///home/kieren/Documents/code/optimis/sdk/lua/ctx_types.lua): Authoritative EmmyLua / LuaLS static type annotations (synced with [`.mis-types/dal.d.lua`](file:///home/kieren/Documents/code/optimis/.mis-types/dal.d.lua)) for the injected `ctx` runtime (`ctx.caller`, `ctx.school`, `ctx.dal.*`, `ctx.plugin_db`, `ctx.crypto`, `ctx.clock`, `ctx.json`, `ctx.http`, `ctx.events`, and `ctx.xml`).
 * [`ui/`](file:///home/kieren/Documents/code/optimis/sdk/ui/GEMINI.md):
-  * [`mis-bridge.js`](file:///home/kieren/Documents/code/optimis/sdk/ui/mis-bridge.js): Official sandboxed `<iframe sandbox="allow-scripts">` UI runtime (`window.mis.rpc()` Promise API, `window.mis.useMisRpc()` hook, `window.mis.onPersonaChanged()`, declarative `[data-mis-rpc]` delegation, declarative `[data-mis-link]` Entity Deep-Link emitter, and `mis:init` / `mis:theme:update` `--mis-*` CSS Custom Property synchronization).
+  * [`mis-bridge.js`](file:///home/kieren/Documents/code/optimis/sdk/ui/mis-bridge.js): Official sandboxed `<iframe sandbox="allow-scripts">` UI runtime (`window.mis.rpc()` Promise API, `window.mis.useMisRpc()` hook, `window.mis.pushRoute()`, `window.mis.getRoute()`, `window.mis.onRouteChanged()`, `window.mis.onPersonaChanged()`, declarative `[data-mis-rpc]` delegation, declarative `[data-mis-route-path]` / `[data-mis-route-query]` route sync, declarative `[data-mis-link]` Entity Deep-Link emitter, and `mis:init` / `mis:theme:update` `--mis-*` CSS Custom Property synchronization).
   * [`mis-theme.css`](file:///home/kieren/Documents/code/optimis/sdk/ui/mis-theme.css): Canonical `--mis-*` Design Token stylesheet supporting Default School Branding (`light`) and WCAG AAA Classroom Projector High-Contrast Mode (`high-contrast`).
 * [`packages/`](file:///home/kieren/Documents/code/optimis/sdk/packages/GEMINI.md):
   * [`packages/bridge/`](file:///home/kieren/Documents/code/optimis/sdk/packages/bridge/GEMINI.md): `@ukmis/bridge` ESM/CJS package (`rpc`, `useMisRpc`, `onPersonaChanged`, `getContext`).
