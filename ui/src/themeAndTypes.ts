@@ -121,7 +121,6 @@ export function applyHostThemeToRoot(
   if (document.body) {
     document.body.style.margin = '0';
     document.body.style.fontSize = preset.px;
-    document.body.style.setProperty('zoom', preset.scale);
   }
 }
 
@@ -213,15 +212,20 @@ export interface SearchGroupResult {
 export interface DashboardLayoutItem {
   plug_id: string;
   widget_id: string;
+  col?: number;
+  row?: number;
 }
 
 export interface ResolvedDashboardWidgetSlot {
   plug_id: string;
   widget_id: string;
+  col?: number;
+  row?: number;
   permitted: boolean;
   error_code?: string;
   error_title?: string;
   title?: string;
+  icon?: string;
   entry?: string;
   entry_url?: string;
   width?: 1 | 2;
@@ -232,12 +236,15 @@ export interface PlacedDashboardWidget {
   id: string;
   plugin_id: string;
   title: string;
+  icon?: string;
   entry: string;
   entry_url: string;
   width?: 1 | 2;
   height?: 1 | 2;
   colSpan: 1 | 2;
   rowSpan: 1 | 2;
+  col: number;
+  row: number;
   permitted?: boolean;
   error_code?: string;
   error_title?: string;
@@ -245,6 +252,52 @@ export interface PlacedDashboardWidget {
 
 export function getWidgetCompositeKey(pluginId: string, widgetId: string): string {
   return `${pluginId}:${widgetId}`;
+}
+
+export function is2DFootprintFree(
+  placedWidgets: PlacedDashboardWidget[],
+  col: number,
+  row: number,
+  width: number,
+  height: number,
+  columnCount: number,
+  ignoreCompositeKey?: string
+): boolean {
+  if (col < 1 || row < 1 || col + width - 1 > columnCount) {
+    return false;
+  }
+  for (const w of placedWidgets) {
+    const key = getWidgetCompositeKey(w.plugin_id, w.id);
+    if (ignoreCompositeKey && key === ignoreCompositeKey) {
+      continue;
+    }
+    const wWidth = w.width === 1 || w.width === 2 ? w.width : w.colSpan;
+    const wHeight = w.height === 1 || w.height === 2 ? w.height : w.rowSpan;
+    const overlapsCol = col < w.col + wWidth && col + width > w.col;
+    const overlapsRow = row < w.row + wHeight && row + height > w.row;
+    if (overlapsCol && overlapsRow) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function findFirstFree2DSlot(
+  placedWidgets: PlacedDashboardWidget[],
+  width: number,
+  height: number,
+  columnCount: number
+): { col: number; row: number } {
+  const effectiveWidth = Math.min(Math.max(1, width), columnCount);
+  const effectiveHeight = Math.max(1, height);
+  for (let r = 1; r <= 200; r++) {
+    for (let c = 1; c <= columnCount - effectiveWidth + 1; c++) {
+      if (is2DFootprintFree(placedWidgets, c, r, effectiveWidth, effectiveHeight, columnCount)) {
+        return { col: c, row: r };
+      }
+    }
+  }
+  return { col: 1, row: 1 };
 }
 
 export interface PluginNavEntry {

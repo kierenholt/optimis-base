@@ -210,9 +210,8 @@ func (h *Host) ListPlugins() []PluginStatusSummary {
 	return out
 }
 
-func (h *Host) authorizeAdminPluginLifecycle(r *http.Request, explicitStaffID string) (CallerContext, error) {
-	trimmedExplicit := strings.TrimSpace(explicitStaffID)
-	caller, err := h.ResolveRequestCaller(r, trimmedExplicit)
+func (h *Host) authorizeAdminPluginLifecycle(r *http.Request) (CallerContext, error) {
+	caller, err := h.ResolveRequestCaller(r, "")
 	if err != nil {
 		return CallerContext{}, err
 	}
@@ -228,7 +227,7 @@ func (h *Host) authorizeAdminPluginLifecycle(r *http.Request, explicitStaffID st
 	}
 	st.mu.RUnlock()
 
-	if trimmedExplicit != "" || hasValidSessionCookie || activeDevStaffID != "" || caller.StaffID != "stf_001" {
+	if hasValidSessionCookie || activeDevStaffID != "" || caller.StaffID != "stf_001" {
 		if !isCallerAdminOrDPO(caller, true) {
 			h.logError(fmt.Sprintf("UNAUTHORIZED_ADMIN_PLUGIN_SCOPE: caller %s (%v) attempted to manage plugin lifecycle", caller.StaffID, caller.ActiveRoles))
 			return CallerContext{}, errors.New("UNAUTHORIZED_ADMIN_PLUGIN_SCOPE: managing plugin lifecycle requires System Admin / DPO authority")
@@ -240,8 +239,7 @@ func (h *Host) authorizeAdminPluginLifecycle(r *http.Request, explicitStaffID st
 
 func (h *Host) RegisterPluginLifecycleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/plugins", func(w http.ResponseWriter, r *http.Request) {
-		explicitStaffID := strings.TrimSpace(r.URL.Query().Get("staff_id"))
-		if _, err := h.authorizeAdminPluginLifecycle(r, explicitStaffID); err != nil {
+		if _, err := h.authorizeAdminPluginLifecycle(r); err != nil {
 			status := http.StatusForbidden
 			if !strings.Contains(err.Error(), "UNAUTHORIZED_ADMIN_PLUGIN_SCOPE") {
 				status = http.StatusUnauthorized
@@ -261,8 +259,7 @@ func (h *Host) RegisterPluginLifecycleRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("POST /api/admin/plugins/install", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Folder  string `json:"folder"`
-			StaffID string `json:"staff_id"`
+			Folder string `json:"folder"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{
@@ -272,11 +269,7 @@ func (h *Host) RegisterPluginLifecycleRoutes(mux *http.ServeMux) {
 			return
 		}
 
-		explicitStaffID := strings.TrimSpace(body.StaffID)
-		if explicitStaffID == "" {
-			explicitStaffID = strings.TrimSpace(r.URL.Query().Get("staff_id"))
-		}
-		if _, err := h.authorizeAdminPluginLifecycle(r, explicitStaffID); err != nil {
+		if _, err := h.authorizeAdminPluginLifecycle(r); err != nil {
 			status := http.StatusForbidden
 			if !strings.Contains(err.Error(), "UNAUTHORIZED_ADMIN_PLUGIN_SCOPE") {
 				status = http.StatusUnauthorized
@@ -323,10 +316,8 @@ func (h *Host) RegisterPluginLifecycleRoutes(mux *http.ServeMux) {
 			return
 		}
 
-		var body struct {
-			StaffID string `json:"staff_id"`
-		}
 		if r.Body != nil {
+			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 				writeJSON(w, http.StatusBadRequest, map[string]any{
 					"ok":         false,
@@ -336,11 +327,7 @@ func (h *Host) RegisterPluginLifecycleRoutes(mux *http.ServeMux) {
 			}
 		}
 
-		explicitStaffID := strings.TrimSpace(body.StaffID)
-		if explicitStaffID == "" {
-			explicitStaffID = strings.TrimSpace(r.URL.Query().Get("staff_id"))
-		}
-		if _, err := h.authorizeAdminPluginLifecycle(r, explicitStaffID); err != nil {
+		if _, err := h.authorizeAdminPluginLifecycle(r); err != nil {
 			status := http.StatusForbidden
 			if !strings.Contains(err.Error(), "UNAUTHORIZED_ADMIN_PLUGIN_SCOPE") {
 				status = http.StatusUnauthorized
@@ -382,10 +369,8 @@ func (h *Host) RegisterPluginLifecycleRoutes(mux *http.ServeMux) {
 			return
 		}
 
-		var body struct {
-			StaffID string `json:"staff_id"`
-		}
 		if r.Body != nil {
+			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 				writeJSON(w, http.StatusBadRequest, map[string]any{
 					"ok":         false,
@@ -395,11 +380,7 @@ func (h *Host) RegisterPluginLifecycleRoutes(mux *http.ServeMux) {
 			}
 		}
 
-		explicitStaffID := strings.TrimSpace(body.StaffID)
-		if explicitStaffID == "" {
-			explicitStaffID = strings.TrimSpace(r.URL.Query().Get("staff_id"))
-		}
-		if _, err := h.authorizeAdminPluginLifecycle(r, explicitStaffID); err != nil {
+		if _, err := h.authorizeAdminPluginLifecycle(r); err != nil {
 			status := http.StatusForbidden
 			if !strings.Contains(err.Error(), "UNAUTHORIZED_ADMIN_PLUGIN_SCOPE") {
 				status = http.StatusUnauthorized

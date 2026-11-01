@@ -181,7 +181,7 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
       }
       for (const pid of [senPlugId, behaviourPlugId, testPlugId]) {
         if (pid) {
-          await request.delete(`/api/admin/plugins/${encodeURIComponent(pid)}?staff_id=${encodeURIComponent(personaSeed.admin_staff_id)}`);
+          await request.delete(`/api/admin/plugins/${encodeURIComponent(pid)}`);
         }
       }
     }
@@ -307,7 +307,7 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
 
     // 2. Verify backend GET /api/system/search?q=... enforces :own_groups and temporal active dates
     const teacherSearchRes = await request.get(
-      `/api/system/search?q=a&staff_id=${encodeURIComponent(m1Seed.teacher_staff_id)}&reference_date=2026-10-27&academic_year_id=ay_2026_2027`
+      '/api/system/search?q=a&reference_date=2026-10-27&academic_year_id=ay_2026_2027'
     );
     expect(teacherSearchRes.ok()).toBe(true);
     const teacherSearchBody = await teacherSearchRes.json();
@@ -323,9 +323,7 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
     expect(teacherGroupIds).not.toContain(m1Seed.other_group_id);
 
     // 3. Open Host UI as Classroom Teacher and trigger Global Command Palette via Ctrl+K
-    await page.goto(
-      `/?__persona=${encodeURIComponent(m1Seed.teacher_staff_id)}&reference_date=2026-10-27&academic_year_id=ay_2026_2027`
-    );
+    await page.goto('/?reference_date=2026-10-27&academic_year_id=ay_2026_2027');
     await expect(page.getByTestId('command-palette-modal')).toHaveCount(0);
     await expect(page.getByTestId('host-search-view')).toHaveCount(0);
 
@@ -344,8 +342,8 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
     await expect(paletteModal).toHaveCount(0);
     const searchView = page.getByTestId('host-search-view');
     await expect(searchView).toBeVisible();
-    await expect(page.getByTestId('landing-page-search-panel')).toHaveCount(0);
-    await expect(page.getByTestId('dashboard-widget-grid-section')).toHaveCount(0);
+    await expect(page.getByTestId('landing-page-search-panel')).toBeHidden();
+    await expect(page.getByTestId('dashboard-widget-grid-section')).toBeHidden();
 
     const searchViewInput = page.getByTestId('host-search-input');
     await expect(searchViewInput).toBeVisible();
@@ -411,9 +409,7 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
     });
     expect(switchTeacherRes.ok()).toBe(true);
 
-    await page.goto(
-      `/?__persona=${encodeURIComponent(m1Seed.teacher_staff_id)}&reference_date=2026-10-27&academic_year_id=ay_2026_2027`
-    );
+    await page.goto('/?reference_date=2026-10-27&academic_year_id=ay_2026_2027');
 
     // 2. Verify the button is renamed to "Full list" and opens the modal when clicked
     const fullListBtn = page.getByTestId('landing-open-command-palette-btn');
@@ -497,9 +493,7 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
     });
     expect(switchTeacherRes.ok()).toBe(true);
 
-    await page.goto(
-      `/?__persona=${encodeURIComponent(m1Seed.teacher_staff_id)}&reference_date=2026-10-27&academic_year_id=ay_2026_2027`
-    );
+    await page.goto('/?reference_date=2026-10-27&academic_year_id=ay_2026_2027');
 
     // 1. Verify record type filter controls exist in the Landing Page Search panel
     const filterAll = page.getByTestId('landing-search-filter-all');

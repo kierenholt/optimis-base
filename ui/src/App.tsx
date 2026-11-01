@@ -35,7 +35,6 @@ export function App() {
     initialSlotId,
     initialReferenceDate,
     initialAcademicYearId,
-    initialPersonaParam,
     themeMode,
     setThemeMode,
     baseFontSize,
@@ -68,10 +67,8 @@ export function App() {
     setIsDashboardEditMode,
     placedWidgets,
     availableWidgets,
-    dashboardLayoutSource,
+    dashboardColumnCount,
     dashboardSaveStatus,
-    selectedAdminRoleTarget,
-    setSelectedAdminRoleTarget,
     activePupilId,
     setActivePupilId,
     activeGroupId,
@@ -98,11 +95,14 @@ export function App() {
     handleRemoveWidget,
     handleMoveWidgetUp,
     handleMoveWidgetDown,
-    handleSaveRoleDefaultLayout,
-    handleAppendWidgetToRoleDefault,
+    handleMoveWidgetLeft,
+    handleMoveWidgetRight,
+    handleAddDashboardColumn,
+    handleRemoveDashboardColumn,
   } = useHostWorkspaceState();
 
   const {
+    pluginIframeHeights,
     handleRegisterPluginIframeRef,
     handleRegisterWidgetIframeRef,
     buildInitPayload,
@@ -174,7 +174,6 @@ export function App() {
     setActiveStaffId,
     activeCaller,
     setActiveCaller,
-    initialPersonaParam,
     setPinnedRecents,
     applyInstalledPluginsState,
     refreshWorkspaceForStaff,
@@ -331,7 +330,7 @@ export function App() {
       style={{
         display: 'grid',
         gridTemplateColumns: '88px 1fr',
-        minHeight: 'calc(100vh / var(--mis-font-scale, 1))',
+        minHeight: '100vh',
         fontFamily: 'var(--mis-font-sans, system-ui, sans-serif)',
         fontSize: 'var(--mis-font-size-base, 16px)',
         backgroundColor: 'var(--mis-bg-canvas)',
@@ -388,80 +387,83 @@ export function App() {
         >
           <DashboardSummaryStrip routeError={routeError} />
 
-          {hostViewMode === 'home' && (
-            <>
-              <LandingPageTopHalfSearch
-                installedPlugins={installedPlugins}
-                placedWidgets={placedWidgets}
-                entityLinkHandlers={entityLinkHandlers}
-                activePupilId={activePupilId}
-                activeGroupId={activeGroupId}
-                activeStaffId={activeCaller?.staff_id || activeStaffId}
-                referenceDate={initialReferenceDate}
-                academicYearId={configuredAcademicYear}
-                pinnedRecents={pinnedRecents}
-                onPlaceWidget={handlePlaceWidget}
-                onSelectViewResult={handleSelectSearchViewResult}
-                onSelectPupilResult={handleSelectSearchPupilResult}
-                onSelectGroupResult={handleSelectSearchGroupResult}
-                onTogglePinView={handleTogglePinSearchView}
-                onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+          <div
+            style={{
+              display: hostViewMode === 'home' ? 'flex' : 'none',
+              flexDirection: 'column',
+              gap: '20px',
+            }}
+          >
+            <LandingPageTopHalfSearch
+              installedPlugins={installedPlugins}
+              placedWidgets={placedWidgets}
+              entityLinkHandlers={entityLinkHandlers}
+              activePupilId={activePupilId}
+              activeGroupId={activeGroupId}
+              activeStaffId={activeCaller?.staff_id || activeStaffId}
+              referenceDate={initialReferenceDate}
+              academicYearId={configuredAcademicYear}
+              pinnedRecents={pinnedRecents}
+              onPlaceWidget={handlePlaceWidget}
+              onSelectViewResult={handleSelectSearchViewResult}
+              onSelectPupilResult={handleSelectSearchPupilResult}
+              onSelectGroupResult={handleSelectSearchGroupResult}
+              onTogglePinView={handleTogglePinSearchView}
+              onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+            />
+
+            <DashboardWidgetGridPanel
+              isEditMode={isDashboardEditMode}
+              columnCount={dashboardColumnCount}
+              availableWidgets={availableWidgets}
+              placedWidgets={placedWidgets}
+              onToggleEditMode={() => setIsDashboardEditMode((prev) => !prev)}
+              onPlaceWidget={handlePlaceWidget}
+              onRemoveWidget={handleRemoveWidget}
+              onMoveWidgetUp={handleMoveWidgetUp}
+              onMoveWidgetDown={handleMoveWidgetDown}
+              onMoveWidgetLeft={handleMoveWidgetLeft}
+              onMoveWidgetRight={handleMoveWidgetRight}
+              onAddColumn={handleAddDashboardColumn}
+              onRemoveColumn={handleRemoveDashboardColumn}
+              dashboardSaveStatus={dashboardSaveStatus}
+              onRegisterWidgetIframeRef={handleRegisterWidgetIframeRef}
+            />
+
+            {hasSafeguardingRead && (
+              <SafeguardingVaultPanel
+                safeguardingEnvelopes={safeguardingEnvelopes}
+                cloudKeyToken={cloudKeyToken}
+                onCloudKeyTokenChange={setCloudKeyToken}
+                onRenewCloudKey={handleRenewCloudKey}
+                onDecryptNote={handleDecryptSafeguardingNote}
+                decryptedNotes={decryptedNotes}
+                dslVaultError={dslVaultError}
               />
+            )}
 
-              <DashboardWidgetGridPanel
-                isEditMode={isDashboardEditMode}
-                availableWidgets={availableWidgets}
-                placedWidgets={placedWidgets}
-                onToggleEditMode={() => setIsDashboardEditMode((prev) => !prev)}
-                onPlaceWidget={handlePlaceWidget}
-                onRemoveWidget={handleRemoveWidget}
-                onMoveWidgetUp={handleMoveWidgetUp}
-                onMoveWidgetDown={handleMoveWidgetDown}
-                isAdmin={hasAdminOrDpoAccess}
-                dashboardLayoutSource={dashboardLayoutSource}
-                dashboardSaveStatus={dashboardSaveStatus}
-                selectedAdminRoleTarget={selectedAdminRoleTarget}
-                onSelectAdminRoleTarget={setSelectedAdminRoleTarget}
-                onSaveRoleDefaultLayout={handleSaveRoleDefaultLayout}
-                onAppendWidgetToRoleDefault={handleAppendWidgetToRoleDefault}
-                onRegisterWidgetIframeRef={handleRegisterWidgetIframeRef}
+            {hasAdminOrDpoAccess && (
+              <GdprSarPanel
+                sarSections={sarSections}
+                sarExportStatus={sarExportStatus}
+                sarFinalizedJson={sarFinalizedJson}
+                sarPurgeStatus={sarPurgeStatus}
+                onLoadSarExport={handleLoadSarExport}
+                onFinalizeSarExport={handleFinalizeSarExport}
+                onPurgePupilData={handlePurgePupilData}
+                onUpdateRedactableField={handleUpdateRedactableField}
               />
+            )}
 
-              {hasSafeguardingRead && (
-                <SafeguardingVaultPanel
-                  safeguardingEnvelopes={safeguardingEnvelopes}
-                  cloudKeyToken={cloudKeyToken}
-                  onCloudKeyTokenChange={setCloudKeyToken}
-                  onRenewCloudKey={handleRenewCloudKey}
-                  onDecryptNote={handleDecryptSafeguardingNote}
-                  decryptedNotes={decryptedNotes}
-                  dslVaultError={dslVaultError}
-                />
-              )}
-
-              {hasAdminOrDpoAccess && (
-                <GdprSarPanel
-                  sarSections={sarSections}
-                  sarExportStatus={sarExportStatus}
-                  sarFinalizedJson={sarFinalizedJson}
-                  sarPurgeStatus={sarPurgeStatus}
-                  onLoadSarExport={handleLoadSarExport}
-                  onFinalizeSarExport={handleFinalizeSarExport}
-                  onPurgePupilData={handlePurgePupilData}
-                  onUpdateRedactableField={handleUpdateRedactableField}
-                />
-              )}
-
-              {hasAdminOrDpoAccess && (
-                <AdminDiagnosticsPanel
-                  diagnosticBundleStatus={diagnosticBundleStatus}
-                  diagnosticBundleJson={diagnosticBundleJson}
-                  diagnosticBundleLog={diagnosticBundleLog}
-                  onDownloadDiagnosticBundle={handleDownloadDiagnosticBundle}
-                />
-              )}
-            </>
-          )}
+            {hasAdminOrDpoAccess && (
+              <AdminDiagnosticsPanel
+                diagnosticBundleStatus={diagnosticBundleStatus}
+                diagnosticBundleJson={diagnosticBundleJson}
+                diagnosticBundleLog={diagnosticBundleLog}
+                onDownloadDiagnosticBundle={handleDownloadDiagnosticBundle}
+              />
+            )}
+          </div>
 
           {hostViewMode === 'search' && (
             <HostFullPageSearchView
@@ -643,6 +645,7 @@ export function App() {
             installedPlugins={installedPlugins}
             activePluginId={activePluginId}
             isVisible={hostViewMode === 'plugin'}
+            pluginIframeHeights={pluginIframeHeights}
             onRegisterPluginIframeRef={handleRegisterPluginIframeRef}
             onIframeLoad={(pluginId, win) => {
               win?.postMessage(buildInitPayload(pluginId), '*');

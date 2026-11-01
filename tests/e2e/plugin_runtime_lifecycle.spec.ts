@@ -113,6 +113,9 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     }
 
     // 1. Verify RBAC: Non-Admin teacher is rejected with 403 (UNAUTHORIZED_ADMIN_PLUGIN_SCOPE) on install
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.teacher_staff_id },
+    });
     const unauthInstallRes = await request.post('/api/admin/plugins/install', {
       data: {
         folder: 'test_plugin',
@@ -125,6 +128,9 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     expect(unauthInstallBody.error_code).toContain('UNAUTHORIZED_ADMIN_PLUGIN_SCOPE');
 
     // 2. Verify fail-fast validation on invalid/traversal folder
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.admin_staff_id },
+    });
     const badFolderRes = await request.post('/api/admin/plugins/install', {
       data: {
         folder: '../invalid_folder',
@@ -150,9 +156,7 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     expect(installBody.state).toBe('UNINSTALLED_DORMANT');
 
     // 4. Verify GET /api/admin/plugins lists testPlugId in UNINSTALLED_DORMANT state
-    const listDormantRes = await request.get(
-      `/api/admin/plugins?staff_id=${encodeURIComponent(seeded.admin_staff_id)}`
-    );
+    const listDormantRes = await request.get('/api/admin/plugins');
     expect(listDormantRes.status()).toBe(200);
     const listDormantBody = await listDormantRes.json();
     expect(listDormantBody.ok).toBe(true);
@@ -177,7 +181,6 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
       data: {
         args: {
           pupil_id: seeded.pupil_id,
-          staff_id: seeded.admin_staff_id,
         },
       },
     });
@@ -187,6 +190,9 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     expect(dormantRpcBody.error_code).toContain('PLUGIN_DORMANT_QUARANTINE');
 
     // 6. Verify RBAC on activate: Non-Admin teacher is rejected with 403
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.teacher_staff_id },
+    });
     const unauthActivateRes = await request.post(`/api/admin/plugins/${encodeURIComponent(testPlugId)}/activate`, {
       data: {
         staff_id: seeded.teacher_staff_id,
@@ -197,6 +203,9 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     expect(unauthActivateBody.error_code).toContain('UNAUTHORIZED_ADMIN_PLUGIN_SCOPE');
 
     // 7. Admin activates testPlugId -> transitions to ACTIVE and starts Event Bus workers
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.admin_staff_id },
+    });
     const activateRes = await request.post(`/api/admin/plugins/${encodeURIComponent(testPlugId)}/activate`, {
       data: {
         staff_id: seeded.admin_staff_id,
@@ -209,9 +218,7 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     expect(activateBody.state).toBe('ACTIVE');
 
     // 8. Load Host UI Shell and verify plugin-iframe-${testPlugId} mounts and executes get_pupil_record RPC cleanly
-    await page.goto(
-      `/?pupil_id=${encodeURIComponent(seeded.pupil_id)}&staff_id=${encodeURIComponent(seeded.admin_staff_id)}`
-    );
+    await page.goto(`/p/${testPlugId}/student/${encodeURIComponent(seeded.pupil_id)}`);
     await expect(page.getByTestId('host-shell')).toBeVisible();
 
     const iframeEl = page.getByTestId(`plugin-iframe-${testPlugId}`);
@@ -232,16 +239,22 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
       .toBe(true);
 
     // 9. Verify RBAC on remove: Non-Admin teacher is rejected with 403
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.teacher_staff_id },
+    });
     const unauthRemoveRes = await request.delete(
-      `/api/admin/plugins/${encodeURIComponent(testPlugId)}?staff_id=${encodeURIComponent(seeded.teacher_staff_id)}`
+      `/api/admin/plugins/${encodeURIComponent(testPlugId)}`
     );
     expect(unauthRemoveRes.status()).toBe(403);
     const unauthRemoveBody = await unauthRemoveRes.json();
     expect(unauthRemoveBody.error_code).toContain('UNAUTHORIZED_ADMIN_PLUGIN_SCOPE');
 
     // 10. Admin removes testPlugId -> stops workers, detaches plugin_test.db, removes from loaded plugins
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.admin_staff_id },
+    });
     const removeRes = await request.delete(
-      `/api/admin/plugins/${encodeURIComponent(testPlugId)}?staff_id=${encodeURIComponent(seeded.admin_staff_id)}`
+      `/api/admin/plugins/${encodeURIComponent(testPlugId)}`
     );
     expect(removeRes.status()).toBe(200);
     const removeBody = await removeRes.json();
@@ -250,9 +263,7 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
     expect(removeBody.removed).toBe(true);
 
     // 11. Verify GET /api/admin/plugins no longer includes testPlugId and RPC calls fail with plugin not loaded
-    const listAfterRemoveRes = await request.get(
-      `/api/admin/plugins?staff_id=${encodeURIComponent(seeded.admin_staff_id)}`
-    );
+    const listAfterRemoveRes = await request.get('/api/admin/plugins');
     expect(listAfterRemoveRes.status()).toBe(200);
     const listAfterRemoveBody = await listAfterRemoveRes.json();
     const afterEntry = (listAfterRemoveBody.plugins || []).find(
@@ -264,7 +275,6 @@ test.describe('Runtime Plugin Lifecycle API: Install, Activate & Remove (Section
       data: {
         args: {
           pupil_id: seeded.pupil_id,
-          staff_id: seeded.admin_staff_id,
         },
       },
     });

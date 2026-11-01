@@ -11,6 +11,9 @@ import {
   BaseFontSize,
   DashboardLayoutItem,
   DEFAULT_THEME_TOKENS,
+  findFirstFree2DSlot,
+  getWidgetCompositeKey,
+  is2DFootprintFree,
   MAX_KEEP_ALIVE_POOL_SIZE,
   normalizeBaseFontSize,
   PinnedRecentEntry,
@@ -36,9 +39,7 @@ export function useHostWorkspaceState() {
   const initialSlotId = params.get('slot_id') || '';
   const initialReferenceDate = params.get('reference_date') || '';
   const initialAcademicYearId = params.get('academic_year_id') || '';
-  const initialPersonaParam = params.get('__persona') || '';
-  const initialStaffId =
-    initialPersonaParam || initialBrowserRoute.staffIdFromPath || params.get('staff_id') || '';
+  const initialStaffId = initialBrowserRoute.staffIdFromPath || '';
 
   // Host Theme & School Branding state (Sections 9.4 & 9.5)
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -94,9 +95,10 @@ export function useHostWorkspaceState() {
     return check.ok ? '' : check.errorCode;
   });
 
-  // Editable NxM Mini-Iframe Widget Grid & 1D core.db Persistence state (Section 9B)
+  // Editable 2D Mini-Iframe Widget Grid & core.db Persistence state (Section 9B)
   const [isDashboardEditMode, setIsDashboardEditMode] = useState<boolean>(false);
   const [placedWidgets, setPlacedWidgets] = useState<PlacedDashboardWidget[]>([]);
+  const [dashboardColumnCount, setDashboardColumnCount] = useState<number>(4);
   const [dashboardLayoutSource, setDashboardLayoutSource] = useState<string>('SYSTEM_FALLBACK');
   const [dashboardSaveStatus, setDashboardSaveStatus] = useState<string>('');
   const [roleDefaultLayouts, setRoleDefaultLayouts] = useState<Record<string, DashboardLayoutItem[]>>({});
@@ -131,26 +133,43 @@ export function useHostWorkspaceState() {
   const mapResolvedSlotsToPlacedWidgets = useCallback(
     (
       slots: ResolvedDashboardWidgetSlot[],
-      _existingWidgets?: PlacedDashboardWidget[]
+      _existingWidgets?: PlacedDashboardWidget[],
+      colCountOverride?: number
     ): PlacedDashboardWidget[] => {
-      return slots.map((slot) => {
+      const effectiveCols =
+        typeof colCountOverride === 'number' && colCountOverride >= 2 && colCountOverride <= 8
+          ? colCountOverride
+          : 4;
+      const acc: PlacedDashboardWidget[] = [];
+      for (const slot of slots) {
         const presetWidth = normalizePresetDim(slot.width, 2);
         const presetHeight = normalizePresetDim(slot.height, 1);
-        return {
+        let col = typeof slot.col === 'number' && slot.col >= 1 ? slot.col : 0;
+        let row = typeof slot.row === 'number' && slot.row >= 1 ? slot.row : 0;
+        if (!is2DFootprintFree(acc, col, row, presetWidth, presetHeight, effectiveCols)) {
+          const free = findFirstFree2DSlot(acc, presetWidth, presetHeight, effectiveCols);
+          col = free.col;
+          row = free.row;
+        }
+        acc.push({
           id: slot.widget_id,
           plugin_id: slot.plug_id,
           title: slot.title || slot.widget_id,
+          icon: slot.icon,
           entry: slot.entry || '',
           entry_url: slot.entry_url || '',
           width: presetWidth,
           height: presetHeight,
           colSpan: presetWidth,
           rowSpan: presetHeight,
+          col,
+          row,
           permitted: slot.permitted !== false,
           error_code: slot.error_code,
           error_title: slot.error_title,
-        };
-      });
+        });
+      }
+      return acc;
     },
     []
   );
@@ -322,18 +341,22 @@ export function useHostWorkspaceState() {
   const lastFetchedStaffIdRef = useRef<string | null>(null);
 
   const refreshDashboardLayoutForStaff = useCallback(
-    async (targetStaffId: string) => {
+    async (_targetStaffId?: string) => {
       try {
-        const query = targetStaffId ? `?staff_id=${encodeURIComponent(targetStaffId)}` : '';
-        const layoutRes = await fetch(`/api/dashboard/layout${query}`);
+        const layoutRes = await fetch('/api/dashboard/layout');
         if (!layoutRes.ok) {
           return;
         }
         const layoutBody = await layoutRes.json().catch(() => null);
         if (layoutBody && layoutBody.ok && Array.isArray(layoutBody.resolved_widgets)) {
           hasLoadedServerLayoutRef.current = true;
+          const resolvedCols =
+            typeof layoutBody.column_count === 'number' && layoutBody.column_count >= 2 && layoutBody.column_count <= 8
+              ? layoutBody.column_count
+              : 4;
+          setDashboardColumnCount(resolvedCols);
           const slots = layoutBody.resolved_widgets as ResolvedDashboardWidgetSlot[];
-          setPlacedWidgets((prev) => mapResolvedSlotsToPlacedWidgets(slots, prev));
+          setPlacedWidgets((prev) => mapResolvedSlotsToPlacedWidgets(slots, prev, resolvedCols));
           if (typeof layoutBody.layout_source === 'string') {
             setDashboardLayoutSource(layoutBody.layout_source);
           }
@@ -355,18 +378,22 @@ export function useHostWorkspaceState() {
       const targetStaffId = staffIdOverride !== undefined ? staffIdOverride : activeStaffId;
       lastFetchedStaffIdRef.current = targetStaffId;
       try {
-        const query = targetStaffId ? `?staff_id=${encodeURIComponent(targetStaffId)}` : '';
         const [res, layoutRes] = await Promise.all([
-          fetch(`/api/system/ui-config${query}`),
-          fetch(`/api/dashboard/layout${query}`).catch(() => null),
+          fetch('/api/system/ui-config'),
+          fetch('/api/dashboard/layout').catch(() => null),
         ]);
 
         if (layoutRes && layoutRes.ok) {
           const layoutBody = await layoutRes.json().catch(() => null);
           if (layoutBody && layoutBody.ok && Array.isArray(layoutBody.resolved_widgets)) {
             hasLoadedServerLayoutRef.current = true;
+            const resolvedCols =
+              typeof layoutBody.column_count === 'number' && layoutBody.column_count >= 2 && layoutBody.column_count <= 8
+                ? layoutBody.column_count
+                : 4;
+            setDashboardColumnCount(resolvedCols);
             const slots = layoutBody.resolved_widgets as ResolvedDashboardWidgetSlot[];
-            setPlacedWidgets((prev) => mapResolvedSlotsToPlacedWidgets(slots, prev));
+            setPlacedWidgets((prev) => mapResolvedSlotsToPlacedWidgets(slots, prev, resolvedCols));
             if (typeof layoutBody.layout_source === 'string') {
               setDashboardLayoutSource(layoutBody.layout_source);
             }
@@ -409,6 +436,14 @@ export function useHostWorkspaceState() {
           setEntityLinkHandlers((prev) => ({ ...prev, ...serverEntityHandlers }));
         }
         if (body.user_settings && typeof body.user_settings === 'object') {
+          if (
+            typeof body.user_settings.staff_id === 'string' &&
+            body.user_settings.staff_id &&
+            !initialBrowserRoute.staffIdFromPath
+          ) {
+            lastFetchedStaffIdRef.current = body.user_settings.staff_id;
+            setActiveStaffId((prev) => prev || body.user_settings.staff_id);
+          }
           if (typeof body.user_settings.base_font_size === 'string') {
             setBaseFontSize(normalizeBaseFontSize(body.user_settings.base_font_size));
           }
@@ -431,7 +466,13 @@ export function useHostWorkspaceState() {
         return undefined;
       }
     },
-    [activeStaffId, initialAcademicYearId, applyInstalledPluginsState, mapResolvedSlotsToPlacedWidgets]
+    [
+      activeStaffId,
+      initialAcademicYearId,
+      initialBrowserRoute.staffIdFromPath,
+      applyInstalledPluginsState,
+      mapResolvedSlotsToPlacedWidgets,
+    ]
   );
 
   useEffect(() => {
@@ -595,11 +636,19 @@ export function useHostWorkspaceState() {
   );
 
   const persistStaffDashboardLayout = useCallback(
-    async (nextWidgets: PlacedDashboardWidget[]) => {
+    async (nextWidgets: PlacedDashboardWidget[], nextColumnCount?: number) => {
+      const resolvedColCount =
+        typeof nextColumnCount === 'number' && nextColumnCount >= 2 && nextColumnCount <= 8
+          ? nextColumnCount
+          : dashboardColumnCount;
       const layoutPayload: DashboardLayoutItem[] = nextWidgets.map((w) => ({
         plug_id: w.plugin_id,
         widget_id: w.id,
+        col: w.col,
+        row: w.row,
       }));
+      setDashboardColumnCount(resolvedColCount);
+      setPlacedWidgets(nextWidgets);
       try {
         const res = await fetch('/api/dashboard/layout', {
           method: 'PUT',
@@ -607,86 +656,158 @@ export function useHostWorkspaceState() {
           body: JSON.stringify({
             staff_id: activeStaffId || undefined,
             layout: layoutPayload,
+            column_count: resolvedColCount,
           }),
         });
         const body = await res.json().catch(() => null);
         if (res.ok && body && body.ok) {
           hasLoadedServerLayoutRef.current = true;
+          const serverCols =
+            typeof body.column_count === 'number' && body.column_count >= 2 && body.column_count <= 8
+              ? body.column_count
+              : resolvedColCount;
+          setDashboardColumnCount(serverCols);
           if (Array.isArray(body.resolved_widgets)) {
             setPlacedWidgets(
               mapResolvedSlotsToPlacedWidgets(
                 body.resolved_widgets as ResolvedDashboardWidgetSlot[],
-                nextWidgets
+                nextWidgets,
+                serverCols
               )
             );
-          } else {
-            setPlacedWidgets(nextWidgets);
           }
           setDashboardLayoutSource('STAFF');
           setDashboardSaveStatus('STAFF_LAYOUT_SAVED');
           return;
         }
       } catch {
-        // Fall through to local state update if network request fails
+        // Keep optimistic local state if network request fails
       }
-      setPlacedWidgets(nextWidgets);
     },
-    [activeStaffId, mapResolvedSlotsToPlacedWidgets]
+    [activeStaffId, dashboardColumnCount, mapResolvedSlotsToPlacedWidgets]
   );
 
-  const handlePlaceWidget = (widget: PluginWidgetDescriptor) => {
+  const handlePlaceWidget = (
+    widget: PluginWidgetDescriptor,
+    targetCol?: number,
+    targetRow?: number
+  ) => {
     if (placedWidgets.some((w) => w.plugin_id === widget.plugin_id && w.id === widget.id)) {
       return;
     }
     const presetWidth = normalizePresetDim(widget.width, 2);
     const presetHeight = normalizePresetDim(widget.height, 1);
-    const nextWidgets: PlacedDashboardWidget[] = [
-      ...placedWidgets,
-      {
-        ...widget,
-        width: presetWidth,
-        height: presetHeight,
-        colSpan: presetWidth,
-        rowSpan: presetHeight,
-        permitted: true,
-      },
-    ];
-    void persistStaffDashboardLayout(nextWidgets);
+    let col = typeof targetCol === 'number' ? targetCol : 0;
+    let row = typeof targetRow === 'number' ? targetRow : 0;
+    if (
+      !is2DFootprintFree(
+        placedWidgets,
+        col,
+        row,
+        presetWidth,
+        presetHeight,
+        dashboardColumnCount
+      )
+    ) {
+      const freeSlot = findFirstFree2DSlot(
+        placedWidgets,
+        presetWidth,
+        presetHeight,
+        dashboardColumnCount
+      );
+      col = freeSlot.col;
+      row = freeSlot.row;
+    }
+    const newItem: PlacedDashboardWidget = {
+      ...widget,
+      width: presetWidth,
+      height: presetHeight,
+      colSpan: presetWidth,
+      rowSpan: presetHeight,
+      col,
+      row,
+      permitted: true,
+    };
+    const nextWidgets: PlacedDashboardWidget[] = [...placedWidgets, newItem];
+    void persistStaffDashboardLayout(nextWidgets, dashboardColumnCount);
   };
 
   const handleRemoveWidget = (pluginId: string, widgetId: string) => {
     const nextWidgets = placedWidgets.filter(
       (w) => !(w.plugin_id === pluginId && w.id === widgetId)
     );
-    void persistStaffDashboardLayout(nextWidgets);
+    void persistStaffDashboardLayout(nextWidgets, dashboardColumnCount);
+  };
+
+  const moveWidgetByDelta = (pluginId: string, widgetId: string, dCol: number, dRow: number) => {
+    const idx = placedWidgets.findIndex(
+      (w) => w.plugin_id === pluginId && w.id === widgetId
+    );
+    if (idx < 0) {
+      return;
+    }
+    const current = placedWidgets[idx];
+    const wWidth = current.width === 1 || current.width === 2 ? current.width : current.colSpan;
+    const wHeight = current.height === 1 || current.height === 2 ? current.height : current.rowSpan;
+    const nextCol = current.col + dCol;
+    const nextRow = current.row + dRow;
+    const compositeKey = getWidgetCompositeKey(pluginId, widgetId);
+    if (
+      !is2DFootprintFree(
+        placedWidgets,
+        nextCol,
+        nextRow,
+        wWidth,
+        wHeight,
+        dashboardColumnCount,
+        compositeKey
+      )
+    ) {
+      return;
+    }
+    const nextWidgets = placedWidgets.map((w, i) =>
+      i === idx ? { ...w, col: nextCol, row: nextRow } : w
+    );
+    void persistStaffDashboardLayout(nextWidgets, dashboardColumnCount);
   };
 
   const handleMoveWidgetUp = (pluginId: string, widgetId: string) => {
-    const idx = placedWidgets.findIndex(
-      (w) => w.plugin_id === pluginId && w.id === widgetId
-    );
-    if (idx <= 0) {
-      return;
-    }
-    const nextWidgets = [...placedWidgets];
-    const tmp = nextWidgets[idx - 1];
-    nextWidgets[idx - 1] = nextWidgets[idx];
-    nextWidgets[idx] = tmp;
-    void persistStaffDashboardLayout(nextWidgets);
+    moveWidgetByDelta(pluginId, widgetId, 0, -1);
   };
 
   const handleMoveWidgetDown = (pluginId: string, widgetId: string) => {
-    const idx = placedWidgets.findIndex(
-      (w) => w.plugin_id === pluginId && w.id === widgetId
-    );
-    if (idx < 0 || idx >= placedWidgets.length - 1) {
+    moveWidgetByDelta(pluginId, widgetId, 0, 1);
+  };
+
+  const handleMoveWidgetLeft = (pluginId: string, widgetId: string) => {
+    moveWidgetByDelta(pluginId, widgetId, -1, 0);
+  };
+
+  const handleMoveWidgetRight = (pluginId: string, widgetId: string) => {
+    moveWidgetByDelta(pluginId, widgetId, 1, 0);
+  };
+
+  const handleAddDashboardColumn = () => {
+    if (dashboardColumnCount >= 8) {
       return;
     }
-    const nextWidgets = [...placedWidgets];
-    const tmp = nextWidgets[idx + 1];
-    nextWidgets[idx + 1] = nextWidgets[idx];
-    nextWidgets[idx] = tmp;
-    void persistStaffDashboardLayout(nextWidgets);
+    const nextColCount = dashboardColumnCount + 1;
+    void persistStaffDashboardLayout(placedWidgets, nextColCount);
+  };
+
+  const handleRemoveDashboardColumn = () => {
+    if (dashboardColumnCount <= 2) {
+      return;
+    }
+    const occupiesRightmost = placedWidgets.some((w) => {
+      const wWidth = w.width === 1 || w.width === 2 ? w.width : w.colSpan;
+      return w.col + wWidth - 1 >= dashboardColumnCount;
+    });
+    if (occupiesRightmost) {
+      return;
+    }
+    const nextColCount = dashboardColumnCount - 1;
+    void persistStaffDashboardLayout(placedWidgets, nextColCount);
   };
 
   const handleSaveRoleDefaultLayout = async (roleId: string) => {
@@ -697,6 +818,8 @@ export function useHostWorkspaceState() {
     const layoutPayload: DashboardLayoutItem[] = placedWidgets.map((w) => ({
       plug_id: w.plugin_id,
       widget_id: w.id,
+      col: w.col,
+      row: w.row,
     }));
     const res = await fetch('/api/admin/dashboard/role-default', {
       method: 'PUT',
@@ -717,7 +840,7 @@ export function useHostWorkspaceState() {
       setRoleDefaultLayouts(body.role_defaults as Record<string, DashboardLayoutItem[]>);
     }
     setDashboardSaveStatus(`ROLE_DEFAULT_SAVED:${normalizedRole}`);
-    await refreshDashboardLayoutForStaff(activeStaffId);
+    await refreshDashboardLayoutForStaff();
   };
 
   const handleAppendWidgetToRoleDefault = async (roleId: string, widget: PluginWidgetDescriptor) => {
@@ -744,7 +867,7 @@ export function useHostWorkspaceState() {
       setRoleDefaultLayouts(body.role_defaults as Record<string, DashboardLayoutItem[]>);
     }
     setDashboardSaveStatus(`ROLE_WIDGET_APPENDED:${normalizedRole}:${widget.id}`);
-    await refreshDashboardLayoutForStaff(activeStaffId);
+    await refreshDashboardLayoutForStaff();
   };
 
   return {
@@ -755,7 +878,6 @@ export function useHostWorkspaceState() {
     initialSlotId,
     initialReferenceDate,
     initialAcademicYearId,
-    initialPersonaParam,
     themeMode,
     setThemeMode,
     baseFontSize,
@@ -789,6 +911,7 @@ export function useHostWorkspaceState() {
     setIsDashboardEditMode,
     placedWidgets,
     availableWidgets,
+    dashboardColumnCount,
     dashboardLayoutSource,
     dashboardSaveStatus,
     roleDefaultLayouts,
@@ -820,6 +943,10 @@ export function useHostWorkspaceState() {
     handleRemoveWidget,
     handleMoveWidgetUp,
     handleMoveWidgetDown,
+    handleMoveWidgetLeft,
+    handleMoveWidgetRight,
+    handleAddDashboardColumn,
+    handleRemoveDashboardColumn,
     handleSaveRoleDefaultLayout,
     handleAppendWidgetToRoleDefault,
   };

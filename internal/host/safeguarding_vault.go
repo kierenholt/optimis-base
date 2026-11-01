@@ -41,7 +41,7 @@ func (h *Host) RegisterSafeguardingRoutes(mux *http.ServeMux) {
 			return
 		}
 
-		caller, err := h.ResolveRequestCaller(r, body.StaffID)
+		caller, err := h.ResolveRequestCaller(r, "")
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,
@@ -99,7 +99,7 @@ func (h *Host) RegisterSafeguardingRoutes(mux *http.ServeMux) {
 
 	// 2. DSL Vault Envelope Metadata Listing (Requires dal.safeguarding.read; returns ZERO decrypted payload)
 	mux.HandleFunc("GET /api/safeguarding/notes", func(w http.ResponseWriter, r *http.Request) {
-		caller, err := h.ResolveRequestCaller(r, r.URL.Query().Get("staff_id"))
+		caller, err := h.ResolveRequestCaller(r, "")
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,
@@ -148,7 +148,7 @@ func (h *Host) RegisterSafeguardingRoutes(mux *http.ServeMux) {
 			_ = json.NewDecoder(r.Body).Decode(&body)
 		}
 
-		caller, err := h.ResolveRequestCaller(r, body.StaffID)
+		caller, err := h.ResolveRequestCaller(r, "")
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,
@@ -228,7 +228,7 @@ func (h *Host) RegisterSafeguardingRoutes(mux *http.ServeMux) {
 			return
 		}
 
-		caller, err := h.ResolveRequestCaller(r, body.StaffID)
+		caller, err := h.ResolveRequestCaller(r, "")
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,

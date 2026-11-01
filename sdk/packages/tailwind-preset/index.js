@@ -1,5 +1,5 @@
 /**
- * @ukmis/tailwind-preset — Official Tailwind CSS Preset for Optimis Plugins (Sections 9.5 & 10C)
+ * @optimis/tailwind-preset — Official Tailwind CSS Preset for Optimis Plugins (Sections 9.5 & 10C)
  *
  * Maps school branding, surface, text, border, and semantic status tokens injected by the Host
  * via --mis-* CSS custom properties on mis:init.

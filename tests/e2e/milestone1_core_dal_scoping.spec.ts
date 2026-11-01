@@ -90,6 +90,9 @@ test.describe('Milestone 1: Coarse-Grained Core DAL Domain Methods & Dynamic :ow
       throw new Error('Seeded Milestone 1 response missing mandatory fixture identifiers');
     }
     seeded = body;
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.teacher_staff_id },
+    });
   });
 
   test.afterEach(async ({ request }, testInfo) => {
@@ -136,7 +139,6 @@ test.describe('Milestone 1: Coarse-Grained Core DAL Domain Methods & Dynamic :ow
       other_group_id: f.other_group_id,
       reference_date: f.reference_date,
       academic_year_id: f.academic_year_id,
-      staff_id: f.teacher_staff_id,
     });
     return `/?${params.toString()}`;
   }

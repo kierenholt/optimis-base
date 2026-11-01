@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActiveCallerIdentity,
   BaseFontSize,
@@ -105,6 +105,7 @@ export function useHostIframeBridge(params: UseHostIframeBridgeParams) {
 
   const pluginIframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map());
   const widgetIframeRefs = useRef<Map<string, { pluginId: string; el: HTMLIFrameElement }>>(new Map());
+  const [pluginIframeHeights, setPluginIframeHeights] = useState<Record<string, number>>({});
 
   const handleRegisterPluginIframeRef = useCallback((pluginId: string, el: HTMLIFrameElement | null) => {
     if (el) {
@@ -311,6 +312,24 @@ export function useHostIframeBridge(params: UseHostIframeBridgeParams) {
       return;
     }
 
+    if (msg.type === 'mis:resize') {
+      const rawHeight = Number(msg.height);
+      if (!Number.isFinite(rawHeight) || rawHeight <= 0 || !event.source) {
+        return;
+      }
+      for (const [pid, el] of pluginIframeRefs.current.entries()) {
+        if (el.contentWindow === event.source) {
+          const nextHeight = Math.max(640, Math.ceil(rawHeight));
+          el.style.height = `${nextHeight}px`;
+          setPluginIframeHeights((prev) =>
+            prev[pid] === nextHeight ? prev : { ...prev, [pid]: nextHeight }
+          );
+          return;
+        }
+      }
+      return;
+    }
+
     const routeDeps = {
       installedPlugins,
       activePluginId,
@@ -353,14 +372,9 @@ export function useHostIframeBridge(params: UseHostIframeBridgeParams) {
       }
 
       const { pluginId, win } = resolveSourceIframe(event.source);
-      const rpcHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-      const propagatedStaffId = activeStaffId || activeCaller?.staff_id || '';
-      if (propagatedStaffId) {
-        rpcHeaders['X-MIS-Staff-ID'] = propagatedStaffId;
-      }
       const res = await fetch(`/api/p/${encodeURIComponent(pluginId)}/rpc/${encodeURIComponent(method)}`, {
         method: 'POST',
-        headers: rpcHeaders,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ args: args ?? {} }),
       });
 
@@ -406,6 +420,7 @@ export function useHostIframeBridge(params: UseHostIframeBridgeParams) {
   }, []);
 
   return {
+    pluginIframeHeights,
     handleRegisterPluginIframeRef,
     handleRegisterWidgetIframeRef,
     buildInitPayload,

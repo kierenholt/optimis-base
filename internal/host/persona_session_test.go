@@ -170,3 +170,61 @@ func TestResolveRequestCaller_TestDefaultPersonaEnvSet_ResolvesConfiguredPersona
 	}
 }
 
+func TestResolveRequestCaller_IgnoresQueryAndHeaderOverridesAndEnforcesSessionInProdMode_test(t *testing.T) {
+	ctx := context.Background()
+	h, cleanup := setupIsolatedTestHost(t)
+	t.Cleanup(cleanup)
+
+	if err := h.ConfigureAuthMode(ctx, true); err != nil {
+		t.Fatalf("ConfigureAuthMode(true) failed: %v", err)
+	}
+
+	seeded, err := h.DAL().SeedPersonaTestFixtures(ctx, "ay_2026_2027", "2026-09-01")
+	if err != nil {
+		t.Fatalf("SeedPersonaTestFixtures failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = h.DAL().DeletePersonaTestFixtures(context.Background(), seeded.FixtureID)
+	})
+
+	h.ResetDevPersonaSessions()
+	h.SetActiveDevPersona(seeded.TeacherStaffID)
+
+	// 1. Query and HTTP header overrides (?__persona, ?staff_id, X-MIS-Persona, X-MIS-Staff-ID) must be completely ignored
+	reqSpoof := httptest.NewRequest(
+		http.MethodGet,
+		"/api/auth/session?__persona="+seeded.AdminStaffID+"&staff_id="+seeded.AdminStaffID,
+		nil,
+	)
+	reqSpoof.Header.Set("X-MIS-Persona", seeded.AdminStaffID)
+	reqSpoof.Header.Set("X-MIS-Staff-ID", seeded.AdminStaffID)
+
+	caller, err := h.ResolveRequestCaller(reqSpoof, seeded.AdminStaffID)
+	if err != nil {
+		t.Fatalf("ResolveRequestCaller failed: %v", err)
+	}
+	if caller.StaffID != seeded.TeacherStaffID {
+		t.Fatalf("SECURITY VIOLATION: request query/header/explicit staff override leaked caller.StaffID=%s (expected %s)", caller.StaffID, seeded.TeacherStaffID)
+	}
+
+	// 2. When ENABLE_DEV_PERSONA_SWITCHER=false (production mode), unauthenticated requests without mis_session must fail fast with UNAUTHORIZED_SESSION_REQUIRED even if SSO is configured and TEST_DEFAULT_PERSONA is set
+	if _, err := h.DAL().SetSystemConfigValue(ctx, "sso_provider", "ENTRA_ID"); err != nil {
+		t.Fatalf("SetSystemConfigValue(sso_provider) failed: %v", err)
+	}
+	if _, err := h.DAL().SetSystemConfigValue(ctx, "sso_oidc_issuer_url", "https://login.microsoftonline.com/common/v2.0"); err != nil {
+		t.Fatalf("SetSystemConfigValue(sso_oidc_issuer_url) failed: %v", err)
+	}
+	if _, err := h.DAL().SetSystemConfigValue(ctx, "sso_oidc_client_id", "optimis-prod-client-id"); err != nil {
+		t.Fatalf("SetSystemConfigValue(sso_oidc_client_id) failed: %v", err)
+	}
+	if err := h.ConfigureAuthMode(ctx, false); err != nil {
+		t.Fatalf("ConfigureAuthMode(false) failed: %v", err)
+	}
+
+	t.Setenv("TEST_DEFAULT_PERSONA", seeded.AdminStaffID)
+	if _, err := h.ResolveRequestCaller(reqSpoof, seeded.AdminStaffID); err == nil || !strings.Contains(err.Error(), "UNAUTHORIZED_SESSION_REQUIRED") {
+		t.Fatalf("expected UNAUTHORIZED_SESSION_REQUIRED in production mode without mis_session cookie, got: %v", err)
+	}
+}
+
+

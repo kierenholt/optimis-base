@@ -402,18 +402,7 @@ func (h *Host) handlePluginRPCRequest(w http.ResponseWriter, r *http.Request) {
 		body.Args = map[string]any{}
 	}
 
-	explicitStaffID := ""
-	if s, ok := body.Args["staff_id"].(string); ok && strings.TrimSpace(s) != "" {
-		explicitStaffID = strings.TrimSpace(s)
-	} else if s, ok := body.Args["__caller_staff_id"].(string); ok && strings.TrimSpace(s) != "" {
-		explicitStaffID = strings.TrimSpace(s)
-	} else if hStaff := strings.TrimSpace(r.Header.Get("X-MIS-Staff-ID")); hStaff != "" {
-		explicitStaffID = hStaff
-	} else if qStaff := strings.TrimSpace(r.URL.Query().Get("staff_id")); qStaff != "" {
-		explicitStaffID = qStaff
-	}
-
-	caller, callerErr := h.ResolveRequestCaller(r, explicitStaffID)
+	caller, callerErr := h.ResolveRequestCaller(r, "")
 	if callerErr != nil {
 		h.logError(fmt.Sprintf("RPC caller resolution failed for %s.%s: %v", plugID, method, callerErr))
 		writeJSON(w, http.StatusBadRequest, RPCResponse{

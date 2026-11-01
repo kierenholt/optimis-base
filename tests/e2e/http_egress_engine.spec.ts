@@ -84,6 +84,9 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
       throw new Error(`Failed to seed fixtures: ${seedRes.status()}`);
     }
     seeded = (await seedRes.json()) as SeededMilestone1;
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.teacher_staff_id },
+    });
   });
 
   test.afterEach(async ({ request }, testInfo) => {
@@ -183,7 +186,6 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
       other_group_id: seeded.other_group_id,
       reference_date: seeded.reference_date,
       academic_year_id: seeded.academic_year_id,
-      staff_id: seeded.teacher_staff_id,
     });
     await page.goto(`/?${query.toString()}`);
 
@@ -233,7 +235,6 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
       other_group_id: seeded.other_group_id,
       reference_date: seeded.reference_date,
       academic_year_id: seeded.academic_year_id,
-      staff_id: seeded.teacher_staff_id,
     });
     await page.goto(`/?${query.toString()}`);
 

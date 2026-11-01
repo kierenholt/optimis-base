@@ -229,9 +229,10 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     }
 
     // 1. Verify GET /api/system/ui-config exposes senPlugId and its sen_differentiation widget
-    const uiConfigRes = await request.get(
-      `/api/system/ui-config?staff_id=${encodeURIComponent(personaSeed.hod_staff_id)}`
-    );
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.hod_staff_id },
+    });
+    const uiConfigRes = await request.get('/api/system/ui-config');
     expect(uiConfigRes.ok()).toBe(true);
     const uiConfigBody = await uiConfigRes.json();
     expect(uiConfigBody.ok).toBe(true);
@@ -253,9 +254,10 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     ]);
 
     // Also verify Classroom Teacher only sees `get_sen_differentiation_summary` in permitted_methods (since `log_iep_provision` requires `dal.sen.read:all`)
-    const teacherUiConfigRes = await request.get(
-      `/api/system/ui-config?staff_id=${encodeURIComponent(m1Seed.teacher_staff_id)}`
-    );
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
+    const teacherUiConfigRes = await request.get('/api/system/ui-config');
     expect(teacherUiConfigRes.ok()).toBe(true);
     const teacherUiConfigBody = await teacherUiConfigRes.json();
     const teacherSenPlugin = teacherUiConfigBody.plugins.find(
@@ -265,6 +267,9 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     expect(teacherSenPlugin.permitted_methods).toEqual(['get_sen_differentiation_summary']);
 
     // 2. Open Host UI Shell as SENCO / HoD (holding `dal.sen.read:all` & `dal.pupils.read:all`)
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.hod_staff_id },
+    });
     const sencoParams = new URLSearchParams({
       pupil_id: m1Seed.active_pupil_id,
       second_pupil_id: m1Seed.second_active_pupil_id,
@@ -272,7 +277,6 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
       other_group_id: m1Seed.other_group_id,
       reference_date: m1Seed.reference_date,
       academic_year_id: m1Seed.academic_year_id,
-      staff_id: personaSeed.hod_staff_id,
     });
     await page.goto(`/?${sencoParams.toString()}`);
 
@@ -283,9 +287,11 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     await expect(editModeToggleBtn).toBeVisible();
     await editModeToggleBtn.click();
 
+    await page.getByTestId('dashboard-add-widget-btn').click();
     const placeSenWidgetBtn = page.getByTestId('place-widget-btn-sen_differentiation');
     await expect(placeSenWidgetBtn).toBeVisible();
     await placeSenWidgetBtn.click();
+    await page.getByTestId('dashboard-widget-placement-preview').click();
 
     await editModeToggleBtn.click();
 
@@ -305,7 +311,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
 
     // 3. SENCO navigates to the SEN Provision workspace tab via Global Search in the Narrow Icon Rail and logs an IEP classroom adjustment & TA allocation for the E (EHCP) pupil (`active_pupil_id`, Ada Lovelace)
     await page.getByTestId('nav-rail-search').click();
-    const senNavBtn = page.getByTestId(`command-palette-result-view-${senPlugId}-home`);
+    const senNavBtn = page.getByTestId(`host-search-result-view-${senPlugId}-home`);
     await expect(senNavBtn).toBeVisible();
     await senNavBtn.click();
 
@@ -370,15 +376,18 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     await expect(senFrame.getByTestId('sen-total-ta-hours')).toHaveText('5');
     await expect(senFrame.getByTestId('sen-provision-count')).toHaveText('1');
 
-    // 4. Switch to the Classroom Teacher persona (`m1Seed.teacher_staff_id`) via ?__persona= override and verify the Home Dashboard SEN Differentiation Mini-Widget
-    sencoParams.set('staff_id', m1Seed.teacher_staff_id);
-    sencoParams.set('__persona', m1Seed.teacher_staff_id);
+    // 4. Switch to the Classroom Teacher persona (`m1Seed.teacher_staff_id`) via POST /api/auth/persona and verify the Home Dashboard SEN Differentiation Mini-Widget
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
     await page.goto(`/?${sencoParams.toString()}`);
 
     // Place the `sen_differentiation` Mini-Iframe Widget onto the Classroom Teacher's Home Dashboard Grid
     await editModeToggleBtn.click();
+    await page.getByTestId('dashboard-add-widget-btn').click();
     await expect(placeSenWidgetBtn).toBeVisible();
     await placeSenWidgetBtn.click();
+    await page.getByTestId('dashboard-widget-placement-preview').click();
     await editModeToggleBtn.click();
 
     // Verify the SEN Differentiation Mini-Widget on the Home Dashboard displays both K & E pupils' adjustments and TA allocations
@@ -422,9 +431,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
 
     // 6. Verify 1G (`ctx.dal.sen.list_register` & expanded SEN fields): calling `get_sen_differentiation_summary` without `pupil_id` or `group_id` returns the scoped SEN register (`K` and `E` pupils) with `ehcp_start_date` and `sen_needs`
     const registerRpcRes = await request.post(
-      `/api/p/${encodeURIComponent(senPlugId)}/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`,
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/get_sen_differentiation_summary`,
       {
         data: {
           args: {
@@ -458,10 +465,11 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     }
 
     // 1. Verify Classroom Teacher (`m1Seed.teacher_staff_id`, who holds only `dal.sen.read:own_groups`) is blocked with 403 from calling `log_iep_provision` (`dal.sen.read:all`)
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
     const teacherWriteRes = await request.post(
-      `/api/p/${encodeURIComponent(senPlugId)}/rpc/log_iep_provision?staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`,
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/log_iep_provision`,
       {
         data: {
           args: {
@@ -482,10 +490,11 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     expect(teacherWriteBody.error_code).toContain('caller lacks required DAL scopes');
 
     // 2. Verify Attendance Officer (`personaSeed.attendance_officer_staff_id`, `SUPPORT` role without `dal.sen.read`) is blocked with 403 from `get_sen_differentiation_summary`
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.attendance_officer_staff_id },
+    });
     const supportReadRes = await request.post(
-      `/api/p/${encodeURIComponent(senPlugId)}/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
-        personaSeed.attendance_officer_staff_id
-      )}`,
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/get_sen_differentiation_summary`,
       {
         data: {
           args: {
@@ -502,10 +511,11 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     expect(supportReadBody.error_code).toContain('caller lacks required DAL scopes');
 
     // 3. Verify Classroom Teacher calling `get_sen_differentiation_summary` with `strict_own_groups: true` is blocked from reading another group's pupil (`other_group_pupil_id`) or a transferred pupil (`transferred_pupil_id`)
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
     const crossGroupRes = await request.post(
-      `/api/p/${encodeURIComponent(senPlugId)}/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`,
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/get_sen_differentiation_summary`,
       {
         data: {
           args: {
@@ -523,9 +533,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     expect(crossGroupBody.error_code).toContain('access denied under own_groups scope');
 
     const transferredRes = await request.post(
-      `/api/p/${encodeURIComponent(senPlugId)}/rpc/get_sen_differentiation_summary?staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`,
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/get_sen_differentiation_summary`,
       {
         data: {
           args: {
@@ -543,10 +551,11 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     expect(transferredBody.error_code).toContain('access denied under own_groups scope');
 
     // 4. Verify fail-fast validation when SENCO attempts to log an IEP provision for a pupil with SEN provision `'N'` (No SEN)
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.hod_staff_id },
+    });
     const nonSenLogRes = await request.post(
-      `/api/p/${encodeURIComponent(senPlugId)}/rpc/log_iep_provision?staff_id=${encodeURIComponent(
-        personaSeed.hod_staff_id
-      )}`,
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/log_iep_provision`,
       {
         data: {
           args: {
@@ -568,9 +577,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
 
     // 5. SENCO logs a valid IEP provision for `active_pupil_id` containing a third-party pupil name in `review_notes`, then Admin runs UK GDPR SAR Redaction UI and purges the record
     const validLogRes = await request.post(
-      `/api/p/${encodeURIComponent(senPlugId)}/rpc/log_iep_provision?staff_id=${encodeURIComponent(
-        personaSeed.hod_staff_id
-      )}`,
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/log_iep_provision`,
       {
         data: {
           args: {
@@ -647,9 +654,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
 
     // Purge pupil data and verify zero orphaned rows remain
     const purgeRes = await request.post(
-      `/api/p/${encodeURIComponent(senPlugId)}/rpc/purge_pupil_data?staff_id=${encodeURIComponent(
-        personaSeed.admin_staff_id
-      )}`,
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/purge_pupil_data`,
       {
         data: { args: { pupil_id: m1Seed.active_pupil_id } },
       }
@@ -660,9 +665,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     expect(purgeBody.data.purged_rows).toBe(1);
 
     const exportAfterPurgeRes = await request.post(
-      `/api/p/${encodeURIComponent(senPlugId)}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
-        personaSeed.admin_staff_id
-      )}`,
+      `/api/p/${encodeURIComponent(senPlugId)}/rpc/export_pupil_data`,
       {
         data: { args: { pupil_id: m1Seed.active_pupil_id } },
       }

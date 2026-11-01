@@ -147,7 +147,7 @@ test.describe('Plugin Authoring SDK & Developer Toolchain (Sections 10A–10D)',
     expect(manifestSchema.properties.widgets.items.properties).not.toHaveProperty('default_col_span');
     expect(manifestSchema.properties.widgets.items.properties).not.toHaveProperty('default_row_span');
 
-    // 3. Verify 10C @ukmis/bridge and @ukmis/tailwind-preset packages
+    // 3. Verify 10C @optimis/bridge and @optimis/tailwind-preset packages
     const bridgePkgPath = path.resolve(ROOT_DIR, 'sdk/packages/bridge/package.json');
     const tailwindPkgPath = path.resolve(ROOT_DIR, 'sdk/packages/tailwind-preset/package.json');
     expect(fs.existsSync(bridgePkgPath)).toBe(true);
@@ -155,8 +155,8 @@ test.describe('Plugin Authoring SDK & Developer Toolchain (Sections 10A–10D)',
 
     const bridgePkg = JSON.parse(fs.readFileSync(bridgePkgPath, 'utf-8'));
     const tailwindPkg = JSON.parse(fs.readFileSync(tailwindPkgPath, 'utf-8'));
-    expect(bridgePkg.name).toBe('@ukmis/bridge');
-    expect(tailwindPkg.name).toBe('@ukmis/tailwind-preset');
+    expect(bridgePkg.name).toBe('@optimis/bridge');
+    expect(tailwindPkg.name).toBe('@optimis/tailwind-preset');
 
     // 4. Mount test_plugin in the UI and verify window.mis.useMisRpc is exposed by the bridge
     const seedRes = await request.post('/api/test/seed-personas', {
@@ -186,7 +186,7 @@ test.describe('Plugin Authoring SDK & Developer Toolchain (Sections 10A–10D)',
 
     await page.goto('/');
     await page.getByTestId('nav-rail-search').click();
-    const navBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Behaviour' }).first();
+    const navBtn = page.getByTestId(`host-search-result-view-${behPlugId}-home`);
     await expect(navBtn).toBeVisible();
     await navBtn.click();
 
@@ -355,7 +355,7 @@ end
     expect(failRes.stdout + failRes.stderr).toContain('DELIBERATE_TEST_ASSERTION_FAILURE');
   });
 
-  test('observabilityAndPersonaSwitching_urlParamAndHeaderAndDevServer_switchesPersonaViaUrlParamAndEmitsStructuredStdoutLogs_test', async ({
+  test('observabilityAndPersonaResolution_cliFlagAndSession_resolvesPersonaAndEmitsStructuredStdoutLogs_test', async ({
     page,
     request,
   }) => {
@@ -372,28 +372,36 @@ end
     const dslStaffId: string = seeded.dsl_staff_id;
     const adminStaffId: string = seeded.admin_staff_id;
 
-    // 1. Verify ?__persona= URL param on /api/auth/session and /api/system/ui-config
-    const dslSessRes = await request.get(`/api/auth/session?__persona=${encodeURIComponent(dslStaffId)}`);
-    expect(dslSessRes.ok()).toBe(true);
-    const dslSessBody = await dslSessRes.json();
-    expect(dslSessBody.caller.staff_id).toBe(dslStaffId);
-    expect(dslSessBody.caller.scopes).toContain('dal.safeguarding.read');
-
-    // 2. Verify X-MIS-Persona HTTP header on /api/auth/session
-    const adminHeaderRes = await request.get('/api/auth/session', {
-      headers: { 'X-MIS-Persona': adminStaffId },
+    // 1. Set active dev persona to Teacher via POST /api/auth/persona
+    const teacherStaffId: string = seeded.teacher_staff_id;
+    const setTeacherRes = await request.post('/api/auth/persona', {
+      data: { staff_id: teacherStaffId },
     });
-    expect(adminHeaderRes.ok()).toBe(true);
-    const adminHeaderBody = await adminHeaderRes.json();
-    expect(adminHeaderBody.caller.staff_id).toBe(adminStaffId);
+    expect(setTeacherRes.ok()).toBe(true);
 
-    // 3. Navigate browser with ?__persona=<dslStaffId> and verify UI initializes as DSL persona without topbar switcher
-    await page.goto(`/?__persona=${encodeURIComponent(dslStaffId)}`);
+    // 2. Verify active session resolves to Teacher and HTTP headers (X-MIS-Persona / X-MIS-Staff-ID) do not override caller identity
+    const sessionRes = await request.get('/api/auth/session', {
+      headers: {
+        'X-MIS-Persona': adminStaffId,
+        'X-MIS-Staff-ID': adminStaffId,
+      },
+    });
+    expect(sessionRes.ok()).toBe(true);
+    const sessionBody = await sessionRes.json();
+    expect(sessionBody.caller.staff_id).toBe(teacherStaffId);
+    expect(sessionBody.caller.scopes).not.toContain('dal.safeguarding.read');
+
+    // 3. Switch active dev persona to DSL via POST /api/auth/persona and verify UI initializes as DSL persona without topbar switcher
+    const setDslRes = await request.post('/api/auth/persona', {
+      data: { staff_id: dslStaffId },
+    });
+    expect(setDslRes.ok()).toBe(true);
+    await page.goto('/');
     await expect(page.getByTestId('host-topbar')).toHaveCount(0);
     await expect(page.getByTestId('persona-switcher-select')).toHaveCount(0);
     await expect(page.getByTestId('dsl-safeguarding-vault-panel')).toBeVisible();
 
-    // 4. Verify ./bin/mis-dev-server --help / --check-config exits cleanly and supports --plugin & --persona flags
+    // 4. Verify ./bin/mis-dev-server --help / --dry-run exits cleanly and supports --plugin & --persona CLI flags
     const devServerCheck = runBinary(MIS_DEV_SERVER_BIN, [
       '--plugin',
       'plugins/timetable_attendance_plugin',
@@ -405,4 +413,104 @@ end
     expect(devServerCheck.stdout).toContain('uk.org.optimis.timetable.attendance');
     expect(devServerCheck.stdout).toContain('persona=stf_tch_7a');
   });
+
+  test('standalonePluginTemplate_trimpathPortableBinaries_verifiesTestsPacksAndDryRunsOutsideBaseRepo_test', async () => {
+    const templateDir = path.resolve(ROOT_DIR, '../optimis-plugin-template');
+    expect(fs.existsSync(templateDir)).toBe(true);
+
+    // 1. Verify required template files, .agents guardrails/skills, and GEMINI.md files exist
+    const requiredFiles = [
+      'README.md',
+      'GEMINI.md',
+      '.agents/AGENTS.md',
+      '.agents/GEMINI.md',
+      '.agents/skills/test-author/SKILL.md',
+      '.agents/skills/code-implementer/SKILL.md',
+      'package.json',
+      'manifest.json',
+      '.vscode/settings.json',
+      '.vscode/extensions.json',
+      '.mis-types/dal.d.lua',
+      '.mis-types/GEMINI.md',
+      'bin/GEMINI.md',
+      'sdk/GEMINI.md',
+      'sdk/manifest.schema.json',
+      'sdk/ui/mis-bridge.js',
+      'sdk/ui/mis-theme.css',
+      'schema/core/GEMINI.md',
+      'schema/core/00_system_and_academic_cycle.sql',
+      'schema/core/SCHEMA_MAP.md',
+      'migrations/GEMINI.md',
+      'migrations/001_init.sql',
+      'src/GEMINI.md',
+      'src/init.lua',
+      'ui/GEMINI.md',
+      'ui/dist/index.html',
+      'ui/dist/widget.html',
+      'tests/GEMINI.md',
+      'tests/init_test.lua',
+      'scripts/GEMINI.md',
+      'scripts/run-cli.mjs',
+    ];
+    for (const rel of requiredFiles) {
+      expect(fs.existsSync(path.join(templateDir, rel)), `Expected ${rel} in optimis-plugin-template`).toBe(true);
+    }
+
+    const agentsContent = fs.readFileSync(path.join(templateDir, '.agents/AGENTS.md'), 'utf-8');
+    expect(agentsContent).toContain('NO FALLBACKS / FAIL FAST');
+    expect(agentsContent).toContain('Available NPM Commands');
+    expect(agentsContent).toContain('GEMINI.md');
+
+    const rootGeminiContent = fs.readFileSync(path.join(templateDir, 'GEMINI.md'), 'utf-8');
+    expect(rootGeminiContent).toContain('Plugin Contract');
+    expect(rootGeminiContent).toContain('GDPR');
+
+    const readmeContent = fs.readFileSync(path.join(templateDir, 'README.md'), 'utf-8');
+    expect(readmeContent).toContain('npm run verify');
+    expect(readmeContent).toContain('npm test');
+    expect(readmeContent).toContain('npm run dev');
+    expect(readmeContent).toContain('npm run pack');
+
+    // 2. Execute npm run verify, npm test, npm run pack, and mis-dev-server --dry-run directly inside templateDir
+    // (where schema/core does not exist on disk and binaries are compiled with -trimpath)
+    const runInTemplate = (cmd: string, args: string[]) => {
+      try {
+        const stdout = execFileSync(cmd, args, {
+          cwd: templateDir,
+          encoding: 'utf-8',
+          env: { ...process.env },
+        });
+        return { stdout: stdout.trim(), stderr: '', exitCode: 0 };
+      } catch (err: any) {
+        return {
+          stdout: typeof err.stdout === 'string' ? err.stdout.trim() : (err.stdout?.toString('utf-8') || '').trim(),
+          stderr: typeof err.stderr === 'string' ? err.stderr.trim() : (err.stderr?.toString('utf-8') || '').trim(),
+          exitCode: typeof err.status === 'number' ? err.status : 1,
+        };
+      }
+    };
+
+    const verifyRes = runInTemplate('npm', ['run', 'verify']);
+    expect(verifyRes.exitCode, `verify failed: ${verifyRes.stderr}\n${verifyRes.stdout}`).toBe(0);
+    expect(verifyRes.stdout).toContain('MANIFEST_LUA_UI_OK');
+    expect(verifyRes.stdout).toContain('CSP_OFFLINE_OK');
+    expect(verifyRes.stdout).toContain('MIGRATIONS_OK');
+    expect(verifyRes.stdout).toContain('GDPR_ZERO_ORPHANS_OK');
+
+    const testRes = runInTemplate('npm', ['test']);
+    expect(testRes.exitCode, `test failed: ${testRes.stderr}\n${testRes.stdout}`).toBe(0);
+    expect(testRes.stdout).toContain('PASS');
+
+    const dryRunRes = runInTemplate('node', ['scripts/run-cli.mjs', 'mis-dev-server', '--plugin', '.', '--persona', 'stf_tch_7a', '--dry-run']);
+    expect(dryRunRes.exitCode, `dev-server dry-run failed: ${dryRunRes.stderr}\n${dryRunRes.stdout}`).toBe(0);
+    expect(dryRunRes.stdout).toContain('status=READY');
+
+    const tmpOutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'optimis-template-pack-'));
+    tempDirs.push(tmpOutDir);
+    const outMispkg = path.join(tmpOutDir, 'starter.mispkg');
+    const packRes = runInTemplate('node', ['scripts/run-cli.mjs', 'mis-pack', '.', '--out', outMispkg]);
+    expect(packRes.exitCode, `pack failed: ${packRes.stderr}\n${packRes.stdout}`).toBe(0);
+    expect(fs.existsSync(outMispkg)).toBe(true);
+  });
 });
+

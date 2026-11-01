@@ -184,7 +184,6 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
       other_group_id: seeded.other_group_id,
       reference_date: seeded.reference_date,
       academic_year_id: seeded.academic_year_id,
-      staff_id: seeded.teacher_staff_id,
     });
     await page.goto(`/?${params.toString()}`);
 
@@ -362,7 +361,6 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
       other_group_id: seeded.other_group_id,
       reference_date: seeded.reference_date,
       academic_year_id: seeded.academic_year_id,
-      staff_id: seeded.teacher_staff_id,
     });
     await page.goto(`/?${params.toString()}`);
 

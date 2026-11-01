@@ -176,9 +176,9 @@ func TestAdminPluginLifecycleHTTP_NonAdminCallerRejectedAndAdminSucceeds_test(t 
 	}
 
 	// 1. Non-Admin (TEACHER) rejected with 403 UNAUTHORIZED_ADMIN_PLUGIN_SCOPE on install
+	h.SetActiveDevPersona(seeded.TeacherStaffID)
 	installTeacherBody, _ := json.Marshal(map[string]any{
-		"folder":   "test_plugin",
-		"staff_id": seeded.TeacherStaffID,
+		"folder": "test_plugin",
 	})
 	reqUnauthInstall := httptest.NewRequest(http.MethodPost, "/api/admin/plugins/install", bytes.NewReader(installTeacherBody))
 	recUnauthInstall := httptest.NewRecorder()
@@ -188,9 +188,9 @@ func TestAdminPluginLifecycleHTTP_NonAdminCallerRejectedAndAdminSucceeds_test(t 
 	}
 
 	// 2. Admin installs test_plugin -> 201 Created, state: UNINSTALLED_DORMANT, opaque plug_id returned
+	h.SetActiveDevPersona(seeded.AdminStaffID)
 	installAdminBody, _ := json.Marshal(map[string]any{
-		"folder":   "test_plugin",
-		"staff_id": seeded.AdminStaffID,
+		"folder": "test_plugin",
 	})
 	reqInstall := httptest.NewRequest(http.MethodPost, "/api/admin/plugins/install", bytes.NewReader(installAdminBody))
 	recInstall := httptest.NewRecorder()
@@ -213,16 +213,15 @@ func TestAdminPluginLifecycleHTTP_NonAdminCallerRejectedAndAdminSucceeds_test(t 
 	}
 
 	// 3. Non-Admin (TEACHER) rejected with 403 on GET /api/admin/plugins and POST /api/admin/plugins/{id}/activate
-	reqUnauthList := httptest.NewRequest(http.MethodGet, "/api/admin/plugins?staff_id="+seeded.TeacherStaffID, nil)
+	h.SetActiveDevPersona(seeded.TeacherStaffID)
+	reqUnauthList := httptest.NewRequest(http.MethodGet, "/api/admin/plugins", nil)
 	recUnauthList := httptest.NewRecorder()
 	handler.ServeHTTP(recUnauthList, reqUnauthList)
 	if recUnauthList.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 Forbidden for teacher on GET /api/admin/plugins, got %d", recUnauthList.Code)
 	}
 
-	activateTeacherBody, _ := json.Marshal(map[string]any{
-		"staff_id": seeded.TeacherStaffID,
-	})
+	activateTeacherBody, _ := json.Marshal(map[string]any{})
 	reqUnauthActivate := httptest.NewRequest(http.MethodPost, "/api/admin/plugins/"+installResp.PlugID+"/activate", bytes.NewReader(activateTeacherBody))
 	recUnauthActivate := httptest.NewRecorder()
 	handler.ServeHTTP(recUnauthActivate, reqUnauthActivate)
@@ -231,9 +230,8 @@ func TestAdminPluginLifecycleHTTP_NonAdminCallerRejectedAndAdminSucceeds_test(t 
 	}
 
 	// 4. Admin activates plug_id -> 200 OK, state: ACTIVE
-	activateAdminBody, _ := json.Marshal(map[string]any{
-		"staff_id": seeded.AdminStaffID,
-	})
+	h.SetActiveDevPersona(seeded.AdminStaffID)
+	activateAdminBody, _ := json.Marshal(map[string]any{})
 	reqActivate := httptest.NewRequest(http.MethodPost, "/api/admin/plugins/"+installResp.PlugID+"/activate", bytes.NewReader(activateAdminBody))
 	recActivate := httptest.NewRecorder()
 	handler.ServeHTTP(recActivate, reqActivate)
@@ -242,7 +240,8 @@ func TestAdminPluginLifecycleHTTP_NonAdminCallerRejectedAndAdminSucceeds_test(t 
 	}
 
 	// 5. Non-Admin (TEACHER) rejected with 403 on DELETE /api/admin/plugins/{id}
-	reqUnauthDelete := httptest.NewRequest(http.MethodDelete, "/api/admin/plugins/"+installResp.PlugID+"?staff_id="+seeded.TeacherStaffID, nil)
+	h.SetActiveDevPersona(seeded.TeacherStaffID)
+	reqUnauthDelete := httptest.NewRequest(http.MethodDelete, "/api/admin/plugins/"+installResp.PlugID, nil)
 	recUnauthDelete := httptest.NewRecorder()
 	handler.ServeHTTP(recUnauthDelete, reqUnauthDelete)
 	if recUnauthDelete.Code != http.StatusForbidden {
@@ -250,7 +249,8 @@ func TestAdminPluginLifecycleHTTP_NonAdminCallerRejectedAndAdminSucceeds_test(t 
 	}
 
 	// 6. Admin removes plug_id -> 200 OK, removed: true
-	reqDelete := httptest.NewRequest(http.MethodDelete, "/api/admin/plugins/"+installResp.PlugID+"?staff_id="+seeded.AdminStaffID, nil)
+	h.SetActiveDevPersona(seeded.AdminStaffID)
+	reqDelete := httptest.NewRequest(http.MethodDelete, "/api/admin/plugins/"+installResp.PlugID, nil)
 	recDelete := httptest.NewRecorder()
 	handler.ServeHTTP(recDelete, reqDelete)
 	if recDelete.Code != http.StatusOK {

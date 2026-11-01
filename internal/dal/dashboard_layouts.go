@@ -12,6 +12,8 @@ import (
 type DashboardWidgetItem struct {
 	PlugID   string `json:"plug_id"`
 	WidgetID string `json:"widget_id"`
+	Col      int    `json:"col,omitempty"`
+	Row      int    `json:"row,omitempty"`
 }
 
 func ValidateAndNormalizeDashboardWidgetItems(items []DashboardWidgetItem) ([]DashboardWidgetItem, error) {
@@ -31,9 +33,19 @@ func ValidateAndNormalizeDashboardWidgetItems(items []DashboardWidgetItem) ([]Da
 			continue
 		}
 		seen[key] = struct{}{}
+		col := 0
+		if it.Col > 0 {
+			col = it.Col
+		}
+		row := 0
+		if it.Row > 0 {
+			row = it.Row
+		}
 		normalized = append(normalized, DashboardWidgetItem{
 			PlugID:   plugID,
 			WidgetID: widgetID,
+			Col:      col,
+			Row:      row,
 		})
 	}
 	return normalized, nil
@@ -51,30 +63,77 @@ func decodeDashboardWidgetsJSON(raw string) ([]DashboardWidgetItem, error) {
 	return ValidateAndNormalizeDashboardWidgetItems(items)
 }
 
-func (d *CoreDAL) GetStaffDashboardLayout(ctx context.Context, staffID string) ([]DashboardWidgetItem, bool, error) {
-	trimmedStaff := strings.TrimSpace(staffID)
-	if trimmedStaff == "" {
-		return nil, false, errors.New("missing mandatory parameter: staff_id")
-	}
+const (
+	DefaultDashboardColumnCount = 4
+	MinDashboardColumnCount     = 2
+	MaxDashboardColumnCount     = 8
+)
 
-	var rawJSON string
+func ValidateAndNormalizeDashboardColumnCount(columnCount int) (int, error) {
+	if columnCount == 0 {
+		return DefaultDashboardColumnCount, nil
+	}
+	if columnCount < MinDashboardColumnCount || columnCount > MaxDashboardColumnCount {
+		return 0, fmt.Errorf(
+			"INVALID_DASHBOARD_COLUMN_COUNT: column_count must be between %d and %d (got %d)",
+			MinDashboardColumnCount,
+			MaxDashboardColumnCount,
+			columnCount,
+		)
+	}
+	return columnCount, nil
+}
+
+func (d *CoreDAL) ensureDashboardLayoutsColumnCount(ctx context.Context) {
+	var count int
 	err := d.readDB.QueryRowContext(
 		ctx,
-		`SELECT widgets_json FROM dashboard_layouts WHERE scope_type = 'STAFF' AND scope_target = ?`,
+		`SELECT COUNT(*) FROM pragma_table_info('dashboard_layouts') WHERE name = 'column_count'`,
+	).Scan(&count)
+	if err == nil && count == 0 {
+		_, _ = d.writeDB.ExecContext(
+			ctx,
+			`ALTER TABLE dashboard_layouts ADD COLUMN column_count INTEGER NOT NULL DEFAULT 4`,
+		)
+	}
+}
+
+func (d *CoreDAL) GetStaffDashboardLayout(ctx context.Context, staffID string) ([]DashboardWidgetItem, bool, error) {
+	items, _, found, err := d.GetStaffDashboardLayoutWithColumns(ctx, staffID)
+	return items, found, err
+}
+
+func (d *CoreDAL) GetStaffDashboardLayoutWithColumns(ctx context.Context, staffID string) ([]DashboardWidgetItem, int, bool, error) {
+	trimmedStaff := strings.TrimSpace(staffID)
+	if trimmedStaff == "" {
+		return nil, DefaultDashboardColumnCount, false, errors.New("missing mandatory parameter: staff_id")
+	}
+
+	d.ensureDashboardLayoutsColumnCount(ctx)
+
+	var rawJSON string
+	var colCount sql.NullInt64
+	err := d.readDB.QueryRowContext(
+		ctx,
+		`SELECT widgets_json, column_count FROM dashboard_layouts WHERE scope_type = 'STAFF' AND scope_target = ?`,
 		trimmedStaff,
-	).Scan(&rawJSON)
+	).Scan(&rawJSON, &colCount)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, false, nil
+			return nil, DefaultDashboardColumnCount, false, nil
 		}
-		return nil, false, fmt.Errorf("failed to query staff dashboard layout for %s: %w", trimmedStaff, err)
+		return nil, DefaultDashboardColumnCount, false, fmt.Errorf("failed to query staff dashboard layout for %s: %w", trimmedStaff, err)
 	}
 
 	items, decErr := decodeDashboardWidgetsJSON(rawJSON)
 	if decErr != nil {
-		return nil, false, decErr
+		return nil, DefaultDashboardColumnCount, false, decErr
 	}
-	return items, true, nil
+	resolvedCols := DefaultDashboardColumnCount
+	if colCount.Valid && int(colCount.Int64) >= MinDashboardColumnCount && int(colCount.Int64) <= MaxDashboardColumnCount {
+		resolvedCols = int(colCount.Int64)
+	}
+	return items, resolvedCols, true, nil
 }
 
 func (d *CoreDAL) SaveStaffDashboardLayout(
@@ -83,18 +142,47 @@ func (d *CoreDAL) SaveStaffDashboardLayout(
 	items []DashboardWidgetItem,
 	updatedByStaffID string,
 ) ([]DashboardWidgetItem, error) {
+	saved, _, err := d.SaveStaffDashboardLayoutWithColumns(ctx, staffID, items, 0, updatedByStaffID)
+	return saved, err
+}
+
+func (d *CoreDAL) SaveStaffDashboardLayoutWithColumns(
+	ctx context.Context,
+	staffID string,
+	items []DashboardWidgetItem,
+	columnCount int,
+	updatedByStaffID string,
+) ([]DashboardWidgetItem, int, error) {
 	trimmedStaff := strings.TrimSpace(staffID)
 	if trimmedStaff == "" {
-		return nil, errors.New("missing mandatory parameter: staff_id")
+		return nil, DefaultDashboardColumnCount, errors.New("missing mandatory parameter: staff_id")
 	}
 	normalized, err := ValidateAndNormalizeDashboardWidgetItems(items)
 	if err != nil {
-		return nil, err
+		return nil, DefaultDashboardColumnCount, err
+	}
+
+	d.ensureDashboardLayoutsColumnCount(ctx)
+
+	resolvedCols := columnCount
+	if resolvedCols == 0 {
+		_, existingCols, found, _ := d.GetStaffDashboardLayoutWithColumns(ctx, trimmedStaff)
+		if found {
+			resolvedCols = existingCols
+		} else {
+			resolvedCols = DefaultDashboardColumnCount
+		}
+	} else {
+		validCols, colErr := ValidateAndNormalizeDashboardColumnCount(resolvedCols)
+		if colErr != nil {
+			return nil, DefaultDashboardColumnCount, colErr
+		}
+		resolvedCols = validCols
 	}
 
 	rawBytes, err := json.Marshal(normalized)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal dashboard layout JSON: %w", err)
+		return nil, DefaultDashboardColumnCount, fmt.Errorf("failed to marshal dashboard layout JSON: %w", err)
 	}
 
 	rowID := "staff:" + trimmedStaff
@@ -105,21 +193,23 @@ func (d *CoreDAL) SaveStaffDashboardLayout(
 
 	if _, err := d.writeDB.ExecContext(
 		ctx,
-		`INSERT INTO dashboard_layouts (id, scope_type, scope_target, widgets_json, updated_by_staff_id, updated_at)
-		 VALUES (?, 'STAFF', ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+		`INSERT INTO dashboard_layouts (id, scope_type, scope_target, widgets_json, column_count, updated_by_staff_id, updated_at)
+		 VALUES (?, 'STAFF', ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 		 ON CONFLICT(scope_type, scope_target) DO UPDATE SET
 		     widgets_json = excluded.widgets_json,
+		     column_count = excluded.column_count,
 		     updated_by_staff_id = excluded.updated_by_staff_id,
 		     updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
 		rowID,
 		trimmedStaff,
 		string(rawBytes),
+		resolvedCols,
 		actor,
 	); err != nil {
-		return nil, fmt.Errorf("failed to save staff dashboard layout for %s: %w", trimmedStaff, err)
+		return nil, DefaultDashboardColumnCount, fmt.Errorf("failed to save staff dashboard layout for %s: %w", trimmedStaff, err)
 	}
 
-	return normalized, nil
+	return normalized, resolvedCols, nil
 }
 
 func (d *CoreDAL) GetRoleDefaultDashboardLayout(ctx context.Context, roleID string) ([]DashboardWidgetItem, bool, error) {
@@ -346,13 +436,23 @@ func (d *CoreDAL) ResolveEffectiveDashboardLayout(
 	activeRoles []string,
 	fallbackDefault []DashboardWidgetItem,
 ) ([]DashboardWidgetItem, string, error) {
+	items, _, source, err := d.ResolveEffectiveDashboardLayoutWithColumns(ctx, staffID, activeRoles, fallbackDefault)
+	return items, source, err
+}
+
+func (d *CoreDAL) ResolveEffectiveDashboardLayoutWithColumns(
+	ctx context.Context,
+	staffID string,
+	activeRoles []string,
+	fallbackDefault []DashboardWidgetItem,
+) ([]DashboardWidgetItem, int, string, error) {
 	if trimmedStaff := strings.TrimSpace(staffID); trimmedStaff != "" {
-		staffItems, found, err := d.GetStaffDashboardLayout(ctx, trimmedStaff)
+		staffItems, colCount, found, err := d.GetStaffDashboardLayoutWithColumns(ctx, trimmedStaff)
 		if err != nil {
-			return nil, "", err
+			return nil, DefaultDashboardColumnCount, "", err
 		}
 		if found {
-			return staffItems, "STAFF", nil
+			return staffItems, colCount, "STAFF", nil
 		}
 	}
 
@@ -369,10 +469,10 @@ func (d *CoreDAL) ResolveEffectiveDashboardLayout(
 	for _, r := range roleCandidates {
 		roleItems, found, err := d.GetRoleDefaultDashboardLayout(ctx, r)
 		if err != nil {
-			return nil, "", err
+			return nil, DefaultDashboardColumnCount, "", err
 		}
 		if found && len(roleItems) > 0 {
-			return roleItems, "ROLE_DEFAULT:" + r, nil
+			return roleItems, DefaultDashboardColumnCount, "ROLE_DEFAULT:" + r, nil
 		}
 	}
 
@@ -380,7 +480,7 @@ func (d *CoreDAL) ResolveEffectiveDashboardLayout(
 	if err != nil {
 		normalizedFallback = []DashboardWidgetItem{}
 	}
-	return normalizedFallback, "SYSTEM_FALLBACK", nil
+	return normalizedFallback, DefaultDashboardColumnCount, "SYSTEM_FALLBACK", nil
 }
 
 func (d *CoreDAL) ResetAllDashboardLayoutsForTest(ctx context.Context) error {

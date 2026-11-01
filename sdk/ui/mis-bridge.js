@@ -109,7 +109,6 @@
       state.themeTokens['--mis-font-scale'] = effectiveScale;
       if (document.body) {
         document.body.style.fontSize = effectivePx;
-        document.body.style.zoom = effectiveScale;
       }
       if (
         legacyTheme &&
@@ -122,6 +121,113 @@
         state.themeTokens['--mis-brand-primary'] = legacyTheme.primary.trim();
       }
     }
+  }
+
+  var lastReportedHeight = 0;
+  var lastInnerWidth = global.innerWidth || 0;
+
+  function computeRequiredContentHeight() {
+    var docEl = document.documentElement;
+    var body = document.body;
+    if (!docEl || !body) {
+      return 0;
+    }
+    if ((docEl.clientWidth || 0) <= 0 && (docEl.clientHeight || 0) <= 0) {
+      return 0;
+    }
+    var scale = parseFloat(state.themeTokens['--mis-font-scale'] || '1');
+    if (!Number.isFinite(scale) || scale <= 0) {
+      scale = 1;
+    }
+    var bodyStyle = global.getComputedStyle(body);
+    var marginTop = parseFloat(bodyStyle.marginTop) || 0;
+    var marginBottom = parseFloat(bodyStyle.marginBottom) || 0;
+    var paddingTop = parseFloat(bodyStyle.paddingTop) || 0;
+    var paddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
+    var bodyRect = body.getBoundingClientRect();
+
+    var maxChildRelativeBottom = 0;
+    var maxChildViewportBottom = 0;
+    var ignoredTags = {
+      SCRIPT: true,
+      STYLE: true,
+      LINK: true,
+      META: true,
+      TEMPLATE: true,
+      NOSCRIPT: true,
+    };
+    var children = body.children;
+    for (var i = 0; i < children.length; i++) {
+      var ch = children[i];
+      if (!ch || ignoredTags[ch.tagName]) {
+        continue;
+      }
+      var chStyle = global.getComputedStyle(ch);
+      if (chStyle.display === 'none' || chStyle.visibility === 'hidden') {
+        continue;
+      }
+      var chRect = ch.getBoundingClientRect();
+      var chMb = parseFloat(chStyle.marginBottom) || 0;
+      var relBottom = chRect.bottom - bodyRect.top + chMb;
+      if (relBottom > maxChildRelativeBottom) {
+        maxChildRelativeBottom = relBottom;
+      }
+      var vpBottom = Math.ceil(chRect.bottom + chMb + marginBottom);
+      if (vpBottom > maxChildViewportBottom) {
+        maxChildViewportBottom = vpBottom;
+      }
+    }
+
+    var intrinsicBodyHeight =
+      maxChildRelativeBottom > 0
+        ? Math.ceil(maxChildRelativeBottom + paddingTop + paddingBottom + marginTop + marginBottom)
+        : Math.ceil((bodyRect.height || 0) + marginTop + marginBottom);
+
+    if (intrinsicBodyHeight <= 0) {
+      return 0;
+    }
+
+    var effectiveZoom = Math.max(1, scale);
+    return (
+      Math.max(
+        Math.ceil(intrinsicBodyHeight * effectiveZoom),
+        Math.ceil(maxChildViewportBottom * effectiveZoom)
+      ) + 32
+    );
+  }
+
+  function reportContentHeight() {
+    try {
+      var nextHeight = computeRequiredContentHeight();
+      if (nextHeight <= 0) {
+        return;
+      }
+      if (Math.abs(nextHeight - lastReportedHeight) <= 2) {
+        return;
+      }
+      lastReportedHeight = nextHeight;
+      global.parent.postMessage(
+        {
+          type: 'mis:resize',
+          height: nextHeight,
+        },
+        '*'
+      );
+    } catch (_err) {
+      // Ignore layout measurement errors during early document initialization
+    }
+  }
+
+  function scheduleReportContentHeight() {
+    reportContentHeight();
+    if (typeof global.requestAnimationFrame === 'function') {
+      global.requestAnimationFrame(function () {
+        reportContentHeight();
+      });
+    }
+    global.setTimeout(function () {
+      reportContentHeight();
+    }, 30);
   }
 
   function buildSnapshot() {
@@ -158,6 +264,7 @@
     if (typeof CustomEvent === 'function') {
       global.dispatchEvent(new CustomEvent('mis:route:changed', { detail: snapshot }));
     }
+    scheduleReportContentHeight(true);
   }
 
   function notifyInitListeners() {
@@ -177,6 +284,7 @@
     if (typeof CustomEvent === 'function') {
       global.dispatchEvent(new CustomEvent('mis:initialized', { detail: snapshot }));
     }
+    scheduleReportContentHeight(true);
   }
 
   function rpc(method, args, triggerElement) {
@@ -517,6 +625,7 @@
           pending.reject(rpcErr);
         }
       }
+      scheduleReportContentHeight(false);
     }
   });
 
@@ -752,9 +861,46 @@
     configurable: false,
   });
 
+  var observersAttached = false;
+  function attachAutoResizeObservers() {
+    if (observersAttached) {
+      return;
+    }
+    observersAttached = true;
+    if (typeof global.MutationObserver === 'function' && document.documentElement) {
+      var mo = new global.MutationObserver(function () {
+        scheduleReportContentHeight(false);
+      });
+      mo.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+      });
+    }
+    if (typeof global.ResizeObserver === 'function' && document.body) {
+      var ro = new global.ResizeObserver(function () {
+        scheduleReportContentHeight(false);
+      });
+      ro.observe(document.body);
+    }
+    global.addEventListener('resize', function () {
+      var currentWidth = global.innerWidth || 0;
+      if (currentWidth !== lastInnerWidth) {
+        lastInnerWidth = currentWidth;
+        scheduleReportContentHeight();
+      }
+    });
+    global.addEventListener('load', function () {
+      scheduleReportContentHeight();
+    });
+  }
+
   function sendReady() {
     renderIcons(document);
+    attachAutoResizeObservers();
     global.parent.postMessage({ type: 'mis:ready' }, '*');
+    scheduleReportContentHeight();
   }
 
   if (document.readyState === 'loading') {

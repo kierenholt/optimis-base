@@ -220,9 +220,10 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     }
 
     // 1. Verify GET /api/system/ui-config exposes uk.org.optimis.behaviour and its behaviour_summary widget
-    const uiConfigRes = await request.get(
-      `/api/system/ui-config?staff_id=${encodeURIComponent(m1Seed.teacher_staff_id)}`
-    );
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
+    const uiConfigRes = await request.get('/api/system/ui-config');
     expect(uiConfigRes.ok()).toBe(true);
     const uiConfigBody = await uiConfigRes.json();
     expect(uiConfigBody.ok).toBe(true);
@@ -247,7 +248,6 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
       other_group_id: m1Seed.other_group_id,
       reference_date: m1Seed.reference_date,
       academic_year_id: m1Seed.academic_year_id,
-      staff_id: m1Seed.teacher_staff_id,
     });
     await page.goto(`/?${params.toString()}`);
 
@@ -258,9 +258,11 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     await expect(editModeToggleBtn).toBeVisible();
     await editModeToggleBtn.click();
 
+    await page.getByTestId('dashboard-add-widget-btn').click();
     const placeBehaviourWidgetBtn = page.getByTestId('place-widget-btn-behaviour_summary');
     await expect(placeBehaviourWidgetBtn).toBeVisible();
     await placeBehaviourWidgetBtn.click();
+    await page.getByTestId('dashboard-widget-placement-preview').click();
 
     await editModeToggleBtn.click();
 
@@ -273,7 +275,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
 
     // 4. Switch to the Behaviour plugin workspace tab and log a Merit (+3) and an Incident (-2, containing a third-party pupil name in incident_notes)
     await page.getByTestId('nav-rail-search').click();
-    const behaviourNavBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Behaviour' }).first();
+    const behaviourNavBtn = page.locator('[data-testid^="host-search-result-view-"][data-testid$="-home"]').filter({ hasText: 'Behaviour' }).first();
     await expect(behaviourNavBtn).toBeVisible();
     await behaviourNavBtn.click();
 
@@ -299,7 +301,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     await pointsInput.fill('3');
     await notesInput.fill('Completed advanced polynomial factorisation extension independently.');
 
-    // Verify 1H: RPC args do not leak staff_id (identity is propagated via X-MIS-Staff-ID header by Host UI Shell)
+    // Verify 1H: RPC args do not leak staff_id (identity is resolved from authenticated session / dev persona)
     const rawArgsAttr = (await logBtn.getAttribute('data-mis-args')) || '{}';
     expect(JSON.parse(rawArgsAttr)).not.toHaveProperty('staff_id');
 
@@ -324,7 +326,8 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
       'Argued loudly with third-party pupil Draco Malfoy'
     );
 
-    // 5. Verify 1H: The mounted `behaviour_summary` Mini-Iframe Widget automatically refreshed via `mis:plugin:invalidated` without clicking Refresh
+    // 5. Verify 1H: Return to Home view and verify the mounted `behaviour_summary` Mini-Iframe Widget automatically refreshed via `mis:plugin:invalidated` without clicking Refresh
+    await page.getByTestId('nav-rail-home').click();
     await expect(widgetFrame.getByTestId('widget-behaviour-merits')).toHaveText('3');
     await expect(widgetFrame.getByTestId('widget-behaviour-demerits')).toHaveText('-2');
     await expect(widgetFrame.getByTestId('widget-behaviour-net')).toHaveText('1');
@@ -416,10 +419,11 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     }
 
     // 1. Verify strict `:own_groups` scoping (`strict_own_groups: true`): Teacher (`m1Seed.teacher_staff_id`) attempting to log behaviour for a pupil in another teacher's group (`m1Seed.other_group_pupil_id`) under strict_own_groups MUST fail fast
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
     const unauthorizedLogRes = await request.post(
-      `/api/p/${behaviourPlugId}/rpc/log_behaviour_event?staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`,
+      `/api/p/${behaviourPlugId}/rpc/log_behaviour_event`,
       {
         data: {
           args: {
@@ -441,10 +445,11 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     expect(unauthorizedLogBody.error_code).toContain('access denied under own_groups scope');
 
     // 1B: Verify Hierarchical Scope Subsumption: HoD (`personaSeed.hod_staff_id`, who holds `dal.pupils.read:all`) calling the `:own_groups` endpoint WITH `strict_own_groups: true` succeeds because `:all` subsumes `:own_groups`
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.hod_staff_id },
+    });
     const hodLogRes = await request.post(
-      `/api/p/${behaviourPlugId}/rpc/log_behaviour_event?staff_id=${encodeURIComponent(
-        personaSeed.hod_staff_id
-      )}`,
+      `/api/p/${behaviourPlugId}/rpc/log_behaviour_event`,
       {
         data: {
           args: {
@@ -467,10 +472,11 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     expect(hodLogBody.data.logged_event_id).toMatch(/^bev_[0-9a-f-]{36}$/);
 
     // Also verify group-transferred pupil (group_pupil_memberships.effective_to < reference_date) is blocked under `strict_own_groups: true`
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
     const transferredSummaryRes = await request.post(
-      `/api/p/${behaviourPlugId}/rpc/get_pupil_behaviour_summary?staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`,
+      `/api/p/${behaviourPlugId}/rpc/get_pupil_behaviour_summary`,
       {
         data: {
           args: {
@@ -489,9 +495,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
 
     // 2. Teacher logs a valid event for own-group `active_pupil_id`, verifies batch rollup (`1E` `get_by_ids_batch`), then Admin executes auto-bound `export_pupil_data` & `purge_pupil_data` (`1G`) and verifies 0 orphaned records remain
     const logValidRes = await request.post(
-      `/api/p/${behaviourPlugId}/rpc/log_behaviour_event?staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`,
+      `/api/p/${behaviourPlugId}/rpc/log_behaviour_event`,
       {
         data: {
           args: {
@@ -510,9 +514,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
 
     // 1E: Verify batch pupil behaviour lookup using `ctx.dal.pupils.get_by_ids_batch`
     const batchSummaryRes = await request.post(
-      `/api/p/${behaviourPlugId}/rpc/get_pupil_behaviour_summary?staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`,
+      `/api/p/${behaviourPlugId}/rpc/get_pupil_behaviour_summary`,
       {
         data: {
           args: {
@@ -529,10 +531,11 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     expect(Array.isArray(batchSummaryBody.data.pupils)).toBe(true);
     expect(batchSummaryBody.data.pupils.length).toBe(2);
 
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.admin_staff_id },
+    });
     const exportBeforePurgeRes = await request.post(
-      `/api/p/${behaviourPlugId}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
-        personaSeed.admin_staff_id
-      )}`,
+      `/api/p/${behaviourPlugId}/rpc/export_pupil_data`,
       {
         data: { args: { pupil_id: m1Seed.active_pupil_id } },
       }
@@ -544,9 +547,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     expect(exportBeforeBody.data[0].redactable_fields).toEqual(['incident_notes']);
 
     const purgeRes = await request.post(
-      `/api/p/${behaviourPlugId}/rpc/purge_pupil_data?staff_id=${encodeURIComponent(
-        personaSeed.admin_staff_id
-      )}`,
+      `/api/p/${behaviourPlugId}/rpc/purge_pupil_data`,
       {
         data: { args: { pupil_id: m1Seed.active_pupil_id } },
       }
@@ -557,9 +558,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     expect(purgeBody.data.purged_rows).toBe(1);
 
     const exportAfterPurgeRes = await request.post(
-      `/api/p/${behaviourPlugId}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
-        personaSeed.admin_staff_id
-      )}`,
+      `/api/p/${behaviourPlugId}/rpc/export_pupil_data`,
       {
         data: { args: { pupil_id: m1Seed.active_pupil_id } },
       }

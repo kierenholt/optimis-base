@@ -211,11 +211,7 @@ test.describe('Monochrome Lucide Icon Theme Contract: Host Shell, Plugin SDK [da
       }
       for (const pid of [behaviourPlugId, senPlugId, testPlugId]) {
         if (pid) {
-          await request.delete(
-            `/api/admin/plugins/${encodeURIComponent(pid)}?staff_id=${encodeURIComponent(
-              personaSeed.admin_staff_id
-            )}`
-          );
+          await request.delete(`/api/admin/plugins/${encodeURIComponent(pid)}`);
         }
       }
     }
@@ -260,9 +256,7 @@ test.describe('Monochrome Lucide Icon Theme Contract: Host Shell, Plugin SDK [da
     await page.goto(
       `${targetSenRoute}&reference_date=${encodeURIComponent(
         m1Seed.reference_date
-      )}&academic_year_id=${encodeURIComponent(m1Seed.academic_year_id)}&staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`
+      )}&academic_year_id=${encodeURIComponent(m1Seed.academic_year_id)}`
     );
 
     const hostShell = page.getByTestId('host-shell');
@@ -345,14 +339,40 @@ test.describe('Monochrome Lucide Icon Theme Contract: Host Shell, Plugin SDK [da
     await expect(editToggleBtn.locator('svg').first()).toHaveAttribute('stroke', 'currentColor');
 
     // 5. Switch to DSL persona and verify SafeguardingVaultPanel renders monochrome Lucide icons
-    await page.goto(`/?__persona=${encodeURIComponent(personaSeed.dsl_staff_id)}`);
+    const switchDslRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.dsl_staff_id },
+    });
+    expect(switchDslRes.ok()).toBe(true);
+    const dslSession = await switchDslRes.json();
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: dslSession.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
+    await page.goto('/');
     const dslPanel = page.getByTestId('dsl-safeguarding-vault-panel');
     await expect(dslPanel).toBeVisible();
     await expect(dslPanel.locator('svg').first()).toHaveAttribute('data-lucide-icon', 'shield-alert');
     await expect(dslPanel.locator('svg').first()).toHaveAttribute('stroke', 'currentColor');
 
     // 6. Switch to Admin persona and verify GdprSarPanel and AdminDiagnosticsPanel render monochrome Lucide icons
-    await page.goto(`/?__persona=${encodeURIComponent(personaSeed.admin_staff_id)}`);
+    const switchAdminRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.admin_staff_id },
+    });
+    expect(switchAdminRes.ok()).toBe(true);
+    const adminSession = await switchAdminRes.json();
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: adminSession.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
+    await page.goto('/');
     const sarPanel = page.getByTestId('sar-redaction-panel');
     await expect(sarPanel).toBeVisible();
     await expect(sarPanel.locator('svg').first()).toHaveAttribute('data-lucide-icon', 'file-check');
@@ -399,9 +419,11 @@ test.describe('Monochrome Lucide Icon Theme Contract: Host Shell, Plugin SDK [da
     }
 
     // 1. Verify GET /api/system/ui-config exposes declared Lucide icon names on plugins, views, and widgets
-    const uiConfigRes = await request.get(
-      `/api/system/ui-config?staff_id=${encodeURIComponent(personaSeed.admin_staff_id)}`
-    );
+    const switchAdminRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.admin_staff_id },
+    });
+    expect(switchAdminRes.ok()).toBe(true);
+    const uiConfigRes = await request.get('/api/system/ui-config');
     expect(uiConfigRes.ok()).toBe(true);
     const uiConfigBody = await uiConfigRes.json();
     const behPlugin = (uiConfigBody.plugins as Array<Record<string, unknown>>).find(
@@ -417,12 +439,23 @@ test.describe('Monochrome Lucide Icon Theme Contract: Host Shell, Plugin SDK [da
     expect(senPlugin?.icon).toBe('heart-pulse');
 
     // 2. Navigate to Behaviour plugin workspace and verify [data-mis-icon] inside sandboxed plugin iframe is hydrated with a monochrome Lucide <svg>
+    const switchTeacherRes = await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
+    expect(switchTeacherRes.ok()).toBe(true);
+    const teacherSession = await switchTeacherRes.json();
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: teacherSession.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
     await page.goto(
       `/p/${behaviourPlugId}?pupil_id=${encodeURIComponent(
         m1Seed.active_pupil_id
-      )}&group_id=${encodeURIComponent(m1Seed.own_group_id)}&__persona=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`
+      )}&group_id=${encodeURIComponent(m1Seed.own_group_id)}`
     );
 
     const behFrame = page.frameLocator(`[data-testid="plugin-iframe-${behaviourPlugId}"]`);

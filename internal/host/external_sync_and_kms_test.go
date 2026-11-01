@@ -44,6 +44,7 @@ func TestConfigureCloudKMSMode_RealModeEnabledWithoutConfig_FailsFastAndBlocksSa
 	}
 
 	// 2. Verify Cloud Key renewal endpoint fails fast with 503 REAL_CLOUD_KMS_NOT_CONFIGURED while real KMS is enabled without config
+	h.SetActiveDevPersona(seeded.DSLStaffID)
 	renewPayload, _ := json.Marshal(map[string]any{
 		"staff_id":    seeded.DSLStaffID,
 		"ttl_seconds": 3600,
@@ -108,6 +109,7 @@ func TestParentDMZSync_MockModePushProjectionAndPullInbox_EnforcesGuardianSafegu
 	}
 
 	// 1. Push sanitized parent read-projection to mock DMZ
+	h.SetActiveDevPersona(personas.AdminStaffID)
 	pushBodyBytes, _ := json.Marshal(map[string]any{
 		"pupil_id":         m1Seeded.ActivePupilID,
 		"reference_date":   m1Seeded.ReferenceDate,
@@ -246,6 +248,7 @@ func TestMATCentralSync_MockModePullPoliciesAndPushAnalytics_PersistsPoliciesExc
 	}
 
 	// 1. Seed mock MAT feed and pull policies outbound
+	h.SetActiveDevPersona(personas.AdminStaffID)
 	seedMatBytes, _ := json.Marshal(map[string]any{
 		"mat_id":                 "MAT_UNIT_TEST_01",
 		"grading_schema_version": "KS3_MASTERY_V2",

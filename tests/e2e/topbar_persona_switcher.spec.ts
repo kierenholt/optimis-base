@@ -13,7 +13,7 @@ interface SeededPersonaFixtures {
   terminated_staff_id: string;
 }
 
-test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
+test.describe('Persona Session Scoping & Removal of Topbar Switcher (Section 8A)', () => {
   let browserLogs: string[] = [];
   let pageErrors: string[] = [];
   let logCursor: string = '';
@@ -101,7 +101,7 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
         assigned_dsl_staff_id: seeded.dsl_staff_id,
         concern_category: 'WELFARE',
         incident_date: '2026-10-28',
-        summary: 'Topbar persona switcher live DSL vault verification note',
+        summary: 'Persona session scoping live DSL vault verification note',
         body_map: 'NONE',
         verbatim_account: 'Pupil requested to speak with pastoral lead during morning tutorial.',
         action_taken: 'Logged via write-only safeguarding postbox for DSL review',
@@ -111,7 +111,7 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
       throw new Error(`Failed to seed safeguarding postbox note in setup: ${postboxRes.status()}`);
     }
 
-    // Switch initial active persona to Admin so selecting Teacher in step 1 triggers a live onChange event
+    // Switch initial active persona to Admin
     await request.post('/api/auth/persona', {
       data: { staff_id: seeded.admin_staff_id },
     });
@@ -152,21 +152,22 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test('switchPersonaInTopbarDropdown_switchingAcrossTeacherHodDslAndAdmin_updatesSidebarPluginsMisInitScopesAndDslSarConsolesLive_test', async ({
+  test('personaSessionScoping_switchingSessionAcrossTeacherHodDslAndAdmin_updatesUiConfigMisInitScopesAndDslSarConsoles_test', async ({
     page,
+    request,
   }) => {
     if (!seeded) {
       throw new Error('Missing mandatory seeded persona state');
     }
 
     // =========================================================================
-    // 1. Open as Classroom Teacher (TEACHER) via ?__persona= override
+    // 1. Open as Classroom Teacher (TEACHER) via POST /api/auth/persona
     // =========================================================================
-    await page.goto(
-      `/?pupil_id=${encodeURIComponent(seeded.pupil_id)}&__persona=${encodeURIComponent(
-        seeded.teacher_staff_id
-      )}`
-    );
+    const switchTeacher = await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.teacher_staff_id },
+    });
+    expect(switchTeacher.ok()).toBe(true);
+    await page.goto(`/?pupil_id=${encodeURIComponent(seeded.pupil_id)}`);
 
     // Host topbar and in-UI persona switcher must be completely removed
     await expect(page.getByTestId('host-topbar')).toHaveCount(0);
@@ -215,24 +216,26 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
       });
 
     // Calling get_pupil_record (requires dal.pupils.read:all) from the iframe as Teacher must fail fast
+    await page.goto(`/p/${testPlugId}/student/${encodeURIComponent(seeded.pupil_id)}`);
     await pluginFrame.getByTestId('print-record-btn').click();
     await expect(pluginFrame.getByTestId('rpc-error-banner')).toBeVisible();
     await expect(pluginFrame.getByTestId('rpc-error-banner')).toContainText('caller lacks required DAL scopes');
 
     // =========================================================================
-    // 2. Switch to Head of Department (HOD) via ?__persona= override
+    // 2. Switch to Head of Department (HOD) via POST /api/auth/persona
     // =========================================================================
-    await page.goto(
-      `/?pupil_id=${encodeURIComponent(seeded.pupil_id)}&__persona=${encodeURIComponent(
-        seeded.hod_staff_id
-      )}`
-    );
+    const switchHod = await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.hod_staff_id },
+    });
+    expect(switchHod.ok()).toBe(true);
+    await page.goto(`/?pupil_id=${encodeURIComponent(seeded.pupil_id)}`);
 
     // Neither DSL Vault console nor Admin/DPO SAR console is visible for HoD
     await expect(dslVaultPanel).toHaveCount(0);
     await expect(sarRedactionPanel).toHaveCount(0);
 
-    // Verify mis:init updated window.mis.permittedMethods and window.mis.scopes for HoD
+    // Navigate to plugin view and verify mis:init updated window.mis.permittedMethods and window.mis.scopes for HoD
+    await page.goto(`/p/${testPlugId}/student/${encodeURIComponent(seeded.pupil_id)}`);
     await expect
       .poll(
         async () =>
@@ -274,13 +277,13 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
       .toBe(true);
 
     // =========================================================================
-    // 3. Switch to Designated Safeguarding Lead (DSL) via ?__persona= override
+    // 3. Switch to Designated Safeguarding Lead (DSL) via POST /api/auth/persona
     // =========================================================================
-    await page.goto(
-      `/?pupil_id=${encodeURIComponent(seeded.pupil_id)}&__persona=${encodeURIComponent(
-        seeded.dsl_staff_id
-      )}`
-    );
+    const switchDsl = await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.dsl_staff_id },
+    });
+    expect(switchDsl.ok()).toBe(true);
+    await page.goto(`/?pupil_id=${encodeURIComponent(seeded.pupil_id)}`);
 
     // DSL Vault Console appears; Admin/DPO SAR Console remains hidden
     await expect(dslVaultPanel).toBeVisible();
@@ -322,13 +325,13 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
     await expect(page.getByTestId('dsl-cloud-key-input')).not.toHaveValue('');
 
     // =========================================================================
-    // 4. Switch to System Administrator / DPO (ADMIN) via ?__persona= override
+    // 4. Switch to System Administrator / DPO (ADMIN) via POST /api/auth/persona
     // =========================================================================
-    await page.goto(
-      `/?pupil_id=${encodeURIComponent(seeded.pupil_id)}&__persona=${encodeURIComponent(
-        seeded.admin_staff_id
-      )}`
-    );
+    const switchAdmin = await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.admin_staff_id },
+    });
+    expect(switchAdmin.ok()).toBe(true);
+    await page.goto(`/?pupil_id=${encodeURIComponent(seeded.pupil_id)}`);
 
     // DSL Vault Console hides; Admin/DPO SAR Redaction Console appears!
     await expect(dslVaultPanel).toHaveCount(0);
@@ -342,7 +345,7 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
     await expect(page.getByTestId('sar-section-core-Core Pupil Profile & Enrolments')).toBeVisible();
   });
 
-  test('topbarPersonaSwitcher_whenDevPersonaSwitcherDisabled_hidesPersonaSwitcherInTopbar_test', async ({
+  test('noTopbarPersonaSwitcher_whenDevPersonaSwitcherDisabled_rendersZeroPersonaSwitcherElements_test', async ({
     page,
     request,
   }) => {

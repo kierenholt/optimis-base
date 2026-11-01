@@ -133,10 +133,16 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     personaSeeded = pBody;
 
     // 7. Install and activate lms_sync_plugin dynamically at runtime as Admin
+    const switchAdminRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeeded.admin_staff_id },
+    });
+    if (!switchAdminRes.ok()) {
+      throw new Error(`Failed to switch to Admin persona in setup: ${switchAdminRes.status()}`);
+    }
+
     const installRes = await request.post('/api/admin/plugins/install', {
       data: {
         folder: PLUGIN_FOLDER,
-        staff_id: personaSeeded.admin_staff_id,
       },
     });
     if (!installRes.ok()) {
@@ -149,9 +155,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     const activateRes = await request.post(
       `/api/admin/plugins/${encodeURIComponent(PLUGIN_ID)}/activate`,
       {
-        data: {
-          staff_id: personaSeeded.admin_staff_id,
-        },
+        data: {},
       }
     );
     if (!activateRes.ok()) {
@@ -162,6 +166,12 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
   });
 
   test.afterEach(async ({ request }, testInfo) => {
+    if (personaSeeded?.admin_staff_id) {
+      await request.post('/api/auth/persona', {
+        data: { staff_id: personaSeeded.admin_staff_id },
+      });
+    }
+
     // 1. Purge any plugin sync logs created for seeded pupils before removing the plugin
     if (m1Seeded && personaSeeded && lmsPlugId) {
       for (const pupilId of [
@@ -173,7 +183,6 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
           data: {
             args: {
               pupil_id: pupilId,
-              staff_id: personaSeeded.admin_staff_id,
             },
           },
         });
@@ -181,13 +190,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     }
 
     // 2. Remove runtime-installed plugin and clear mock egress rules
-    if (personaSeeded?.admin_staff_id) {
-      await request.delete(
-        `/api/admin/plugins/${encodeURIComponent(PLUGIN_ID)}?staff_id=${encodeURIComponent(personaSeeded.admin_staff_id)}`
-      );
-    } else {
-      await request.delete(`/api/admin/plugins/${encodeURIComponent(PLUGIN_ID)}`);
-    }
+    await request.delete(`/api/admin/plugins/${encodeURIComponent(PLUGIN_ID)}`);
     await request.delete('/api/test/egress-mock');
 
     // 3. Fetch Backend Service Logs emitted during this test
@@ -263,9 +266,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     ]);
 
     // Verify 1G: manifest.json endpoints do not duplicate export_pupil_data / purge_pupil_data in UI config
-    const uiConfigRes = await request.get(
-      `/api/system/ui-config?staff_id=${encodeURIComponent(personaSeeded.hod_staff_id)}`
-    );
+    const uiConfigRes = await request.get('/api/system/ui-config');
     expect(uiConfigRes.ok()).toBe(true);
     const uiConfigBody = await uiConfigRes.json();
     const lmsPluginNav = uiConfigBody.plugins.find((p: { id: string }) => p.id === lmsPlugId);
@@ -283,13 +284,12 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
       other_group_id: m1Seeded.other_group_id,
       reference_date: m1Seeded.reference_date,
       academic_year_id: m1Seeded.academic_year_id,
-      staff_id: personaSeeded.hod_staff_id,
     });
     await page.goto(`/?${params.toString()}`);
     await expect(page.getByTestId('host-shell')).toBeVisible();
 
     await page.getByTestId('nav-rail-search').click();
-    const lmsNavBtn = page.getByTestId(`command-palette-result-view-${lmsPluginNav.id}-home`);
+    const lmsNavBtn = page.getByTestId(`host-search-result-view-${lmsPluginNav.id}-home`);
     await expect(lmsNavBtn).toBeVisible();
     await lmsNavBtn.click();
 
@@ -351,12 +351,14 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     }
 
     // 1. RBAC: Classroom Teacher (who lacks dal.groups.write:all) is rejected when calling upsert_pupil_membership
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeeded.teacher_staff_id },
+    });
     const unauthTransferRes = await request.post(
       `/api/p/${lmsPlugId}/rpc/upsert_pupil_membership`,
       {
         data: {
           args: {
-            staff_id: personaSeeded.teacher_staff_id,
             group_id: m1Seeded.other_group_id,
             pupil_id: m1Seeded.active_pupil_id,
             academic_year_id: m1Seeded.academic_year_id,
@@ -385,12 +387,14 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
       },
     });
 
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeeded.admin_staff_id },
+    });
     const adminTransferRes = await request.post(
       `/api/p/${lmsPlugId}/rpc/upsert_pupil_membership`,
       {
         data: {
           args: {
-            staff_id: personaSeeded.admin_staff_id,
             group_id: m1Seeded.other_group_id,
             pupil_id: m1Seeded.active_pupil_id,
             academic_year_id: m1Seeded.academic_year_id,
@@ -408,7 +412,6 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
         {
           data: {
             args: {
-              staff_id: personaSeeded!.admin_staff_id,
               pupil_id: m1Seeded!.active_pupil_id,
             },
           },
@@ -428,7 +431,6 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
       {
         data: {
           args: {
-            staff_id: personaSeeded.admin_staff_id,
             pupil_id: m1Seeded.active_pupil_id,
           },
         },
@@ -447,7 +449,6 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
       {
         data: {
           args: {
-            staff_id: personaSeeded.admin_staff_id,
             pupil_id: m1Seeded.active_pupil_id,
           },
         },
@@ -463,7 +464,6 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
       {
         data: {
           args: {
-            staff_id: personaSeeded.admin_staff_id,
             pupil_id: m1Seeded.active_pupil_id,
           },
         },

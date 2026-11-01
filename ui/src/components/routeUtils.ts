@@ -17,8 +17,6 @@ export const HOST_ALLOWED_QUERY_KEYS = new Set([
   'slot_id',
   'reference_date',
   'academic_year_id',
-  '__persona',
-  'staff_id',
 ]);
 
 export type HostViewMode = 'home' | 'search' | 'settings' | 'plugin';

@@ -173,7 +173,7 @@ test.describe('Backend Session & Persona Resolution (Section 8A & Auth Flag)', (
       },
     ]);
 
-    await page.goto(`/?pupil_id=${encodeURIComponent(seeded.pupil_id)}`);
+    await page.goto(`/p/${testPlugId}/student/${encodeURIComponent(seeded.pupil_id)}`);
     const hostShell = page.getByTestId('host-shell');
     await expect(hostShell).toBeVisible();
 

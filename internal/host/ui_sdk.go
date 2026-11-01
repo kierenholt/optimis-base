@@ -116,10 +116,7 @@ func MatchPluginViewRoute(plugin *LoadedPlugin, rawSubpath string, query url.Val
 		return nil, http.StatusNotFound, fmt.Sprintf("UNDECLARED_PLUGIN_VIEW_PATH: path %q is not declared in manifest.json views", normalizedPath)
 	}
 
-	allowedQuery := map[string]bool{
-		"__persona": true,
-		"staff_id":  true,
-	}
+	allowedQuery := map[string]bool{}
 	for _, qp := range matchedView.QueryParams {
 		trimmedQP := strings.TrimSpace(qp)
 		if trimmedQP != "" {
@@ -367,7 +364,7 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("GET /api/system/ui-config", func(w http.ResponseWriter, r *http.Request) {
-		caller, callerErr := h.ResolveRequestCaller(r, strings.TrimSpace(r.URL.Query().Get("staff_id")))
+		caller, callerErr := h.ResolveRequestCaller(r, "")
 		if callerErr != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,
@@ -602,7 +599,7 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("GET /api/system/search", func(w http.ResponseWriter, r *http.Request) {
-		caller, callerErr := h.ResolveRequestCaller(r, strings.TrimSpace(r.URL.Query().Get("staff_id")))
+		caller, callerErr := h.ResolveRequestCaller(r, "")
 		if callerErr != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,

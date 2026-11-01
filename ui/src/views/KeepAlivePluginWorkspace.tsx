@@ -7,6 +7,7 @@ export interface KeepAlivePluginWorkspaceProps {
   installedPlugins: PluginNavEntry[];
   activePluginId: string;
   isVisible?: boolean;
+  pluginIframeHeights?: Record<string, number>;
   onRegisterPluginIframeRef: (pluginId: string, el: HTMLIFrameElement | null) => void;
   onIframeLoad: (pluginId: string, win: Window | null) => void;
 }
@@ -17,6 +18,7 @@ export const KeepAlivePluginWorkspace: React.FC<KeepAlivePluginWorkspaceProps> =
   installedPlugins,
   activePluginId,
   isVisible,
+  pluginIframeHeights,
   onRegisterPluginIframeRef,
   onIframeLoad,
 }) => {
@@ -25,7 +27,9 @@ export const KeepAlivePluginWorkspace: React.FC<KeepAlivePluginWorkspaceProps> =
     <section
       data-testid="dashboard-workspace-panel"
       style={{
-        display: showWorkspace ? 'block' : 'none',
+        display: showWorkspace ? 'flex' : 'none',
+        flexDirection: 'column',
+        flex: 1,
         backgroundColor: 'var(--mis-bg-surface)',
         border: '1px solid var(--mis-border-subtle)',
         borderRadius: 'var(--mis-radius-md, 8px)',
@@ -37,11 +41,18 @@ export const KeepAlivePluginWorkspace: React.FC<KeepAlivePluginWorkspaceProps> =
         data-testid="keep-alive-lru-pool"
         data-pool-size={String(mountedPluginIds.length)}
         data-lru-order={lruPluginOrder.join(',')}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+        }}
       >
         {mountedPluginIds.map((pluginId) => {
           const descriptor = installedPlugins.find((p) => p.id === pluginId);
           const entryUrl = descriptor ? descriptor.entry_url : `/p/${pluginId}/ui/index.html`;
           const isActive = pluginId === activePluginId;
+          const dynamicHeight = pluginIframeHeights?.[pluginId];
+          const defaultMinHeight = 'calc(100vh - 96px)';
           return (
             <iframe
               key={pluginId}
@@ -57,7 +68,8 @@ export const KeepAlivePluginWorkspace: React.FC<KeepAlivePluginWorkspaceProps> =
               style={{
                 display: isActive && showWorkspace ? 'block' : 'none',
                 width: '100%',
-                height: '320px',
+                minHeight: defaultMinHeight,
+                height: dynamicHeight ? `${dynamicHeight}px` : defaultMinHeight,
                 border: '1px solid var(--mis-border-subtle)',
                 borderRadius: 'var(--mis-radius-md, 8px)',
                 backgroundColor: 'var(--mis-bg-surface)',

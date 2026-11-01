@@ -479,7 +479,7 @@ func (h *Host) RegisterGDPRRoutes(mux *http.ServeMux) {
 			})
 			return
 		}
-		caller, err := h.ResolveRequestCaller(r, body.StaffID)
+		caller, err := h.ResolveRequestCaller(r, "")
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,
@@ -519,7 +519,7 @@ func (h *Host) RegisterGDPRRoutes(mux *http.ServeMux) {
 			})
 			return
 		}
-		caller, err := h.ResolveRequestCaller(r, body.StaffID)
+		caller, err := h.ResolveRequestCaller(r, "")
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,
@@ -561,7 +561,7 @@ func (h *Host) RegisterGDPRRoutes(mux *http.ServeMux) {
 			})
 			return
 		}
-		caller, err := h.ResolveRequestCaller(r, body.StaffID)
+		caller, err := h.ResolveRequestCaller(r, "")
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,
@@ -610,7 +610,7 @@ func (h *Host) RegisterGDPRRoutes(mux *http.ServeMux) {
 			})
 			return
 		}
-		caller, err := h.ResolveRequestCaller(r, body.StaffID)
+		caller, err := h.ResolveRequestCaller(r, "")
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,

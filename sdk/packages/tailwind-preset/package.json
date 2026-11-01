@@ -1,5 +1,5 @@
 {
-  "name": "@ukmis/tailwind-preset",
+  "name": "@optimis/tailwind-preset",
   "version": "1.0.0",
   "description": "Official Tailwind CSS preset mapping Optimis --mis-* school branding, surface, and accessibility tokens (Section 9.5 & 10C).",
   "main": "index.js",

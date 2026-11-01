@@ -121,7 +121,7 @@ Optimis exposes three logging & diagnostic surfaces:
 2. **Live HTTP Log & Diagnostic Stream (`npm run logs:tail`)**:
    The [`scripts/tail_logs.mjs`](file:///home/kieren/Documents/code/optimis/scripts/tail_logs.mjs) script connects to the running server's log cursor (`/api/test/logs`) and Admin diagnostic ring buffer (`/api/admin/diagnostics/bundle`) and prints color-coded `INFO`, `ERROR`, and `DIAG` lines as you click around the UI.
 3. **In-UI Admin Diagnostic Bundle Export**:
-   Open `http://127.0.0.1:18080/?__persona=stf_admin_01` (or set `TEST_DEFAULT_PERSONA=stf_admin_01` in `.env`), scroll to the **Day-2 Operations: Plugin Diagnostic Bundle** panel in the Host UI, and click **Download Plugin Diagnostic Bundle** to inspect the JSON/log ring buffer directly in the browser.
+   With `TEST_DEFAULT_PERSONA=stf_admin_01` in `.env`, open `http://127.0.0.1:18080`, scroll to the **Day-2 Operations: Plugin Diagnostic Bundle** panel in the Host UI, and click **Download Plugin Diagnostic Bundle** to inspect the JSON/log ring buffer directly in the browser.
 
 ### Log Tailing Commands
 Run any of these in a second terminal while testing:
@@ -148,8 +148,8 @@ tail -f .data/mis-server.log
 
 ## 5. Human Testing Cheat Sheet (Personas, Pupils & Plugins)
 
-### 5.1 Persona Overrides (`TEST_DEFAULT_PERSONA` & `?__persona=`)
-Set `TEST_DEFAULT_PERSONA=<staff_id>` in `.env` or append `?__persona=<staff_id>` to any browser URL (e.g. `http://127.0.0.1:18080/?__persona=stf_admin_01`) to test different RBAC roles and `:own_groups` scoping:
+### 5.1 Persona Configuration (`TEST_DEFAULT_PERSONA` & `--persona`)
+Set `TEST_DEFAULT_PERSONA=<staff_id>` in `.env` (or pass `--persona <staff_id>` to `mis-dev-server` / `mis-test`) to test different RBAC roles and `:own_groups` scoping:
 
 | Staff ID | Persona Name | Role | Key Permissions & What to Test |
 | :--- | :--- | :--- | :--- |

@@ -18,7 +18,6 @@ export interface UseHostAdminAndDslStateParams {
   setActiveStaffId: React.Dispatch<React.SetStateAction<string>>;
   activeCaller: ActiveCallerIdentity | null;
   setActiveCaller: React.Dispatch<React.SetStateAction<ActiveCallerIdentity | null>>;
-  initialPersonaParam: string;
   setPinnedRecents?: React.Dispatch<React.SetStateAction<PinnedRecentEntry[]>>;
   applyInstalledPluginsState: (
     plugins: PluginNavEntry[],
@@ -40,8 +39,6 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
     setActiveStaffId,
     activeCaller,
     setActiveCaller,
-    initialPersonaParam,
-    refreshWorkspaceForStaff,
     broadcastInitToMountedIframes,
   } = params;
 
@@ -67,15 +64,7 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
   useEffect(() => {
     const loadSessionAndSafeguarding = async () => {
       try {
-        if (initialPersonaParam && activeStaffId === initialPersonaParam) {
-          await fetch('/api/auth/persona', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staff_id: initialPersonaParam }),
-          }).catch(() => {});
-        }
-        const sessQuery = activeStaffId ? `?__persona=${encodeURIComponent(activeStaffId)}` : '';
-        const sessRes = await fetch(`/api/auth/session${sessQuery}`);
+        const sessRes = await fetch('/api/auth/session');
         if (!sessRes.ok) {
           return;
         }
@@ -91,6 +80,7 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
             scopes,
           };
           setActiveCaller(nextCaller);
+          setActiveStaffId((prev) => prev || caller.staff_id);
           broadcastInitToMountedIframes(
             { staff_id: caller.staff_id },
             undefined,
@@ -105,9 +95,6 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
           const notesParams = new URLSearchParams();
           if (activePupilId) {
             notesParams.set('pupil_id', activePupilId);
-          }
-          if (activeStaffId) {
-            notesParams.set('__persona', activeStaffId);
           }
           const query = notesParams.toString() ? `?${notesParams.toString()}` : '';
           const notesRes = await fetch(`/api/safeguarding/notes${query}`);
@@ -127,7 +114,7 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
       }
     };
     void loadSessionAndSafeguarding();
-  }, [activePupilId, activeStaffId, initialPersonaParam]);
+  }, [activePupilId, activeStaffId]);
 
   const handleRenewCloudKey = async () => {
     setDslVaultError('');
@@ -169,7 +156,7 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
     const res = await fetch('/api/admin/gdpr/sar/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pupil_id: activePupilId, staff_id: activeStaffId || undefined }),
+      body: JSON.stringify({ pupil_id: activePupilId }),
     });
     const body = await res.json();
     if (!res.ok || !body.ok) {
@@ -217,7 +204,6 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         pupil_id: activePupilId,
-        staff_id: activeStaffId || undefined,
         sections: sarSections,
       }),
     });
@@ -239,7 +225,6 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         pupil_id: activePupilId,
-        staff_id: activeStaffId || undefined,
       }),
     });
     const body = await res.json();
@@ -252,8 +237,7 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
   };
 
   const handleDownloadDiagnosticBundle = async () => {
-    const query = activeStaffId ? `?staff_id=${encodeURIComponent(activeStaffId)}` : '';
-    const res = await fetch(`/api/admin/diagnostics/bundle${query}`);
+    const res = await fetch('/api/admin/diagnostics/bundle');
     const body = await res.json();
     if (!res.ok || !body.ok || !body.bundle) {
       setDiagnosticBundleStatus(`ERROR:${body?.error_code || res.status}`);

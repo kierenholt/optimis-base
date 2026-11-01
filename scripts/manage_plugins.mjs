@@ -50,7 +50,6 @@ async function apiRequest(method, route, body = undefined) {
     method,
     headers: {
       'Content-Type': 'application/json',
-      'X-MIS-Staff-ID': adminStaffId,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -62,19 +61,16 @@ async function apiRequest(method, route, body = undefined) {
 }
 
 async function listInstalledPlugins() {
-  const data = await apiRequest('GET', `/api/admin/plugins?staff_id=${encodeURIComponent(adminStaffId)}`);
+  const data = await apiRequest('GET', '/api/admin/plugins');
   return Array.isArray(data.plugins) ? data.plugins : [];
 }
 
 async function installAndActivateFolder(folder) {
   const installRes = await apiRequest('POST', '/api/admin/plugins/install', {
     folder,
-    staff_id: adminStaffId,
   });
   const plugId = installRes.plug_id || installRes.plugin_id;
-  await apiRequest('POST', `/api/admin/plugins/${encodeURIComponent(plugId)}/activate`, {
-    staff_id: adminStaffId,
-  });
+  await apiRequest('POST', `/api/admin/plugins/${encodeURIComponent(plugId)}/activate`, {});
   console.log(`  [+] Installed & Activated: ${plugId.padEnd(12)} (folder: ${folder})`);
 }
 
@@ -86,9 +82,7 @@ async function removeAllPlugins() {
   }
   for (const p of current) {
     const plugId = p.plug_id || p.id;
-    await apiRequest('DELETE', `/api/admin/plugins/${encodeURIComponent(plugId)}`, {
-      staff_id: adminStaffId,
-    });
+    await apiRequest('DELETE', `/api/admin/plugins/${encodeURIComponent(plugId)}`, {});
     console.log(`  [-] Removed plugin:        ${plugId.padEnd(12)} (folder: ${p.folder})`);
   }
 }

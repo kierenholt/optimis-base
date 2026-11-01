@@ -1,6 +1,6 @@
 # `mis-dev-server` CLI (`cmd/mis-dev-server`)
 
-Distributable Local Testbed Server (`bin/mis-dev-server`, Sections 8A, 10A & 10D) that boots the Go Host Container with an auto-seeded synthetic UK school `core.db`, hot-reload plugin mounting, persona switching (`--persona`, `?__persona=`, `X-MIS-Persona`), and single-line structured `stdout` observability.
+Distributable Local Testbed Server (`bin/mis-dev-server`, Sections 8A, 10A & 10D) that boots the Go Host Container with an auto-seeded synthetic UK school `core.db`, hot-reload plugin mounting, persona selection (`--persona` CLI flag / `TEST_DEFAULT_PERSONA`), and single-line structured `stdout` observability.
 
 ## Usage
 

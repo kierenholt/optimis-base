@@ -167,6 +167,13 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
           data: { args: { pupil_id: pid } },
         });
       }
+      await request.put('/api/system/user-settings', {
+        data: {
+          staff_id: m1Seed.teacher_staff_id,
+          base_font_size: 'medium',
+          theme_mode: 'light',
+        },
+      });
     }
 
     // 2. Fetch Backend Service Logs emitted during this test
@@ -215,6 +222,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
 
   test('createTripVerifyPrConsentAndGenerateEmergencyPack_teacherCreatesGroupTripRejectsNonPrAndCourtOrderGuardiansAcceptsUnrestrictedPrMotherAndGeneratesEmergencyManifest_test', async ({
     page,
+    request,
   }) => {
     if (!m1Seed || !personaSeed) {
       throw new Error('Missing mandatory seeded state');
@@ -223,13 +231,15 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
     const nonPrGrandparentPersonId = `per_gp_${m1Seed.fixture_id}`;
 
     // Open Host UI Shell as the Trip Leader / Classroom Teacher (m1Seed.teacher_staff_id)
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
     const params = new URLSearchParams({
       pupil_id: m1Seed.active_pupil_id,
       group_id: m1Seed.own_group_id,
       other_group_id: m1Seed.other_group_id,
       reference_date: m1Seed.reference_date,
       academic_year_id: m1Seed.academic_year_id,
-      staff_id: m1Seed.teacher_staff_id,
     });
     await page.goto(`/?${params.toString()}`);
 
@@ -366,10 +376,11 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
     }
 
     // 1. Verify :own_groups isolation: Teacher 1 attempting to create a trip for Teacher 2's group (other_group_id) MUST fail fast
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
     const crossGroupTripRes = await request.post(
-      `/api/p/${tripsPlugId}/rpc/create_trip?staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`,
+      `/api/p/${tripsPlugId}/rpc/create_trip`,
       {
         data: {
           args: {
@@ -390,9 +401,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
 
     // 2. Teacher 1 creates a valid trip for own_group_id and records valid PR consent from Anne Byron
     const createOkRes = await request.post(
-      `/api/p/${tripsPlugId}/rpc/create_trip?staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`,
+      `/api/p/${tripsPlugId}/rpc/create_trip`,
       {
         data: {
           args: {
@@ -413,8 +422,11 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
     expect(tripId).toMatch(/^trp_/);
 
     // Verify Teacher 2 (other_teacher_staff_id) is blocked under :own_groups from generating the emergency pack for Teacher 1's trip
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.other_teacher_staff_id },
+    });
     const otherTeacherPackRes = await request.post(
-      `/api/p/${tripsPlugId}/rpc/generate_trip_emergency_pack?staff_id=${encodeURIComponent(m1Seed.other_teacher_staff_id)}`,
+      `/api/p/${tripsPlugId}/rpc/generate_trip_emergency_pack`,
       {
         data: {
           args: {
@@ -431,10 +443,11 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
     expect(otherTeacherPackBody.error_code).toContain('access denied under own_groups scope');
 
     // Record valid PR consent for active_pupil_id containing a third-party name in medical_notes for SAR redaction verification
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
     const consentOkRes = await request.post(
-      `/api/p/${tripsPlugId}/rpc/record_trip_consent?staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`,
+      `/api/p/${tripsPlugId}/rpc/record_trip_consent`,
       {
         data: {
           args: {
@@ -511,9 +524,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
 
     // 4. Verify UK GDPR purge_pupil_data removes all rows for active_pupil_id in plugin_trips.db
     const purgeRes = await request.post(
-      `/api/p/${tripsPlugId}/rpc/purge_pupil_data?staff_id=${encodeURIComponent(
-        personaSeed.admin_staff_id
-      )}`,
+      `/api/p/${tripsPlugId}/rpc/purge_pupil_data`,
       {
         data: { args: { pupil_id: m1Seed.active_pupil_id } },
       }
@@ -524,9 +535,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
     expect(purgeBody.data.purged_rows).toBe(1);
 
     const exportAfterPurgeRes = await request.post(
-      `/api/p/${tripsPlugId}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
-        personaSeed.admin_staff_id
-      )}`,
+      `/api/p/${tripsPlugId}/rpc/export_pupil_data`,
       {
         data: { args: { pupil_id: m1Seed.active_pupil_id } },
       }
@@ -534,5 +543,134 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
     expect(exportAfterPurgeRes.ok()).toBe(true);
     const exportAfterBody = await exportAfterPurgeRes.json();
     expect(exportAfterBody.data[0].records.length).toBe(0);
+  });
+
+  test('pluginFullPageWorkspace_withLargeFontSizeAndExpandedContent_resizesVerticallyWithoutClipping_test', async ({
+    page,
+    request,
+  }) => {
+    if (!m1Seed || !personaSeed) {
+      throw new Error('Missing mandatory seeded state');
+    }
+
+    // 1. Authenticate as Teacher and set base_font_size to "large" (18px, zoom 1.125)
+    const switchTeacherRes = await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
+    expect(switchTeacherRes.ok()).toBe(true);
+    const teacherSession = await switchTeacherRes.json();
+
+    const updateFontRes = await request.put('/api/system/user-settings', {
+      data: {
+        staff_id: m1Seed.teacher_staff_id,
+        base_font_size: 'large',
+        theme_mode: 'light',
+      },
+    });
+    expect(updateFontRes.ok()).toBe(true);
+
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: teacherSession.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
+
+    // 2. Open the full-page plugin route without group_id and trigger the error banner (exact user reproduction)
+    await page.goto(`/p/${tripsPlugId}`);
+
+    const hostShell = page.getByTestId('host-shell');
+    await expect(hostShell).toBeVisible({ timeout: 4000 });
+    await expect(hostShell).toHaveAttribute('data-mis-font-size', 'large', { timeout: 4000 });
+
+    const tripsIframeEl = page.getByTestId(`plugin-iframe-${tripsPlugId}`);
+    await expect(tripsIframeEl).toBeVisible({ timeout: 4000 });
+
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${tripsPlugId}"]`);
+    const pluginRoot = pluginFrame.getByTestId('trips-consent-plugin-root');
+    await expect(pluginRoot).toBeVisible({ timeout: 4000 });
+    await expect(pluginFrame.locator(':root')).toHaveAttribute('data-mis-font-size', 'large', { timeout: 4000 });
+
+    await pluginFrame.getByTestId('create-trip-btn').click({ timeout: 4000 });
+    const errorBanner = pluginFrame.getByTestId('trips-error-banner');
+    await expect(errorBanner).toBeVisible({ timeout: 4000 });
+    await expect(errorBanner).toContainText('missing mandatory parameter: group_id', { timeout: 4000 });
+
+    // 3. Assert the full-page plugin iframe is NOT clipped vertically at 320px and fits 100% of its zoomed content
+    await expect
+      .poll(
+        async () => {
+          const hostIframeHeight = await tripsIframeEl.evaluate((el) => (el as HTMLElement).clientHeight);
+          const innerMetrics = await pluginFrame.locator(':root').evaluate((docEl) => {
+            const rootEl = document.querySelector('[data-testid="trips-consent-plugin-root"]');
+            const errEl = document.querySelector('[data-testid="trips-error-banner"]');
+            const rootRect = rootEl ? rootEl.getBoundingClientRect() : null;
+            const errRect = errEl ? errEl.getBoundingClientRect() : null;
+            return {
+              clientHeight: docEl.clientHeight,
+              scrollHeight: docEl.scrollHeight,
+              innerHeight: window.innerHeight,
+              rootBottom: rootRect ? Math.ceil(rootRect.bottom) : 0,
+              errBottom: errRect ? Math.ceil(errRect.bottom) : 0,
+            };
+          });
+          return {
+            hostIframeHeight,
+            innerMetrics,
+            isUnclipped:
+              hostIframeHeight > 400 &&
+              innerMetrics.clientHeight >= innerMetrics.scrollHeight &&
+              innerMetrics.innerHeight >= innerMetrics.rootBottom &&
+              innerMetrics.innerHeight >= innerMetrics.errBottom,
+          };
+        },
+        { timeout: 5000 }
+      )
+      .toEqual(
+        expect.objectContaining({
+          isUnclipped: true,
+        })
+      );
+
+    // 4. Navigate with group_id & pupil_id and expand all 3 sections (Create Trip + Record Consent + Emergency Manifest)
+    const fullParams = new URLSearchParams({
+      pupil_id: m1Seed.active_pupil_id,
+      group_id: m1Seed.own_group_id,
+      reference_date: m1Seed.reference_date,
+      academic_year_id: m1Seed.academic_year_id,
+    });
+    await page.goto(`/p/${tripsPlugId}?${fullParams.toString()}`);
+    await expect(pluginFrame.getByTestId('trips-context-status')).toContainText(
+      `GROUP:${m1Seed.own_group_id} | PUPIL:${m1Seed.active_pupil_id}`
+    );
+
+    await pluginFrame.getByTestId('create-trip-btn').click();
+    await expect(pluginFrame.getByTestId('active-trip-card')).toBeVisible();
+
+    await pluginFrame.getByTestId('consent-guardian-id-input').fill(m1Seed.unrestricted_mother_person_id);
+    await pluginFrame.getByTestId('record-consent-btn').click();
+    await expect(pluginFrame.getByTestId('consent-result-box')).toBeVisible();
+
+    await pluginFrame.getByTestId('generate-emergency-pack-btn').click();
+    const emergencyPack = pluginFrame.getByTestId('trip-emergency-pack');
+    await expect(emergencyPack).toBeVisible();
+
+    // Verify the iframe dynamically grew taller to fit the expanded emergency pack without vertical clipping
+    await expect
+      .poll(async () => {
+        return await pluginFrame.locator(':root').evaluate((docEl) => {
+          const packEl = document.querySelector('[data-testid="trip-emergency-pack"]');
+          const packRect = packEl ? packEl.getBoundingClientRect() : null;
+          return {
+            isUnclipped:
+              docEl.clientHeight >= docEl.scrollHeight &&
+               packRect !== null &&
+              window.innerHeight >= Math.ceil(packRect.bottom),
+          };
+        });
+      })
+      .toEqual({ isUnclipped: true });
   });
 });

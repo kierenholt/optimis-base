@@ -258,12 +258,21 @@ test.describe('Admin-Exported PII-Scrubbed Diagnostic Bundle (Section 8 Gap 1, S
     await expect(page.getByTestId('admin-diagnostics-panel')).toHaveCount(0);
     await expect(page.getByTestId('download-plugin-diagnostic-bundle-btn')).toHaveCount(0);
 
-    // 5. Switch to System Admin / DPO via ?__persona= override and verify "Download Plugin Diagnostic Bundle" appears
-    await page.goto(
-      `/?pupil_id=${encodeURIComponent(seeded.pupil_id)}&__persona=${encodeURIComponent(
-        seeded.admin_staff_id
-      )}`
-    );
+    // 5. Switch to System Admin / DPO via POST /api/auth/persona and verify "Download Plugin Diagnostic Bundle" appears
+    const switchAdminRes = await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.admin_staff_id },
+    });
+    expect(switchAdminRes.ok()).toBe(true);
+    const adminSessionBody = await switchAdminRes.json();
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: adminSessionBody.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
+    await page.goto(`/?pupil_id=${encodeURIComponent(seeded.pupil_id)}`);
 
     const diagPanel = page.getByTestId('admin-diagnostics-panel');
     await expect(diagPanel).toBeVisible();

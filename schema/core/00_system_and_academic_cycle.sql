@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS dashboard_layouts (
     scope_type TEXT NOT NULL CHECK (scope_type IN ('ROLE_DEFAULT', 'STAFF')),
     scope_target TEXT NOT NULL,                        -- role_id (e.g. 'TEACHER', 'ADMIN') or staff_id (e.g. 'stf_tch_7a')
     widgets_json TEXT NOT NULL DEFAULT '[]',           -- Ordered 1D JSON array: [{"plug_id":"...","widget_id":"..."}]
+    column_count INTEGER NOT NULL DEFAULT 4 CHECK (column_count BETWEEN 2 AND 8),
     updated_by_staff_id TEXT,
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     UNIQUE (scope_type, scope_target)

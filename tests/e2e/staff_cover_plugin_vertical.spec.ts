@@ -244,7 +244,6 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
       slot_id: seeded.timetable_slot_am_id,
       reference_date: seeded.reference_date,
       academic_year_id: seeded.academic_year_id,
-      staff_id: seeded.other_teacher_staff_id,
     });
     await page.goto(`/?${params.toString()}`);
 
@@ -294,11 +293,19 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     // =========================================================================
     // Step 2: Cover Manager (personas.admin_staff_id) records teacher absence and assigns Cover Teacher to Absent Teacher's timetable slot
     // =========================================================================
-    await request.post('/api/auth/persona', {
+    const switchAdminRes = await request.post('/api/auth/persona', {
       data: { staff_id: personas.admin_staff_id },
     });
-    params.set('staff_id', personas.admin_staff_id);
-    params.set('__persona', personas.admin_staff_id);
+    expect(switchAdminRes.ok()).toBe(true);
+    const adminSessionBody = await switchAdminRes.json();
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: adminSessionBody.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
     await page.goto(`/p/${coverPlugId}?${params.toString()}`);
     await expect(pluginFrame.getByTestId('cover-active-persona-badge')).toContainText(personas.admin_staff_id);
 
@@ -336,11 +343,19 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     // =========================================================================
     // Step 3: Switch back to Cover Teacher persona (seeded.other_teacher_staff_id) -> :own_groups now permits loading the class roster and submitting the statutory attendance register
     // =========================================================================
-    await request.post('/api/auth/persona', {
+    const switchCoverAgainRes = await request.post('/api/auth/persona', {
       data: { staff_id: seeded.other_teacher_staff_id },
     });
-    params.set('staff_id', seeded.other_teacher_staff_id);
-    params.set('__persona', seeded.other_teacher_staff_id);
+    expect(switchCoverAgainRes.ok()).toBe(true);
+    const coverAgainSessionBody = await switchCoverAgainRes.json();
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: coverAgainSessionBody.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
     await page.goto(`/p/${coverPlugId}?${params.toString()}`);
     await expect(pluginFrame.getByTestId('cover-active-persona-badge')).toContainText(seeded.other_teacher_staff_id);
 

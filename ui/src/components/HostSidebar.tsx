@@ -61,8 +61,8 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
         width: '88px',
         position: 'sticky',
         top: 0,
-        height: 'calc(100vh / var(--mis-font-scale, 1))',
-        maxHeight: 'calc(100vh / var(--mis-font-scale, 1))',
+        height: '100vh',
+        maxHeight: '100vh',
         overflowY: 'auto',
         boxSizing: 'border-box',
       }}

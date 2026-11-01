@@ -96,7 +96,6 @@ body {
   margin: 0;
   font-family: var(--mis-font-sans);
   font-size: var(--mis-font-size-base, 16px);
-  zoom: var(--mis-font-scale, 1);
   background-color: var(--mis-bg-canvas);
   color: var(--mis-text-primary);
   line-height: 1.5;

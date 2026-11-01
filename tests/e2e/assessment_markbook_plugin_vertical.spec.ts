@@ -278,7 +278,6 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
       other_group_id: m1Seeded.other_group_id,
       reference_date: m1Seeded.reference_date,
       academic_year_id: m1Seeded.academic_year_id,
-      staff_id: m1Seeded.teacher_staff_id,
     });
     await page.goto(`/?${query.toString()}`);
 
@@ -350,7 +349,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     await expect(errorBanner).toBeVisible();
     await expect(errorBanner).toContainText('access denied under own_groups scope');
 
-    // 3. Switch to Head of Department (`personas.hod_staff_id`, holding `:all` scopes) via ?__persona= override
+    // 3. Switch to Head of Department (`personas.hod_staff_id`, holding `:all` scopes) via POST /api/auth/persona
     const hodSwitchRes = await request.post('/api/auth/persona', {
       data: { staff_id: personas.hod_staff_id },
     });
@@ -364,8 +363,6 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
         sameSite: 'Strict',
       },
     ]);
-    query.set('staff_id', personas.hod_staff_id);
-    query.set('__persona', personas.hod_staff_id);
     await page.goto(`/p/${markbookPlugId}?${query.toString()}`);
 
     await expect(pluginFrame.getByTestId('markbook-caller-role-badge')).toContainText('HOD');
@@ -423,8 +420,6 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
         sameSite: 'Strict',
       },
     ]);
-    query.set('staff_id', personas.admin_staff_id);
-    query.set('__persona', personas.admin_staff_id);
     await page.goto(`/p/${markbookPlugId}?${query.toString()}`);
 
     const sarPanel = page.getByTestId('sar-redaction-panel');
@@ -468,11 +463,12 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
       throw new Error('Missing mandatory seeded fixtures');
     }
 
-    // 1. Before pulling MAT policies into `__system_config`, markbook operations fail fast with MAT_GRADING_SCHEMA_NOT_SYNCED
+    // 1. Switch to Teacher and verify before pulling MAT policies into `__system_config`, markbook operations fail fast with MAT_GRADING_SCHEMA_NOT_SYNCED
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seeded.teacher_staff_id },
+    });
     const unsyncedRes = await request.post(
-      `/api/p/${markbookPlugId}/rpc/create_markbook_column?staff_id=${encodeURIComponent(
-        m1Seeded.teacher_staff_id
-      )}`,
+      `/api/p/${markbookPlugId}/rpc/create_markbook_column`,
       {
         data: {
           args: {
@@ -490,7 +486,10 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     expect(unsyncedBody.ok).toBe(false);
     expect(unsyncedBody.error_code).toContain('MAT_GRADING_SCHEMA_NOT_SYNCED');
 
-    // 2. Seed and pull MAT grading schema into `__system_config`
+    // 2. Seed and pull MAT grading schema into `__system_config` as Admin
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personas.admin_staff_id },
+    });
     await request.post('/api/test/mat/seed-feed', {
       data: {
         mat_id: 'MAT_OPTIMIS_TRUST_01',
@@ -505,10 +504,11 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     expect(pullRes.ok()).toBe(true);
 
     // 3. Classroom Teacher (`:own_groups`) is rejected with 403 when calling HoD-only `get_department_attainment_rollup` (`:all`)
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seeded.teacher_staff_id },
+    });
     const teacherRollupRes = await request.post(
-      `/api/p/${markbookPlugId}/rpc/get_department_attainment_rollup?staff_id=${encodeURIComponent(
-        m1Seeded.teacher_staff_id
-      )}`,
+      `/api/p/${markbookPlugId}/rpc/get_department_attainment_rollup`,
       {
         data: {
           args: {
@@ -525,9 +525,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
 
     // 4. Classroom Teacher (`:own_groups`) creates a Primary `WT,EXS,GDS` markbook column for `own_group_id`
     const createColRes = await request.post(
-      `/api/p/${markbookPlugId}/rpc/create_markbook_column?staff_id=${encodeURIComponent(
-        m1Seeded.teacher_staff_id
-      )}`,
+      `/api/p/${markbookPlugId}/rpc/create_markbook_column`,
       {
         data: {
           args: {
@@ -548,9 +546,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
 
     // 5. Invalid grade outside `WT,EXS,GDS` scale fails fast with INVALID_MAT_GRADE
     const invalidGradeRes = await request.post(
-      `/api/p/${markbookPlugId}/rpc/save_pupil_grades?staff_id=${encodeURIComponent(
-        m1Seeded.teacher_staff_id
-      )}`,
+      `/api/p/${markbookPlugId}/rpc/save_pupil_grades`,
       {
         data: {
           args: {
@@ -574,9 +570,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
 
     // 6. Teacher attempting to save a grade for a transferred pupil (`transferred_pupil_id`) or another set's pupil (`other_group_pupil_id`) fails fast
     const transferredGradeRes = await request.post(
-      `/api/p/${markbookPlugId}/rpc/save_pupil_grades?staff_id=${encodeURIComponent(
-        m1Seeded.teacher_staff_id
-      )}`,
+      `/api/p/${markbookPlugId}/rpc/save_pupil_grades`,
       {
         data: {
           args: {
@@ -602,9 +596,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
 
     // 7. Teacher saves valid `GDS` grade for `active_pupil_id`, then Admin verifies `export_pupil_data` and `purge_pupil_data` leave zero orphaned records
     const validSaveRes = await request.post(
-      `/api/p/${markbookPlugId}/rpc/save_pupil_grades?staff_id=${encodeURIComponent(
-        m1Seeded.teacher_staff_id
-      )}`,
+      `/api/p/${markbookPlugId}/rpc/save_pupil_grades`,
       {
         data: {
           args: {
@@ -625,10 +617,11 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     );
     expect(validSaveRes.ok()).toBe(true);
 
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personas.admin_staff_id },
+    });
     const exportBeforeRes = await request.post(
-      `/api/p/${markbookPlugId}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
-        personas.admin_staff_id
-      )}`,
+      `/api/p/${markbookPlugId}/rpc/export_pupil_data`,
       {
         data: { args: { pupil_id: m1Seeded.active_pupil_id } },
       }
@@ -641,9 +634,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     expect(exportBeforeBody.data[0].redactable_fields).toEqual(['teacher_comment']);
 
     const purgeRes = await request.post(
-      `/api/p/${markbookPlugId}/rpc/purge_pupil_data?staff_id=${encodeURIComponent(
-        personas.admin_staff_id
-      )}`,
+      `/api/p/${markbookPlugId}/rpc/purge_pupil_data`,
       {
         data: { args: { pupil_id: m1Seeded.active_pupil_id } },
       }
@@ -654,9 +645,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     expect(purgeBody.data.purged_rows).toBe(1);
 
     const exportAfterRes = await request.post(
-      `/api/p/${markbookPlugId}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
-        personas.admin_staff_id
-      )}`,
+      `/api/p/${markbookPlugId}/rpc/export_pupil_data`,
       {
         data: { args: { pupil_id: m1Seeded.active_pupil_id } },
       }

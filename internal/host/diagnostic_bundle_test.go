@@ -106,8 +106,8 @@ func TestExportDiagnosticBundle_LuaRuntimeErrorAndWriteLockHalt_CapturesSanitize
 		}
 		if entry.PluginID == "uk.org.optimis.test" && entry.Method == "mutate_then_illegal_egress" {
 			foundMutateEgress = true
-			if entry.File != "src/init.lua" || entry.Line != 365 {
-				t.Errorf("expected src/init.lua:365 for mutate_then_illegal_egress fault, got %s:%d", entry.File, entry.Line)
+			if entry.File != "src/init.lua" || entry.Line != 371 {
+				t.Errorf("expected src/init.lua:371 for mutate_then_illegal_egress fault, got %s:%d", entry.File, entry.Line)
 			}
 			if entry.SQLiteLockWaitMS < 0 || entry.SQLiteWriteHoldMS < 0 {
 				t.Errorf("expected non-negative lock wait/hold durations, got wait=%d hold=%d", entry.SQLiteLockWaitMS, entry.SQLiteWriteHoldMS)
@@ -186,7 +186,8 @@ func TestHandleGetDiagnosticBundle_RingBufferCapAndHTTPRoute_EnforcesRBACAndEvic
 	}
 
 	// Non-admin HTTP request -> 403
-	reqUnauth := httptest.NewRequest(http.MethodGet, "/api/admin/diagnostics/bundle?staff_id="+seeded.TeacherStaffID, nil)
+	h.SetActiveDevPersona(seeded.TeacherStaffID)
+	reqUnauth := httptest.NewRequest(http.MethodGet, "/api/admin/diagnostics/bundle", nil)
 	recUnauth := httptest.NewRecorder()
 	handler.ServeHTTP(recUnauth, reqUnauth)
 	if recUnauth.Code != http.StatusForbidden {
@@ -194,7 +195,8 @@ func TestHandleGetDiagnosticBundle_RingBufferCapAndHTTPRoute_EnforcesRBACAndEvic
 	}
 
 	// Admin HTTP request -> 200 with capacity=2 and only m_middle_2, m_newest_3
-	reqAdmin := httptest.NewRequest(http.MethodGet, "/api/admin/diagnostics/bundle?staff_id="+seeded.AdminStaffID, nil)
+	h.SetActiveDevPersona(seeded.AdminStaffID)
+	reqAdmin := httptest.NewRequest(http.MethodGet, "/api/admin/diagnostics/bundle", nil)
 	recAdmin := httptest.NewRecorder()
 	handler.ServeHTTP(recAdmin, reqAdmin)
 	if recAdmin.Code != http.StatusOK {

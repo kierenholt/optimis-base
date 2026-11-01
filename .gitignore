@@ -41,6 +41,7 @@ Thumbs.db
 .idea/
 ignore
 user-stories
+user-stories-source
 
 # Local SQLite databases and runtime data
 .data/

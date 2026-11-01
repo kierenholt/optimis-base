@@ -187,9 +187,7 @@ async function tailViaHttpAndFileFallback() {
       }
 
       // Also poll sanitized Lua diagnostic ring buffer as Admin
-      const diagRes = await fetch(`${baseUrl}/api/admin/diagnostics/bundle?staff_id=stf_admin_01`, {
-        headers: { 'X-MIS-Staff-ID': 'stf_admin_01' },
-      });
+      const diagRes = await fetch(`${baseUrl}/api/admin/diagnostics/bundle`);
       if (diagRes.ok) {
         const diagData = await diagRes.json();
         const diagLines = typeof diagData.log_archive === 'string' && diagData.log_archive.trim()

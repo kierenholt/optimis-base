@@ -238,9 +238,10 @@ test.describe('Strict Opaque URL Routing (/p/<plugid>), Manifest Views Contract 
     });
 
     // 2. Verify GET /api/system/ui-config and GET /api/admin/plugins never expose reverse-DNS manifest.id strings
-    const uiConfigRes = await request.get(
-      `/api/system/ui-config?staff_id=${encodeURIComponent(personaSeed.hod_staff_id)}`
-    );
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.hod_staff_id },
+    });
+    const uiConfigRes = await request.get('/api/system/ui-config');
     expect(uiConfigRes.ok()).toBe(true);
     const rawUiConfigText = await uiConfigRes.text();
     expect(rawUiConfigText).not.toContain('uk.org.optimis.sen.provision');
@@ -267,9 +268,10 @@ test.describe('Strict Opaque URL Routing (/p/<plugid>), Manifest Views Contract 
       ])
     );
 
-    const adminListRes = await request.get(
-      `/api/admin/plugins?staff_id=${encodeURIComponent(personaSeed.admin_staff_id)}`
-    );
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.admin_staff_id },
+    });
+    const adminListRes = await request.get('/api/admin/plugins');
     expect(adminListRes.ok()).toBe(true);
     const rawAdminListText = await adminListRes.text();
     expect(rawAdminListText).not.toContain('uk.org.optimis.sen.provision');
@@ -296,8 +298,8 @@ test.describe('Strict Opaque URL Routing (/p/<plugid>), Manifest Views Contract 
     expect(domHtml).not.toContain('uk.org.optimis.sen.provision');
     expect(domHtml).not.toContain('uk.org.optimis.test');
 
-    // 4. Open Global Search from the Narrow Icon Rail and select the SEN Provision plugin view using opaque senPlugId
-    await page.getByTestId('nav-rail-search').click();
+    // 4. Open Command Palette from the Home Landing Page and select the SEN Provision plugin view using opaque senPlugId
+    await page.getByTestId('landing-open-command-palette-btn').click();
     const senNavBtn = page.getByTestId(`command-palette-result-view-${senPlugId}-home`);
     await expect(senNavBtn).toBeVisible();
     await senNavBtn.click();

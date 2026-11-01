@@ -102,28 +102,9 @@ func (h *Host) SetActiveDevPersona(staffID string) {
 	st.activeDevStaffID = strings.TrimSpace(staffID)
 }
 
-func extractRequestPersonaOverride(r *http.Request, explicitStaffID string) string {
-	if trimmed := strings.TrimSpace(explicitStaffID); trimmed != "" {
-		return trimmed
-	}
-	if r == nil {
-		return ""
-	}
-	for _, qKey := range []string{"__persona", "staff_id"} {
-		if val := strings.TrimSpace(r.URL.Query().Get(qKey)); val != "" {
-			return val
-		}
-	}
-	for _, hKey := range []string{"X-MIS-Persona", "X-MIS-Staff-ID"} {
-		if val := strings.TrimSpace(r.Header.Get(hKey)); val != "" {
-			return val
-		}
-	}
-	return ""
-}
-
-func (h *Host) ResolveRequestCaller(r *http.Request, explicitStaffID string) (CallerContext, error) {
-	if !h.isDevPersonaSwitcherEnabled() {
+func (h *Host) ResolveRequestCaller(r *http.Request, _ string) (CallerContext, error) {
+	devSwitcherEnabled := h.isDevPersonaSwitcherEnabled()
+	if !devSwitcherEnabled {
 		if err := h.loadRealSSOProvider(r.Context()); err != nil {
 			return CallerContext{}, err
 		}
@@ -131,61 +112,36 @@ func (h *Host) ResolveRequestCaller(r *http.Request, explicitStaffID string) (Ca
 
 	st := h.getAuthState()
 
-	// 1. If an explicit staff_id / __persona / X-MIS-Persona was provided in request/query/header, resolve it directly
-	if trimmedStaff := extractRequestPersonaOverride(r, explicitStaffID); trimmedStaff != "" {
-		if persona, pErr := h.coreDAL.ResolveStaffPersonaByID(r.Context(), trimmedStaff); pErr == nil {
-			return CallerContext{
-				Type:        "USER",
-				UserID:      persona.UserID,
-				StaffID:     persona.StaffID,
-				ActiveRoles: persona.ActiveRoles,
-				Scopes:      persona.Scopes,
-				RequestID:   "req_" + uuid.NewString(),
-			}, nil
-		}
-		return CallerContext{
-			Type:        "USER",
-			UserID:      "usr_teacher_1",
-			StaffID:     trimmedStaff,
-			ActiveRoles: []string{"teacher"},
-			Scopes: []string{
-				"dal.pupils.read:all",
-				"dal.pupils.read:own_groups",
-				"dal.groups.read:own_groups",
-				"dal.attendance.read:own_groups",
-				"dal.attendance.write:own_groups",
-				"dal.sen.read:own_groups",
-				"dal.medical.read:own_groups",
-				"dal.guardians.read:own_groups",
-				"dal.safeguarding.create",
-			},
-			RequestID: "req_" + uuid.NewString(),
-		}, nil
-	}
-
-	// 2. Check explicit mis_session cookie
-	if cookie, err := r.Cookie(SessionCookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
-		token := strings.TrimSpace(cookie.Value)
-		st.mu.RLock()
-		staffID, exists := st.sessions[token]
-		st.mu.RUnlock()
-		if exists && strings.TrimSpace(staffID) != "" {
-			persona, pErr := h.coreDAL.ResolveStaffPersonaByID(r.Context(), staffID)
-			if pErr != nil {
-				return CallerContext{}, fmt.Errorf("INVALID_SESSION_PERSONA: %w", pErr)
+	// 1. Check explicit mis_session cookie
+	if r != nil {
+		if cookie, err := r.Cookie(SessionCookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
+			token := strings.TrimSpace(cookie.Value)
+			st.mu.RLock()
+			staffID, exists := st.sessions[token]
+			st.mu.RUnlock()
+			if exists && strings.TrimSpace(staffID) != "" {
+				persona, pErr := h.coreDAL.ResolveStaffPersonaByID(r.Context(), staffID)
+				if pErr != nil {
+					return CallerContext{}, fmt.Errorf("INVALID_SESSION_PERSONA: %w", pErr)
+				}
+				return CallerContext{
+					Type:        "USER",
+					UserID:      persona.UserID,
+					StaffID:     persona.StaffID,
+					ActiveRoles: persona.ActiveRoles,
+					Scopes:      persona.Scopes,
+					RequestID:   "req_" + uuid.NewString(),
+				}, nil
 			}
-			return CallerContext{
-				Type:        "USER",
-				UserID:      persona.UserID,
-				StaffID:     persona.StaffID,
-				ActiveRoles: persona.ActiveRoles,
-				Scopes:      persona.Scopes,
-				RequestID:   "req_" + uuid.NewString(),
-			}, nil
 		}
 	}
 
-	// 3. Check active switched dev persona on the Host
+	// Production mode (ENABLE_DEV_PERSONA_SWITCHER=false) strictly requires a valid mis_session cookie
+	if !devSwitcherEnabled {
+		return CallerContext{}, fmt.Errorf("UNAUTHORIZED_SESSION_REQUIRED: valid %s cookie is required when ENABLE_DEV_PERSONA_SWITCHER=false", SessionCookieName)
+	}
+
+	// 2. Check active switched dev persona on the Host (set via --persona CLI flag or POST /api/auth/persona)
 	st.mu.RLock()
 	activeStaffID := st.activeDevStaffID
 	st.mu.RUnlock()
@@ -205,7 +161,7 @@ func (h *Host) ResolveRequestCaller(r *http.Request, explicitStaffID string) (Ca
 		}, nil
 	}
 
-	// 4. Check TEST_DEFAULT_PERSONA environment override in test/dev mode
+	// 3. Check TEST_DEFAULT_PERSONA environment override in test/dev mode
 	defaultPersonaID := strings.TrimSpace(os.Getenv("TEST_DEFAULT_PERSONA"))
 	if defaultPersonaID == "" {
 		defaultPersonaID = "stf_001"
@@ -309,15 +265,7 @@ func (h *Host) resolveCallerForStaffID(ctx context.Context, staffID string) Call
 
 func (h *Host) ResolveAuthenticatedCallerAndTargetStaff(r *http.Request, bodyStaffID string) (CallerContext, string, int, error) {
 	trimmedBodyStaff := strings.TrimSpace(bodyStaffID)
-	var (
-		caller    CallerContext
-		callerErr error
-	)
-	if extractRequestPersonaOverride(r, "") != "" || h.hasValidSessionCookie(r) {
-		caller, callerErr = h.ResolveRequestCaller(r, "")
-	} else {
-		caller, callerErr = h.ResolveRequestCaller(r, trimmedBodyStaff)
-	}
+	caller, callerErr := h.ResolveRequestCaller(r, "")
 	if callerErr != nil {
 		return CallerContext{}, "", http.StatusUnauthorized, callerErr
 	}
@@ -437,7 +385,7 @@ func (h *Host) RegisterAuthAndPersonaRoutes(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("GET /api/auth/session", func(w http.ResponseWriter, r *http.Request) {
-		caller, err := h.ResolveRequestCaller(r, strings.TrimSpace(r.URL.Query().Get("staff_id")))
+		caller, err := h.ResolveRequestCaller(r, "")
 		if err != nil {
 			status := http.StatusUnauthorized
 			if strings.Contains(err.Error(), "REAL_SSO_NOT_CONFIGURED") {

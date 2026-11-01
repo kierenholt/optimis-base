@@ -165,11 +165,7 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
         });
       }
       if (testPlugId) {
-        await request.delete(
-          `/api/admin/plugins/${encodeURIComponent(testPlugId)}?staff_id=${encodeURIComponent(
-            personaSeed.admin_staff_id
-          )}`
-        );
+        await request.delete(`/api/admin/plugins/${encodeURIComponent(testPlugId)}`);
       }
     }
     if (m1Seed) {
@@ -219,9 +215,7 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
     await page.goto(
       `/p/${testPlugId}?pupil_id=${encodeURIComponent(
         m1Seed.active_pupil_id
-      )}&group_id=${encodeURIComponent(m1Seed.own_group_id)}&staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`
+      )}&group_id=${encodeURIComponent(m1Seed.own_group_id)}`
     );
 
     const hostShell = page.getByTestId('host-shell');
@@ -403,9 +397,7 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
     // 7. Verify GET /api/system/ui-config returns persisted staff_settings for teacher_staff_id
     await expect
       .poll(async () => {
-        const cfgRes = await request.get(
-          `/api/system/ui-config?staff_id=${encodeURIComponent(m1Seed!.teacher_staff_id)}`
-        );
+        const cfgRes = await request.get('/api/system/ui-config');
         if (!cfgRes.ok()) {
           return null;
         }
@@ -428,8 +420,21 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
     );
     expect(reloadedRootFontSize).toBe('14px');
 
-    // 9. Switch persona to Admin via ?__persona= -> verify Admin has isolated default 'medium' (16px)
-    await page.goto(`/?__persona=${encodeURIComponent(personaSeed.admin_staff_id)}`);
+    // 9. Switch persona to Admin via POST /api/auth/persona -> verify Admin has isolated default 'medium' (16px)
+    const switchAdminRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.admin_staff_id },
+    });
+    expect(switchAdminRes.ok()).toBe(true);
+    const adminSession = await switchAdminRes.json();
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: adminSession.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
+    await page.goto('/');
     await expect(page.getByTestId('host-shell')).toHaveAttribute('data-mis-font-size', 'medium');
     const adminRootFontSize = await page.evaluate(
       () => window.getComputedStyle(document.documentElement).fontSize
@@ -560,9 +565,7 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
     await page.goto(
       `/p/${testPlugId}?pupil_id=${encodeURIComponent(
         m1Seed.active_pupil_id
-      )}&group_id=${encodeURIComponent(m1Seed.own_group_id)}&staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`
+      )}&group_id=${encodeURIComponent(m1Seed.own_group_id)}`
     );
 
     const sidebar = page.getByTestId('host-sidebar');

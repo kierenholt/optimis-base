@@ -63,6 +63,7 @@ func TestDashboardLayoutsPersistence_RoleDefaultsTeacherReorderAndRevokedWidgetR
 	}
 
 	// 1. Teacher saves an ordered 1D array of { plug_id, widget_id } objects via PUT /api/dashboard/layout
+	h.SetActiveDevPersona(fx.TeacherStaffID)
 	teacherLayout := []dal.DashboardWidgetItem{
 		{PlugID: testPlugin.PlugID, WidgetID: "pastoral_watch"},
 		{PlugID: testPlugin.PlugID, WidgetID: "attendance_pulse"},
@@ -79,7 +80,7 @@ func TestDashboardLayoutsPersistence_RoleDefaultsTeacherReorderAndRevokedWidgetR
 	}
 
 	// Verify GET /api/dashboard/layout returns exact 1D array in order
-	reqGet := httptest.NewRequest(http.MethodGet, "/api/dashboard/layout?staff_id="+fx.TeacherStaffID, nil)
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/dashboard/layout", nil)
 	recGet := httptest.NewRecorder()
 	handler.ServeHTTP(recGet, reqGet)
 	if recGet.Code != http.StatusOK {
@@ -130,6 +131,7 @@ func TestDashboardLayoutsPersistence_RoleDefaultsTeacherReorderAndRevokedWidgetR
 	}
 
 	// 4. Admin appends pastoral_watch to TEACHER role default -> updates role default AND appends to existing TEACHER staff layout
+	h.SetActiveDevPersona(fx.AdminStaffID)
 	appendBodyAdmin, _ := json.Marshal(map[string]any{
 		"staff_id":  fx.AdminStaffID,
 		"role_id":   "TEACHER",
@@ -143,7 +145,8 @@ func TestDashboardLayoutsPersistence_RoleDefaultsTeacherReorderAndRevokedWidgetR
 		t.Fatalf("POST /api/admin/dashboard/role-default/append expected 200 OK, got %d: %s", recAppend.Code, recAppend.Body.String())
 	}
 
-	reqGetAfterAppend := httptest.NewRequest(http.MethodGet, "/api/dashboard/layout?staff_id="+fx.TeacherStaffID, nil)
+	h.SetActiveDevPersona(fx.TeacherStaffID)
+	reqGetAfterAppend := httptest.NewRequest(http.MethodGet, "/api/dashboard/layout", nil)
 	recGetAfterAppend := httptest.NewRecorder()
 	handler.ServeHTTP(recGetAfterAppend, reqGetAfterAppend)
 	if err := json.Unmarshal(recGetAfterAppend.Body.Bytes(), &getResp); err != nil {
@@ -169,7 +172,7 @@ func TestDashboardLayoutsPersistence_RoleDefaultsTeacherReorderAndRevokedWidgetR
 		t.Fatalf("PUT /api/dashboard/layout with revoked widget expected 200 OK, got %d", recPut3.Code)
 	}
 
-	reqGetResolved := httptest.NewRequest(http.MethodGet, "/api/dashboard/layout?staff_id="+fx.TeacherStaffID, nil)
+	reqGetResolved := httptest.NewRequest(http.MethodGet, "/api/dashboard/layout", nil)
 	recGetResolved := httptest.NewRecorder()
 	handler.ServeHTTP(recGetResolved, reqGetResolved)
 	var resolvedResp struct {

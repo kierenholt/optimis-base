@@ -294,6 +294,9 @@ func (d *CoreDAL) DetachPluginDB(ctx context.Context, alias string) error {
 }
 
 func resolveSchemaDir() (string, error) {
+	if stat, err := os.Stat("schema/core"); err == nil && stat.IsDir() {
+		return filepath.Abs("schema/core")
+	}
 	_, callerFile, _, ok := runtime.Caller(0)
 	if !ok {
 		return "", errors.New("failed to resolve caller path for CoreDAL schema directory")

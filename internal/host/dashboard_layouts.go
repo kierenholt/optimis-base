@@ -14,22 +14,70 @@ import (
 type ResolvedDashboardWidgetSlot struct {
 	PlugID     string `json:"plug_id"`
 	WidgetID   string `json:"widget_id"`
+	Col        int    `json:"col"`
+	Row        int    `json:"row"`
 	Permitted  bool   `json:"permitted"`
 	ErrorCode  string `json:"error_code,omitempty"`
 	ErrorTitle string `json:"error_title,omitempty"`
 	Title      string `json:"title,omitempty"`
+	Icon       string `json:"icon,omitempty"`
 	Entry      string `json:"entry,omitempty"`
 	EntryURL   string `json:"entry_url,omitempty"`
 	Width      int    `json:"width,omitempty"`
 	Height     int    `json:"height,omitempty"`
 }
 
+func is2DFootprintFree(occupied map[[2]int]bool, col, row, width, height, colCount int) bool {
+	if col < 1 || row < 1 || col+width-1 > colCount {
+		return false
+	}
+	for r := row; r < row+height; r++ {
+		for c := col; c < col+width; c++ {
+			if occupied[[2]int{c, r}] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func mark2DFootprintOccupied(occupied map[[2]int]bool, col, row, width, height int) {
+	for r := row; r < row+height; r++ {
+		for c := col; c < col+width; c++ {
+			occupied[[2]int{c, r}] = true
+		}
+	}
+}
+
+func findFirstFree2DCoordinate(occupied map[[2]int]bool, width, height, colCount int) (int, int) {
+	effectiveWidth := width
+	if effectiveWidth > colCount {
+		effectiveWidth = colCount
+	}
+	if effectiveWidth < 1 {
+		effectiveWidth = 1
+	}
+	effectiveHeight := height
+	if effectiveHeight < 1 {
+		effectiveHeight = 1
+	}
+	for r := 1; r <= 200; r++ {
+		for c := 1; c <= colCount-effectiveWidth+1; c++ {
+			if is2DFootprintFree(occupied, c, r, effectiveWidth, effectiveHeight, colCount) {
+				return c, r
+			}
+		}
+	}
+	return 1, 1
+}
+
 func (h *Host) resolveCallerDashboardState(
 	ctx context.Context,
 	caller CallerContext,
-) ([]dal.DashboardWidgetItem, string, []ResolvedDashboardWidgetSlot, error) {
+) ([]dal.DashboardWidgetItem, int, string, []ResolvedDashboardWidgetSlot, error) {
 	type permWidgetMeta struct {
 		title    string
+		icon     string
 		entry    string
 		entryURL string
 		width    int
@@ -83,8 +131,13 @@ func (h *Host) resolveCallerDashboardState(
 			if err != nil {
 				continue
 			}
+			wIcon := strings.TrimSpace(wSpec.Icon)
+			if wIcon == "" {
+				wIcon = strings.TrimSpace(p.Manifest.Icon)
+			}
 			permittedWidgets[plugID+":"+wSpec.ID] = permWidgetMeta{
 				title:    wSpec.Title,
+				icon:     wIcon,
 				entry:    wSpec.Entry,
 				entryURL: fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
 				width:    wSpec.Width,
@@ -118,33 +171,55 @@ func (h *Host) resolveCallerDashboardState(
 			{
 				PlugID:   candidates[0].plugID,
 				WidgetID: candidates[0].widgetID,
+				Col:      1,
+				Row:      1,
 			},
 		}
 	}
 
-	layout, source, err := h.coreDAL.ResolveEffectiveDashboardLayout(
+	layout, colCount, source, err := h.coreDAL.ResolveEffectiveDashboardLayoutWithColumns(
 		ctx,
 		caller.StaffID,
 		caller.ActiveRoles,
 		fallbackDefault,
 	)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, dal.DefaultDashboardColumnCount, "", nil, err
 	}
 
+	occupied := make(map[[2]int]bool)
 	resolved := make([]ResolvedDashboardWidgetSlot, 0, len(layout))
-	for _, item := range layout {
+	for i, item := range layout {
 		key := item.PlugID + ":" + item.WidgetID
 		if meta, ok := permittedWidgets[key]; ok {
+			w := meta.width
+			if w != 1 && w != 2 {
+				w = 2
+			}
+			hgt := meta.height
+			if hgt != 1 && hgt != 2 {
+				hgt = 1
+			}
+			col, row := item.Col, item.Row
+			if !is2DFootprintFree(occupied, col, row, w, hgt, colCount) {
+				col, row = findFirstFree2DCoordinate(occupied, w, hgt, colCount)
+			}
+			mark2DFootprintOccupied(occupied, col, row, w, hgt)
+			layout[i].Col = col
+			layout[i].Row = row
+
 			resolved = append(resolved, ResolvedDashboardWidgetSlot{
 				PlugID:    item.PlugID,
 				WidgetID:  item.WidgetID,
+				Col:       col,
+				Row:       row,
 				Permitted: true,
 				Title:     meta.title,
+				Icon:      meta.icon,
 				Entry:     meta.entry,
 				EntryURL:  meta.entryURL,
-				Width:     meta.width,
-				Height:    meta.height,
+				Width:     w,
+				Height:    hgt,
 			})
 			continue
 		}
@@ -164,9 +239,19 @@ func (h *Host) resolveCallerDashboardState(
 			errTitle = "Plugin Revoked or Unpermitted"
 		}
 
+		col, row := item.Col, item.Row
+		if !is2DFootprintFree(occupied, col, row, 2, 1, colCount) {
+			col, row = findFirstFree2DCoordinate(occupied, 2, 1, colCount)
+		}
+		mark2DFootprintOccupied(occupied, col, row, 2, 1)
+		layout[i].Col = col
+		layout[i].Row = row
+
 		resolved = append(resolved, ResolvedDashboardWidgetSlot{
 			PlugID:     item.PlugID,
 			WidgetID:   item.WidgetID,
+			Col:        col,
+			Row:        row,
 			Permitted:  false,
 			ErrorCode:  errCode,
 			ErrorTitle: errTitle,
@@ -176,12 +261,12 @@ func (h *Host) resolveCallerDashboardState(
 		})
 	}
 
-	return layout, source, resolved, nil
+	return layout, colCount, source, resolved, nil
 }
 
 func (h *Host) RegisterDashboardLayoutRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/dashboard/layout", func(w http.ResponseWriter, r *http.Request) {
-		caller, callerErr := h.ResolveRequestCaller(r, strings.TrimSpace(r.URL.Query().Get("staff_id")))
+		caller, callerErr := h.ResolveRequestCaller(r, "")
 		if callerErr != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,
@@ -190,7 +275,7 @@ func (h *Host) RegisterDashboardLayoutRoutes(mux *http.ServeMux) {
 			return
 		}
 
-		layout, source, resolved, err := h.resolveCallerDashboardState(r.Context(), caller)
+		layout, colCount, source, resolved, err := h.resolveCallerDashboardState(r.Context(), caller)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{
 				"ok":         false,
@@ -207,6 +292,7 @@ func (h *Host) RegisterDashboardLayoutRoutes(mux *http.ServeMux) {
 			"active_roles":     caller.ActiveRoles,
 			"is_admin":         isCallerAdminOrDPO(caller, true),
 			"layout":           layout,
+			"column_count":     colCount,
 			"layout_source":    source,
 			"resolved_widgets": resolved,
 			"role_defaults":    roleDefaults,
@@ -215,8 +301,9 @@ func (h *Host) RegisterDashboardLayoutRoutes(mux *http.ServeMux) {
 
 	handleSaveStaffLayout := func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			StaffID string                    `json:"staff_id"`
-			Layout  []dal.DashboardWidgetItem `json:"layout"`
+			StaffID     string                    `json:"staff_id"`
+			Layout      []dal.DashboardWidgetItem `json:"layout"`
+			ColumnCount *int                      `json:"column_count"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{
@@ -243,7 +330,18 @@ func (h *Host) RegisterDashboardLayoutRoutes(mux *http.ServeMux) {
 			return
 		}
 
-		saved, err := h.coreDAL.SaveStaffDashboardLayout(r.Context(), targetStaffID, body.Layout, caller.StaffID)
+		reqColCount := 0
+		if body.ColumnCount != nil {
+			reqColCount = *body.ColumnCount
+		}
+
+		saved, savedColCount, err := h.coreDAL.SaveStaffDashboardLayoutWithColumns(
+			r.Context(),
+			targetStaffID,
+			body.Layout,
+			reqColCount,
+			caller.StaffID,
+		)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{
 				"ok":         false,
@@ -256,13 +354,14 @@ func (h *Host) RegisterDashboardLayoutRoutes(mux *http.ServeMux) {
 		if targetStaffID != caller.StaffID {
 			targetCaller = h.resolveCallerForStaffID(r.Context(), targetStaffID)
 		}
-		_, _, resolved, _ := h.resolveCallerDashboardState(r.Context(), targetCaller)
+		_, _, _, resolved, _ := h.resolveCallerDashboardState(r.Context(), targetCaller)
 
-		h.logInfo(fmt.Sprintf("Saved 1D dashboard layout for staff %s (%d widgets)", targetStaffID, len(saved)))
+		h.logInfo(fmt.Sprintf("Saved 1D dashboard layout for staff %s (%d widgets, %d columns)", targetStaffID, len(saved), savedColCount))
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":               true,
 			"staff_id":         targetStaffID,
 			"layout":           saved,
+			"column_count":     savedColCount,
 			"layout_source":    "STAFF",
 			"resolved_widgets": resolved,
 		})
@@ -300,7 +399,7 @@ func (h *Host) RegisterDashboardLayoutRoutes(mux *http.ServeMux) {
 			return
 		}
 
-		caller, callerErr := h.ResolveRequestCaller(r, strings.TrimSpace(body.StaffID))
+		caller, callerErr := h.ResolveRequestCaller(r, "")
 		if callerErr != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,
@@ -374,7 +473,7 @@ func (h *Host) RegisterDashboardLayoutRoutes(mux *http.ServeMux) {
 			return
 		}
 
-		caller, callerErr := h.ResolveRequestCaller(r, strings.TrimSpace(body.StaffID))
+		caller, callerErr := h.ResolveRequestCaller(r, "")
 		if callerErr != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,

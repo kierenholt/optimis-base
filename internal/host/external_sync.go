@@ -105,7 +105,7 @@ func (h *Host) RegisterExternalSyncAndTestRoutes(mux *http.ServeMux) {
 			writeSyncError(w, http.StatusBadRequest, "missing mandatory field: pupil_id")
 			return
 		}
-		caller, err := h.ResolveRequestCaller(r, body.StaffID)
+		caller, err := h.ResolveRequestCaller(r, "")
 		if err != nil {
 			writeSyncError(w, http.StatusUnauthorized, err.Error())
 			return
@@ -214,7 +214,7 @@ func (h *Host) RegisterExternalSyncAndTestRoutes(mux *http.ServeMux) {
 		if r.Body != nil {
 			_ = json.NewDecoder(r.Body).Decode(&body)
 		}
-		caller, err := h.ResolveRequestCaller(r, body.StaffID)
+		caller, err := h.ResolveRequestCaller(r, "")
 		if err != nil {
 			writeSyncError(w, http.StatusUnauthorized, err.Error())
 			return
@@ -304,7 +304,7 @@ func (h *Host) RegisterExternalSyncAndTestRoutes(mux *http.ServeMux) {
 		if r.Body != nil {
 			_ = json.NewDecoder(r.Body).Decode(&body)
 		}
-		if _, err := h.ResolveRequestCaller(r, body.StaffID); err != nil {
+		if _, err := h.ResolveRequestCaller(r, ""); err != nil {
 			writeSyncError(w, http.StatusUnauthorized, err.Error())
 			return
 		}
@@ -364,7 +364,7 @@ func (h *Host) RegisterExternalSyncAndTestRoutes(mux *http.ServeMux) {
 			writeSyncError(w, http.StatusBadRequest, "missing mandatory field: academic_year_id")
 			return
 		}
-		if _, err := h.ResolveRequestCaller(r, body.StaffID); err != nil {
+		if _, err := h.ResolveRequestCaller(r, ""); err != nil {
 			writeSyncError(w, http.StatusUnauthorized, err.Error())
 			return
 		}

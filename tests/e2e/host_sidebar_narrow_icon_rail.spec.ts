@@ -177,11 +177,7 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
       }
       for (const pid of [behaviourPlugId, senPlugId, testPlugId]) {
         if (pid) {
-          await request.delete(
-            `/api/admin/plugins/${encodeURIComponent(pid)}?staff_id=${encodeURIComponent(
-              personaSeed.admin_staff_id
-            )}`
-          );
+          await request.delete(`/api/admin/plugins/${encodeURIComponent(pid)}`);
         }
       }
     }
@@ -254,9 +250,7 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
     await page.goto(
       `${targetSenRoute}&reference_date=${encodeURIComponent(
         m1Seed.reference_date
-      )}&academic_year_id=${encodeURIComponent(m1Seed.academic_year_id)}&staff_id=${encodeURIComponent(
-        m1Seed.teacher_staff_id
-      )}`
+      )}&academic_year_id=${encodeURIComponent(m1Seed.academic_year_id)}`
     );
 
     await expect(page.getByTestId('host-shell')).toBeVisible();
@@ -276,9 +270,7 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
     await expect(pinnedItem0).toHaveAttribute('data-pinned-route', targetSenRoute);
 
     // Verify GET /api/system/ui-config persists the pinned route & title in __system_config for teacher_staff_id
-    const uiConfigRes = await request.get(
-      `/api/system/ui-config?staff_id=${encodeURIComponent(m1Seed.teacher_staff_id)}`
-    );
+    const uiConfigRes = await request.get('/api/system/ui-config');
     expect(uiConfigRes.ok()).toBe(true);
     const uiConfigBody = await uiConfigRes.json();
     expect(Array.isArray(uiConfigBody.pinned_recents)).toBe(true);
@@ -297,8 +289,8 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
 
     const searchView = page.getByTestId('host-search-view');
     await expect(searchView).toBeVisible();
-    await expect(page.getByTestId('landing-page-search-panel')).toHaveCount(0);
-    await expect(page.getByTestId('dashboard-widget-grid-section')).toHaveCount(0);
+    await expect(page.getByTestId('landing-page-search-panel')).toBeHidden();
+    await expect(page.getByTestId('dashboard-widget-grid-section')).toBeHidden();
     await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeAttached();
     await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeHidden();
 
@@ -329,20 +321,46 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
     // 5. Click the pinned item in the Narrow Icon Rail to restore /p/<senPlugId>/student/<second_active_pupil_id>?tab=iep exclusively in the right-hand pane
     await pinnedItem0.click();
     await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeVisible();
-    await expect(page.getByTestId('landing-page-search-panel')).toHaveCount(0);
-    await expect(page.getByTestId('dashboard-widget-grid-section')).toHaveCount(0);
+    await expect(page.getByTestId('landing-page-search-panel')).toBeHidden();
+    await expect(page.getByTestId('dashboard-widget-grid-section')).toBeHidden();
     await expect(page.getByTestId('host-search-view')).toHaveCount(0);
     await expect(page.getByTestId('host-settings-view')).toHaveCount(0);
     expect(page.url()).toContain(
       `/p/${senPlugId}/student/${encodeURIComponent(m1Seed.second_active_pupil_id)}`
     );
 
-    // 6. Switch persona to Admin via ?__persona= override -> verify per-persona __system_config isolation
-    await page.goto(`/?__persona=${encodeURIComponent(personaSeed.admin_staff_id)}`);
+    // 6. Switch persona to Admin via POST /api/auth/persona -> verify per-persona __system_config isolation
+    const switchAdminRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personaSeed.admin_staff_id },
+    });
+    expect(switchAdminRes.ok()).toBe(true);
+    const adminSession = await switchAdminRes.json();
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: adminSession.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
+    await page.goto('/');
     await expect(page.locator('[data-testid^="pinned-recent-item-"]')).toHaveCount(0);
 
-    // Switch back to Classroom Teacher via ?__persona= override -> teacher's 2 pinned routes are restored from __system_config
-    await page.goto(`/?__persona=${encodeURIComponent(m1Seed.teacher_staff_id)}`);
+    // Switch back to Classroom Teacher via POST /api/auth/persona -> teacher's 2 pinned routes are restored from __system_config
+    const switchTeacherBackRes = await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
+    expect(switchTeacherBackRes.ok()).toBe(true);
+    const teacherBackSession = await switchTeacherBackRes.json();
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: teacherBackSession.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
+    await page.goto('/');
     await expect(page.getByTestId('pinned-recent-item-0')).toBeVisible();
     await expect(page.getByTestId('pinned-recent-item-1')).toBeVisible();
 
@@ -393,8 +411,8 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
     expect(new URL(page.url()).pathname).toBe('/settings');
     await expect(page.getByTestId('nav-rail-settings')).toHaveAttribute('aria-current', 'page');
     await expect(page.getByTestId('host-settings-modal')).toHaveCount(0);
-    await expect(page.getByTestId('landing-page-search-panel')).toHaveCount(0);
-    await expect(page.getByTestId('dashboard-widget-grid-section')).toHaveCount(0);
+    await expect(page.getByTestId('landing-page-search-panel')).toBeHidden();
+    await expect(page.getByTestId('dashboard-widget-grid-section')).toBeHidden();
     await expect(page.getByTestId('host-search-view')).toHaveCount(0);
 
     const settingsView = page.getByTestId('host-settings-view');
@@ -560,11 +578,7 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
       await request.post('/api/auth/persona', {
         data: { staff_id: personaSeed.admin_staff_id },
       });
-      const removeBehRes = await request.delete(
-        `/api/admin/plugins/${encodeURIComponent(behaviourPlugId)}?staff_id=${encodeURIComponent(
-          personaSeed.admin_staff_id
-        )}`
-      );
+      const removeBehRes = await request.delete(`/api/admin/plugins/${encodeURIComponent(behaviourPlugId)}`);
       expect(removeBehRes.ok()).toBe(true);
 
       // Switch back to Teacher A and verify stale behaviourPlugId pin is not served
@@ -600,11 +614,7 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
       await request.post('/api/auth/persona', {
         data: { staff_id: personaSeed.admin_staff_id },
       });
-      await request.delete(
-        `/api/admin/plugins/${encodeURIComponent(censusPlugId)}?staff_id=${encodeURIComponent(
-          personaSeed.admin_staff_id
-        )}`
-      );
+      await request.delete(`/api/admin/plugins/${encodeURIComponent(censusPlugId)}`);
     }
   });
 });

@@ -309,10 +309,9 @@ func (h *Host) ExportDiagnosticBundle(caller CallerContext, filterPluginID strin
 
 func (h *Host) RegisterDiagnosticRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/diagnostics/bundle", func(w http.ResponseWriter, r *http.Request) {
-		staffID := strings.TrimSpace(r.URL.Query().Get("staff_id"))
 		pluginID := strings.TrimSpace(r.URL.Query().Get("plugin_id"))
 
-		caller, err := h.ResolveRequestCaller(r, staffID)
+		caller, err := h.ResolveRequestCaller(r, "")
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
 				"ok":         false,

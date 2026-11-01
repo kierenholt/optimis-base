@@ -1,5 +1,5 @@
 /**
- * @ukmis/bridge — Official Frontend Bridge for Optimis Sandboxed Plugin Iframes (Section 10C)
+ * @optimis/bridge — Official Frontend Bridge for Optimis Sandboxed Plugin Iframes (Section 10C)
  *
  * Auto-injects --mis-* CSS custom properties on mis:init, binds declarative
  * [data-mis-rpc] and [data-mis-link] DOM attributes, and exports useMisRpc(method, defaultArgs).
