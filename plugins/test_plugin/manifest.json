@@ -195,6 +195,7 @@
     {
       "id": "attendance_pulse",
       "title": "Statutory Attendance Pulse",
+      "description": "Live 2x1 statutory AM/PM session attendance pulse and quick pupil deep-link summary.",
       "entry": "ui/dist/widget.html",
       "width": 2,
       "height": 1,
@@ -209,6 +210,7 @@
     {
       "id": "pastoral_watch",
       "title": "Pastoral & Behaviour Watch",
+      "description": "Compact 1x1 pastoral welfare and conduct alert summary for your active teaching groups.",
       "entry": "ui/dist/widget.html",
       "width": 1,
       "height": 1,

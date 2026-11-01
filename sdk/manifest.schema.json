@@ -271,7 +271,7 @@
       "description": "Mini-iframe widgets exposed on the Home Dashboard Grid with strict preset 1x/2x sizes.",
       "items": {
         "type": "object",
-        "required": ["id", "title", "entry", "width", "height"],
+        "required": ["id", "title", "description", "entry", "width", "height"],
         "additionalProperties": false,
         "properties": {
           "id": {
@@ -279,6 +279,10 @@
             "minLength": 1
           },
           "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
             "type": "string",
             "minLength": 1
           },

@@ -32,7 +32,7 @@ export function SafeguardingVaultPanel({
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <h2 style={{ fontSize: '16px', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+        <h2 style={{ fontSize: 'calc(16px * var(--mis-font-scale, 1))', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
           <MonochromeLucideIcon name="shield-alert" size={18} />
           <span>Designated Safeguarding Lead (DSL) Envelope-Encrypted Vault</span>
         </h2>
@@ -138,7 +138,7 @@ export function SafeguardingVaultPanel({
                   <strong>Action Taken:</strong> {dec.action_taken}
                 </div>
                 {dec.audit_logs && dec.audit_logs.length > 0 && (
-                  <div style={{ marginTop: '6px', fontSize: '12px' }}>
+                  <div style={{ marginTop: '6px', fontSize: 'calc(12px * var(--mis-font-scale, 1))' }}>
                     <strong>Audit Trail:</strong>{' '}
                     {dec.audit_logs.map((a) => a.action_type).join(' -> ')}
                   </div>

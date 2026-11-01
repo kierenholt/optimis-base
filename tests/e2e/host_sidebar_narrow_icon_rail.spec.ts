@@ -363,9 +363,15 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
     await page.goto('/');
     await expect(page.getByTestId('pinned-recent-item-0')).toBeVisible();
     await expect(page.getByTestId('pinned-recent-item-1')).toBeVisible();
+    await expect(page.locator('[data-testid^="unpin-recent-btn-"]')).toHaveCount(0);
+    await expect(
+      page.getByTestId('nav-rail-pinned-recents').locator('svg[data-lucide-icon="x"]')
+    ).toHaveCount(0);
 
-    // 7. Unpin the first route via the rail unpin button and verify it is removed from DOM and __system_config
-    await page.getByTestId('unpin-recent-btn-0').click();
+    // 7. Select the first pinned route and unpin it via topbar-pin-view-btn, verifying it is removed from DOM and __system_config
+    await page.getByTestId('pinned-recent-item-0').click();
+    await expect(page.getByTestId('topbar-pin-view-btn')).toBeVisible();
+    await page.getByTestId('topbar-pin-view-btn').click();
     await expect(page.locator('[data-testid^="pinned-recent-item-"]')).toHaveCount(1);
     await expect(page.getByTestId('pinned-recent-item-0')).toHaveAttribute(
       'data-pinned-route',

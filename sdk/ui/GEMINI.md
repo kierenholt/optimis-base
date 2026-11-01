@@ -7,7 +7,7 @@ This directory contains the canonical client-side Plugin UI SDK (`mis-bridge.js`
 1. **[`mis-bridge.js`](file:///home/kieren/Documents/code/optimis/sdk/ui/mis-bridge.js) — Sandboxed Plugin UI SDK (`window.mis`)**:
    - **Initialization & Theme Handshake (`mis:ready` -> `mis:init` / `mis:theme:update` / `mis:plugin:invalidated`)**:
      - Automatically dispatches `{ type: 'mis:ready' }` to `window.parent` on load.
-     - Injects all `--mis-*` CSS Custom Properties onto `document.documentElement` (`:root`) and synchronizes `data-mis-theme="light" | "high-contrast"`.
+     - Injects all `--mis-*` CSS Custom Properties onto `document.documentElement` (`:root`), synchronizes `data-mis-theme="light" | "high-contrast"` and `data-mis-font-size="small" | "medium" | "large" | "extra-large"`, and scales `<style>` and inline pixel `font-size` declarations via `scaleDocumentTypography` (`calc(<N>px * var(--mis-font-scale, 1))`).
      - Exposes `window.mis.context`, `window.mis.theme`, `window.mis.themeMode`, `window.mis.permittedMethods`, `window.mis.scopes`, `window.mis.activeRoles`, `window.mis.ready()`, `window.mis.onInit(callback)`, `window.mis.onPersonaChanged(callback)` (triggered plus a DOM `mis:persona:changed` `CustomEvent` when `staff_id` changes), and `window.mis.onInvalidated(callback)` (triggered plus a DOM `mis:plugin:invalidated` `CustomEvent` whenever a mutating RPC completes across sibling plugin/widget iframes).
    - **Programmatic RPC Promise API (`window.mis.rpc(method, args)`)**:
      - Validates `method` (non-empty string) and `args` (plain JSON object), failing fast by rejecting the returned `Promise` immediately on malformed inputs (`MISSING_RPC_METHOD`, `INVALID_RPC_ARGS`).

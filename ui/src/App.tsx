@@ -368,7 +368,7 @@ export function App() {
               border: '1px solid var(--mis-border-strong)',
               backgroundColor: 'var(--mis-bg-elevated)',
               color: 'var(--mis-text-primary)',
-              fontSize: '13px',
+              fontSize: 'calc(13px * var(--mis-font-scale, 1))',
               fontWeight: 700,
             }}
           >
@@ -503,12 +503,12 @@ export function App() {
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <h2 style={{ margin: 0, fontSize: 'calc(16px * var(--mis-font-scale, 1))', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                   <MonochromeLucideIcon name="settings" size={16} />
                   <span>Host Settings &amp; Preferences</span>
                 </h2>
               </div>
-              <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div>
                   <strong>School Name:</strong> {schoolName}
                 </div>
@@ -621,7 +621,7 @@ export function App() {
                             color: isSelected
                               ? 'var(--mis-brand-primary-fg)'
                               : 'var(--mis-text-primary)',
-                            fontSize: '12px',
+                            fontSize: 'calc(12px * var(--mis-font-scale, 1))',
                             fontWeight: isSelected ? 700 : 600,
                             cursor: 'pointer',
                           }}

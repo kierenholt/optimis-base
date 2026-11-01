@@ -73,6 +73,37 @@
     return state.baseFontSize || 'medium';
   }
 
+  function scaleDocumentTypography(rootNode) {
+    var scope = rootNode && typeof rootNode.querySelectorAll === 'function' ? rootNode : document;
+    if (!scope || typeof scope.querySelectorAll !== 'function') {
+      return;
+    }
+    var styleEls = scope.querySelectorAll('style:not([data-mis-font-scaled])');
+    for (var i = 0; i < styleEls.length; i++) {
+      var st = styleEls[i];
+      var cssText = st.textContent || '';
+      if (cssText.indexOf('font-size') !== -1) {
+        st.textContent = cssText.replace(
+          /font-size\s*:\s*(\d+(?:\.\d+)?)px/gi,
+          'font-size: calc($1px * var(--mis-font-scale, 1))'
+        );
+      }
+      st.setAttribute('data-mis-font-scaled', 'true');
+    }
+    var inlineEls = scope.querySelectorAll('[style*="font-size"]:not(html):not(body)');
+    for (var j = 0; j < inlineEls.length; j++) {
+      var el = inlineEls[j];
+      if (!el.style) {
+        continue;
+      }
+      var fs = (el.style.fontSize || '').trim();
+      var m = fs.match(/^(\d+(?:\.\d+)?)px$/i);
+      if (m) {
+        el.style.fontSize = 'calc(' + m[1] + 'px * var(--mis-font-scale, 1))';
+      }
+    }
+  }
+
   function applyThemeTokens(themeMode, themeTokens, legacyTheme, baseFontSize) {
     var mode = typeof themeMode === 'string' && themeMode.trim() !== '' ? themeMode.trim() : 'light';
     state.themeMode = mode;
@@ -110,6 +141,7 @@
       if (document.body) {
         document.body.style.fontSize = effectivePx;
       }
+      scaleDocumentTypography(document);
       if (
         legacyTheme &&
         typeof legacyTheme === 'object' &&
@@ -868,7 +900,17 @@
     }
     observersAttached = true;
     if (typeof global.MutationObserver === 'function' && document.documentElement) {
-      var mo = new global.MutationObserver(function () {
+      var mo = new global.MutationObserver(function (mutations) {
+        var hasChildMutation = false;
+        for (var i = 0; i < mutations.length; i++) {
+          if (mutations[i].type === 'childList' && mutations[i].addedNodes && mutations[i].addedNodes.length > 0) {
+            hasChildMutation = true;
+            break;
+          }
+        }
+        if (hasChildMutation) {
+          scaleDocumentTypography(document);
+        }
         scheduleReportContentHeight(false);
       });
       mo.observe(document.documentElement, {
@@ -897,6 +939,7 @@
   }
 
   function sendReady() {
+    scaleDocumentTypography(document);
     renderIcons(document);
     attachAutoResizeObservers();
     global.parent.postMessage({ type: 'mis:ready' }, '*');

@@ -50,13 +50,14 @@ type GDPRHooksSpec struct {
 }
 
 type WidgetSpec struct {
-	ID       string   `json:"id"`
-	Title    string   `json:"title"`
-	Icon     string   `json:"icon,omitempty"`
-	Entry    string   `json:"entry"`
-	Width    int      `json:"width"`
-	Height   int      `json:"height"`
-	Keywords []string `json:"keywords,omitempty"`
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Icon        string   `json:"icon,omitempty"`
+	Entry       string   `json:"entry"`
+	Width       int      `json:"width"`
+	Height      int      `json:"height"`
+	Keywords    []string `json:"keywords,omitempty"`
 }
 
 type ViewSpec struct {

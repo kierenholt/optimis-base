@@ -34,7 +34,7 @@ export function GdprSarPanel({
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <h2 style={{ fontSize: '16px', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+        <h2 style={{ fontSize: 'calc(16px * var(--mis-font-scale, 1))', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
           <MonochromeLucideIcon name="file-check" size={18} />
           <span>UK GDPR Subject Access Request (SAR) Redaction &amp; Statutory Retention Purge</span>
         </h2>
@@ -138,7 +138,7 @@ export function GdprSarPanel({
                   if (isRedactable) {
                     return (
                       <div key={fieldKey} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                        <label style={{ minWidth: '150px', fontSize: '13px', fontWeight: 600 }}>
+                        <label style={{ minWidth: '150px', fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 600 }}>
                           {fieldKey} (Redactable):
                         </label>
                         <input
@@ -156,7 +156,7 @@ export function GdprSarPanel({
                           onClick={() =>
                             onUpdateRedactableField(secIdx, recIdx, fieldKey, '[REDACTED]')
                           }
-                          style={{ padding: '4px 8px', fontSize: '12px', cursor: 'pointer' }}
+                          style={{ padding: '4px 8px', fontSize: 'calc(12px * var(--mis-font-scale, 1))', cursor: 'pointer' }}
                         >
                           [REDACTED]
                         </button>
@@ -164,7 +164,7 @@ export function GdprSarPanel({
                     );
                   }
                   return (
-                    <div key={fieldKey} style={{ fontSize: '13px', marginBottom: '2px' }}>
+                    <div key={fieldKey} style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', marginBottom: '2px' }}>
                       <strong>{fieldKey}:</strong> {strVal}
                     </div>
                   );
@@ -185,7 +185,7 @@ export function GdprSarPanel({
             color: '#f8fafc',
             borderRadius: '6px',
             overflowX: 'auto',
-            fontSize: '12px',
+            fontSize: 'calc(12px * var(--mis-font-scale, 1))',
           }}
         >
           {sarFinalizedJson}

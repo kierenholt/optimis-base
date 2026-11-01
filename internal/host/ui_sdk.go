@@ -17,15 +17,17 @@ import (
 const pluginSandboxCSP = "default-src 'none'; script-src 'self' 'unsafe-inline' http: https:; style-src 'self' 'unsafe-inline' http: https:; img-src 'self' data:; font-src 'self' data:; connect-src 'none';"
 
 type PluginUIWidgetDescriptor struct {
-	ID       string   `json:"id"`
-	PluginID string   `json:"plugin_id"`
-	Title    string   `json:"title"`
-	Icon     string   `json:"icon"`
-	Entry    string   `json:"entry"`
-	EntryURL string   `json:"entry_url"`
-	Width    int      `json:"width"`
-	Height   int      `json:"height"`
-	Keywords []string `json:"keywords"`
+	ID          string   `json:"id"`
+	PluginID    string   `json:"plugin_id"`
+	PluginTitle string   `json:"plugin_title"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Icon        string   `json:"icon"`
+	Entry       string   `json:"entry"`
+	EntryURL    string   `json:"entry_url"`
+	Width       int      `json:"width"`
+	Height      int      `json:"height"`
+	Keywords    []string `json:"keywords"`
 }
 
 type PluginUIViewDescriptor struct {
@@ -519,15 +521,17 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 					wIcon = pluginIcon
 				}
 				widgets = append(widgets, PluginUIWidgetDescriptor{
-					ID:       wSpec.ID,
-					PluginID: plugID,
-					Title:    wSpec.Title,
-					Icon:     wIcon,
-					Entry:    wSpec.Entry,
-					EntryURL: fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
-					Width:    wSpec.Width,
-					Height:   wSpec.Height,
-					Keywords: wKeywords,
+					ID:          wSpec.ID,
+					PluginID:    plugID,
+					PluginTitle: title,
+					Title:       wSpec.Title,
+					Description: wSpec.Description,
+					Icon:        wIcon,
+					Entry:       wSpec.Entry,
+					EntryURL:    fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
+					Width:       wSpec.Width,
+					Height:      wSpec.Height,
+					Keywords:    wKeywords,
 				})
 			}
 
@@ -793,17 +797,19 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 						wKeywords = append(wKeywords, trimmedKW)
 					}
 				}
-				if matchesViewOrWidgetSearchQuery(wSpec.Title, wSpec.ID, "", pluginTitle, wKeywords, qLower) {
+				if matchesViewOrWidgetSearchQuery(wSpec.Title, wSpec.ID, wSpec.Description, pluginTitle, wKeywords, qLower) {
 					matchedWidgets = append(matchedWidgets, PluginUIWidgetDescriptor{
-						ID:       wSpec.ID,
-						PluginID: plugID,
-						Title:    wSpec.Title,
-						Icon:     wIcon,
-						Entry:    wSpec.Entry,
-						EntryURL: fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
-						Width:    wSpec.Width,
-						Height:   wSpec.Height,
-						Keywords: wKeywords,
+						ID:          wSpec.ID,
+						PluginID:    plugID,
+						PluginTitle: pluginTitle,
+						Title:       wSpec.Title,
+						Description: wSpec.Description,
+						Icon:        wIcon,
+						Entry:       wSpec.Entry,
+						EntryURL:    fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
+						Width:       wSpec.Width,
+						Height:      wSpec.Height,
+						Keywords:    wKeywords,
 					})
 				}
 			}

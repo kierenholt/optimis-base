@@ -16,6 +16,7 @@ import (
 	"optimis/internal/host"
 )
 
+// loadDotEnv loads key-value configuration from a .env file into process environment.
 func loadDotEnv(path string) error {
 	f, err := os.Open(path)
 	if err != nil {

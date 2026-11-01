@@ -347,6 +347,9 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
 
     const searchViewInput = page.getByTestId('host-search-input');
     await expect(searchViewInput).toBeVisible();
+    const hostSearchTabPlugins = page.getByTestId('host-search-tab-plugins');
+    await expect(hostSearchTabPlugins).toBeVisible();
+    await expect(hostSearchTabPlugins).toContainText('Pages (');
 
     // 5. Search for SEN widget via keyword ("differentiation") in full-page Search view and click inline "Add to Dashboard"
     await searchViewInput.fill('differentiation');
@@ -429,6 +432,7 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
 
     await expect(tabAll).toBeVisible();
     await expect(tabPlugins).toBeVisible();
+    await expect(tabPlugins).toContainText('Pages (');
     await expect(tabWidgets).toBeVisible();
     await expect(tabPupils).toBeVisible();
     await expect(tabGroups).toBeVisible();
@@ -445,7 +449,7 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
     await expect(adaPupilItem).toBeVisible();
     await expect(ownGroupItem).toBeVisible();
 
-    // 4. Switch to "Plugins" tab -> only plugin views are shown
+    // 4. Switch to "Pages" tab -> only plugin views are shown
     await tabPlugins.click();
     await expect(tabPlugins).toHaveAttribute('aria-selected', 'true');
     await expect(behViewItem).toBeVisible();
@@ -504,6 +508,7 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
 
     await expect(filterAll).toBeVisible();
     await expect(filterPlugins).toBeVisible();
+    await expect(filterPlugins).toHaveText('Pages');
     await expect(filterWidgets).toBeVisible();
     await expect(filterPupils).toBeVisible();
     await expect(filterGroups).toBeVisible();

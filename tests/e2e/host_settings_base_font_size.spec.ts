@@ -607,5 +607,164 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
       expect(geometry.asideScrollHeight).toBeLessThanOrEqual(geometry.asideOffsetHeight);
     }
   });
+
+  test('hostSettingsBaseFontSize_selectingPresets_scalesComputedTextSizeOfSettingsButtonsHeadingsSidebarDashboardAndPluginElements_test', async ({
+    page,
+    request,
+  }) => {
+    if (!m1Seed || !personaSeed) {
+      throw new Error('Missing mandatory seeded fixtures');
+    }
+
+    const switchTeacherRes = await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
+    expect(switchTeacherRes.ok()).toBe(true);
+    const teacherSession = await switchTeacherRes.json();
+
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: teacherSession.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
+
+    const placeWidgetRes = await request.put('/api/dashboard/layout', {
+      data: {
+        staff_id: m1Seed.teacher_staff_id,
+        layout: [{ plug_id: testPlugId, widget_id: 'pastoral_watch' }],
+      },
+    });
+    expect(placeWidgetRes.ok()).toBe(true);
+
+    await page.goto(
+      `/p/${testPlugId}?pupil_id=${encodeURIComponent(
+        m1Seed.active_pupil_id
+      )}&group_id=${encodeURIComponent(m1Seed.own_group_id)}`
+    );
+
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
+    await expect(pluginFrame.getByTestId('print-record-btn')).toBeVisible();
+
+    await page.getByTestId('nav-rail-settings').click();
+    const settingsView = page.getByTestId('host-settings-view');
+    await expect(settingsView).toBeVisible();
+
+    const measureHostSettingsAndSidebarFonts = async () => {
+      return await page.evaluate(() => {
+        const headingEl = document.querySelector('[data-testid="host-settings-view"] h2');
+        const controlEl = document.querySelector('[data-testid="host-settings-font-size-control"]');
+        const btnLargeEl = document.querySelector('[data-testid="host-settings-font-size-btn-large"]');
+        const schoolNameEl = document.querySelector('[data-testid="host-school-name"]');
+        const navHomeEl = document.querySelector('[data-testid="nav-rail-home"]');
+        const navSettingsEl = document.querySelector('[data-testid="nav-rail-settings"]');
+        return {
+          headingPx: headingEl ? parseFloat(window.getComputedStyle(headingEl).fontSize) : 0,
+          controlPx: controlEl ? parseFloat(window.getComputedStyle(controlEl).fontSize) : 0,
+          btnLargePx: btnLargeEl ? parseFloat(window.getComputedStyle(btnLargeEl).fontSize) : 0,
+          schoolNamePx: schoolNameEl ? parseFloat(window.getComputedStyle(schoolNameEl).fontSize) : 0,
+          navHomePx: navHomeEl ? parseFloat(window.getComputedStyle(navHomeEl).fontSize) : 0,
+          navSettingsPx: navSettingsEl ? parseFloat(window.getComputedStyle(navSettingsEl).fontSize) : 0,
+        };
+      });
+    };
+
+    const measurePluginFonts = async () => {
+      return await pluginFrame.locator(':root').evaluate(() => {
+        const btnEl = document.querySelector('[data-testid="print-record-btn"]');
+        const sdkBarEl = document.querySelector('.sdk-bar');
+        return {
+          btnPx: btnEl ? parseFloat(window.getComputedStyle(btnEl).fontSize) : 0,
+          sdkBarPx: sdkBarEl ? parseFloat(window.getComputedStyle(sdkBarEl).fontSize) : 0,
+        };
+      });
+    };
+
+    // 1. Verify Medium (1.0x) baseline computed font sizes on actual text elements
+    const mediumHost = await measureHostSettingsAndSidebarFonts();
+    expect(mediumHost.headingPx).toBeCloseTo(16, 2);
+    expect(mediumHost.controlPx).toBeCloseTo(13, 2);
+    expect(mediumHost.btnLargePx).toBeCloseTo(12, 2);
+    expect(mediumHost.schoolNamePx).toBeCloseTo(10, 2);
+    expect(mediumHost.navHomePx).toBeCloseTo(11, 2);
+    expect(mediumHost.navSettingsPx).toBeCloseTo(10, 2);
+
+    const mediumPlugin = await measurePluginFonts();
+    expect(mediumPlugin.btnPx).toBeCloseTo(13, 2);
+    expect(mediumPlugin.sdkBarPx).toBeCloseTo(12, 2);
+
+    // 2. Click "Large" (1.125x) -> verify all text elements scale by 1.125x
+    await settingsView.getByTestId('host-settings-font-size-btn-large').click();
+    const largeHost = await measureHostSettingsAndSidebarFonts();
+    expect(largeHost.headingPx).toBeCloseTo(16 * 1.125, 2);
+    expect(largeHost.controlPx).toBeCloseTo(13 * 1.125, 2);
+    expect(largeHost.btnLargePx).toBeCloseTo(12 * 1.125, 2);
+    expect(largeHost.schoolNamePx).toBeCloseTo(10 * 1.125, 2);
+    expect(largeHost.navHomePx).toBeCloseTo(11 * 1.125, 2);
+    expect(largeHost.navSettingsPx).toBeCloseTo(10 * 1.125, 2);
+
+    await expect
+      .poll(async () => (await measurePluginFonts()).btnPx)
+      .toBeCloseTo(13 * 1.125, 2);
+    const largePlugin = await measurePluginFonts();
+    expect(largePlugin.sdkBarPx).toBeCloseTo(12 * 1.125, 2);
+
+    // 3. Click "Extra Large" (1.25x) -> verify all text elements scale by 1.25x
+    await settingsView.getByTestId('host-settings-font-size-btn-extra-large').click();
+    const xlHost = await measureHostSettingsAndSidebarFonts();
+    expect(xlHost.headingPx).toBeCloseTo(16 * 1.25, 2);
+    expect(xlHost.controlPx).toBeCloseTo(13 * 1.25, 2);
+    expect(xlHost.btnLargePx).toBeCloseTo(12 * 1.25, 2);
+    expect(xlHost.schoolNamePx).toBeCloseTo(10 * 1.25, 2);
+    expect(xlHost.navHomePx).toBeCloseTo(11 * 1.25, 2);
+    expect(xlHost.navSettingsPx).toBeCloseTo(10 * 1.25, 2);
+
+    await expect
+      .poll(async () => (await measurePluginFonts()).btnPx)
+      .toBeCloseTo(13 * 1.25, 2);
+    const xlPlugin = await measurePluginFonts();
+    expect(xlPlugin.sdkBarPx).toBeCloseTo(12 * 1.25, 2);
+
+    // Verify Home Dashboard search & widget iframe text also reflect Extra Large (1.25x)
+    await page.getByTestId('nav-rail-home').click();
+    const xlDashboardMetrics = await page.evaluate(() => {
+      const searchInput = document.querySelector('[data-testid="landing-search-input"]');
+      const editBtn = document.querySelector('[data-testid="dashboard-edit-mode-toggle-btn"]');
+      return {
+        searchInputPx: searchInput ? parseFloat(window.getComputedStyle(searchInput).fontSize) : 0,
+        editBtnPx: editBtn ? parseFloat(window.getComputedStyle(editBtn).fontSize) : 0,
+      };
+    });
+    expect(xlDashboardMetrics.searchInputPx).toBeCloseTo(13 * 1.25, 2);
+    expect(xlDashboardMetrics.editBtnPx).toBeCloseTo(12 * 1.25, 2);
+
+    const widgetFrame = page.frameLocator('[data-testid="widget-iframe-pastoral_watch"]');
+    await expect
+      .poll(async () => {
+        return await widgetFrame.locator(':root').evaluate(() => {
+          const btn = document.querySelector('[data-testid="widget-rpc-fetch-btn"]');
+          return btn ? parseFloat(window.getComputedStyle(btn).fontSize) : 0;
+        });
+      })
+      .toBeCloseTo(12 * 1.25, 2);
+
+    // 4. Switch back to Settings and click "Small" (0.875x) -> verify all text elements scale by 0.875x
+    await page.getByTestId('nav-rail-settings').click();
+    await settingsView.getByTestId('host-settings-font-size-btn-small').click();
+    const smallHost = await measureHostSettingsAndSidebarFonts();
+    expect(smallHost.headingPx).toBeCloseTo(16 * 0.875, 2);
+    expect(smallHost.controlPx).toBeCloseTo(13 * 0.875, 2);
+    expect(smallHost.btnLargePx).toBeCloseTo(12 * 0.875, 2);
+    expect(smallHost.schoolNamePx).toBeCloseTo(10 * 0.875, 2);
+    expect(smallHost.navHomePx).toBeCloseTo(11 * 0.875, 2);
+    expect(smallHost.navSettingsPx).toBeCloseTo(10 * 0.875, 2);
+
+    await expect
+      .poll(async () => (await measurePluginFonts()).btnPx)
+      .toBeCloseTo(13 * 0.875, 2);
+  });
 });
+
 

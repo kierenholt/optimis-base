@@ -120,7 +120,10 @@ export function useHostWorkspaceState() {
     for (const p of installedPlugins) {
       if (Array.isArray(p.widgets)) {
         for (const w of p.widgets) {
-          list.push(w);
+          list.push({
+            ...w,
+            plugin_title: w.plugin_title || p.title,
+          });
         }
       }
     }
@@ -154,7 +157,9 @@ export function useHostWorkspaceState() {
         acc.push({
           id: slot.widget_id,
           plugin_id: slot.plug_id,
+          plugin_title: slot.plugin_title,
           title: slot.title || slot.widget_id,
+          description: slot.description,
           icon: slot.icon,
           entry: slot.entry || '',
           entry_url: slot.entry_url || '',

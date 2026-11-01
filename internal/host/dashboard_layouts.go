@@ -12,19 +12,21 @@ import (
 )
 
 type ResolvedDashboardWidgetSlot struct {
-	PlugID     string `json:"plug_id"`
-	WidgetID   string `json:"widget_id"`
-	Col        int    `json:"col"`
-	Row        int    `json:"row"`
-	Permitted  bool   `json:"permitted"`
-	ErrorCode  string `json:"error_code,omitempty"`
-	ErrorTitle string `json:"error_title,omitempty"`
-	Title      string `json:"title,omitempty"`
-	Icon       string `json:"icon,omitempty"`
-	Entry      string `json:"entry,omitempty"`
-	EntryURL   string `json:"entry_url,omitempty"`
-	Width      int    `json:"width,omitempty"`
-	Height     int    `json:"height,omitempty"`
+	PlugID      string `json:"plug_id"`
+	PluginTitle string `json:"plugin_title,omitempty"`
+	WidgetID    string `json:"widget_id"`
+	Col         int    `json:"col"`
+	Row         int    `json:"row"`
+	Permitted   bool   `json:"permitted"`
+	ErrorCode   string `json:"error_code,omitempty"`
+	ErrorTitle  string `json:"error_title,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	Icon        string `json:"icon,omitempty"`
+	Entry       string `json:"entry,omitempty"`
+	EntryURL    string `json:"entry_url,omitempty"`
+	Width       int    `json:"width,omitempty"`
+	Height      int    `json:"height,omitempty"`
 }
 
 func is2DFootprintFree(occupied map[[2]int]bool, col, row, width, height, colCount int) bool {
@@ -76,12 +78,14 @@ func (h *Host) resolveCallerDashboardState(
 	caller CallerContext,
 ) ([]dal.DashboardWidgetItem, int, string, []ResolvedDashboardWidgetSlot, error) {
 	type permWidgetMeta struct {
-		title    string
-		icon     string
-		entry    string
-		entryURL string
-		width    int
-		height   int
+		pluginTitle string
+		title       string
+		description string
+		icon        string
+		entry       string
+		entryURL    string
+		width       int
+		height      int
 	}
 
 	h.mu.RLock()
@@ -136,12 +140,14 @@ func (h *Host) resolveCallerDashboardState(
 				wIcon = strings.TrimSpace(p.Manifest.Icon)
 			}
 			permittedWidgets[plugID+":"+wSpec.ID] = permWidgetMeta{
-				title:    wSpec.Title,
-				icon:     wIcon,
-				entry:    wSpec.Entry,
-				entryURL: fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
-				width:    wSpec.Width,
-				height:   wSpec.Height,
+				pluginTitle: pTitle,
+				title:       wSpec.Title,
+				description: wSpec.Description,
+				icon:        wIcon,
+				entry:       wSpec.Entry,
+				entryURL:    fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
+				width:       wSpec.Width,
+				height:      wSpec.Height,
 			}
 			if idx == 0 {
 				candidates = append(candidates, candidateFirst{
@@ -209,17 +215,19 @@ func (h *Host) resolveCallerDashboardState(
 			layout[i].Row = row
 
 			resolved = append(resolved, ResolvedDashboardWidgetSlot{
-				PlugID:    item.PlugID,
-				WidgetID:  item.WidgetID,
-				Col:       col,
-				Row:       row,
-				Permitted: true,
-				Title:     meta.title,
-				Icon:      meta.icon,
-				Entry:     meta.entry,
-				EntryURL:  meta.entryURL,
-				Width:     w,
-				Height:    hgt,
+				PlugID:      item.PlugID,
+				PluginTitle: meta.pluginTitle,
+				WidgetID:    item.WidgetID,
+				Col:         col,
+				Row:         row,
+				Permitted:   true,
+				Title:       meta.title,
+				Description: meta.description,
+				Icon:        meta.icon,
+				Entry:       meta.entry,
+				EntryURL:    meta.entryURL,
+				Width:       w,
+				Height:      hgt,
 			})
 			continue
 		}

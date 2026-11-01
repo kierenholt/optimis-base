@@ -281,7 +281,7 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
 
   const filterTabs: Array<{ id: CommandPaletteTab; label: string; icon: string }> = [
     { id: 'all', label: 'All', icon: 'search' },
-    { id: 'plugins', label: 'Plugins', icon: 'box' },
+    { id: 'plugins', label: 'Pages', icon: 'box' },
     { id: 'widgets', label: 'Widgets', icon: 'layout-grid' },
     { id: 'pupils', label: 'Pupils', icon: 'user' },
     { id: 'groups', label: 'Groups', icon: 'users' },
@@ -311,11 +311,11 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
         }}
       >
         <div>
-          <h2 style={{ fontSize: '15px', fontWeight: 700, margin: 0, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <h2 style={{ fontSize: 'calc(15px * var(--mis-font-scale, 1))', fontWeight: 700, margin: 0, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
             <MonochromeLucideIcon name="search" size={16} />
             <span>Global Search &amp; Discovery</span>
           </h2>
-          <div style={{ fontSize: '12px', color: 'var(--mis-text-secondary)', marginTop: '2px' }}>
+          <div style={{ fontSize: 'calc(12px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)', marginTop: '2px' }}>
             Search plugin views, dashboard widgets, pupils, and teaching groups by name, action verb, or synonym
           </div>
         </div>
@@ -329,7 +329,7 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
             border: '1px solid var(--mis-border-subtle)',
             backgroundColor: 'var(--mis-bg-elevated)',
             color: 'var(--mis-text-primary)',
-            fontSize: '12px',
+            fontSize: 'calc(12px * var(--mis-font-scale, 1))',
             fontWeight: 600,
             cursor: 'pointer',
             display: 'inline-flex',
@@ -369,7 +369,7 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
                 border: '1px solid var(--mis-border-subtle)',
                 backgroundColor: isSelected ? 'var(--mis-brand-primary)' : 'var(--mis-bg-elevated)',
                 color: isSelected ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-primary)',
-                fontSize: '12px',
+                fontSize: 'calc(12px * var(--mis-font-scale, 1))',
                 fontWeight: 600,
                 cursor: 'pointer',
                 display: 'inline-flex',
@@ -398,7 +398,7 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
           border: '1px solid var(--mis-border-strong)',
           backgroundColor: 'var(--mis-bg-elevated)',
           color: 'var(--mis-text-primary)',
-          fontSize: '13px',
+          fontSize: 'calc(13px * var(--mis-font-scale, 1))',
         }}
       />
 
@@ -414,7 +414,7 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
         >
           {showViews && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+              <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
                 Plugin Views ({matchedViews.length})
               </div>
               {matchedViews.map(({ pluginId, pluginTitle, pluginIcon, view }) => {
@@ -458,14 +458,14 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <MonochromeLucideIcon name={view.icon || pluginIcon || 'box'} fallback="box" size={16} />
                         <div>
-                          <div style={{ fontSize: '13px', fontWeight: 700 }}>{view.title || pluginTitle}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                          <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 700 }}>{view.title || pluginTitle}</div>
+                          <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)' }}>
                             {pluginTitle} • /p/{pluginId}
                             {view.path === '/' ? '' : view.path}
                           </div>
                         </div>
                       </div>
-                      <span style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                         <span>Open View</span>
                         <MonochromeLucideIcon name="arrow-right" size={12} />
                       </span>
@@ -482,7 +482,7 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
                           border: '1px solid var(--mis-border-subtle)',
                           backgroundColor: isPinned ? 'var(--mis-brand-primary)' : 'var(--mis-bg-elevated)',
                           color: isPinned ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-primary)',
-                          fontSize: '11px',
+                          fontSize: 'calc(11px * var(--mis-font-scale, 1))',
                           fontWeight: 600,
                           cursor: 'pointer',
                           whiteSpace: 'nowrap',
@@ -503,7 +503,7 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
 
           {showWidgets && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+              <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
                 Dashboard Widgets ({matchedWidgets.length})
               </div>
               {matchedWidgets.map(({ widget, pluginTitle, pluginIcon }) => {
@@ -529,8 +529,8 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <MonochromeLucideIcon name={widget.icon || pluginIcon || 'layout-grid'} fallback="layout-grid" size={16} />
                       <div>
-                        <div style={{ fontSize: '13px', fontWeight: 700 }}>{widget.title}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                        <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 700 }}>{widget.title}</div>
+                        <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)' }}>
                           Widget • {pluginTitle}
                         </div>
                       </div>
@@ -548,7 +548,7 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
                         border: '1px solid var(--mis-border-subtle)',
                         backgroundColor: isPlaced ? 'var(--mis-bg-surface)' : 'var(--mis-brand-primary)',
                         color: isPlaced ? 'var(--mis-text-muted)' : 'var(--mis-brand-primary-fg)',
-                        fontSize: '12px',
+                        fontSize: 'calc(12px * var(--mis-font-scale, 1))',
                         fontWeight: 600,
                         cursor: isPlaced ? 'default' : 'pointer',
                         display: 'inline-flex',
@@ -567,7 +567,7 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
 
           {showPupils && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+              <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
                 Pupils ({pupils.length})
               </div>
               {pupils.map((pupil) => (
@@ -593,15 +593,15 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <MonochromeLucideIcon name="user" size={16} />
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 700 }}>
+                      <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 700 }}>
                         {pupil.first_name} {pupil.last_name}
                       </div>
-                      <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                      <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)' }}>
                         UPN {pupil.upn} • Year {pupil.nc_year_group || 'N/A'}
                       </div>
                     </div>
                   </div>
-                  <span style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     <span>Open Student</span>
                     <MonochromeLucideIcon name="arrow-right" size={12} />
                   </span>
@@ -612,7 +612,7 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
 
           {showGroups && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+              <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
                 Groups ({groups.length})
               </div>
               {groups.map((group) => (
@@ -638,15 +638,15 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <MonochromeLucideIcon name="users" size={16} />
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 700 }}>
+                      <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 700 }}>
                         {group.code} — {group.name}
                       </div>
-                      <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                      <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)' }}>
                         {group.group_type}
                       </div>
                     </div>
                   </div>
-                  <span style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     <span>Open Group</span>
                     <MonochromeLucideIcon name="arrow-right" size={12} />
                   </span>
@@ -658,7 +658,7 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
           {!showViews && !showWidgets && !showPupils && !showGroups && (
             <div
               data-testid="landing-search-empty-state"
-              style={{ fontSize: '12px', color: 'var(--mis-text-secondary)', padding: '6px 0' }}
+              style={{ fontSize: 'calc(12px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)', padding: '6px 0' }}
             >
               No matching views, widgets, pupils, or groups found.
             </div>
@@ -777,7 +777,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
     },
     {
       id: 'plugins',
-      label: `Plugins (${matchedViews.length})`,
+      label: `Pages (${matchedViews.length})`,
       icon: 'box',
     },
     {
@@ -835,7 +835,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '14px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: 'calc(14px * var(--mis-font-scale, 1))', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
             <MonochromeLucideIcon name="search" size={16} />
             <span>Full list (Ctrl+K)</span>
           </span>
@@ -851,7 +851,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
               border: '1px solid var(--mis-border-subtle)',
               backgroundColor: 'var(--mis-bg-elevated)',
               color: 'var(--mis-text-primary)',
-              fontSize: '11px',
+              fontSize: 'calc(11px * var(--mis-font-scale, 1))',
               fontWeight: 600,
               cursor: 'pointer',
               display: 'inline-flex',
@@ -879,7 +879,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
             border: '1px solid var(--mis-border-strong)',
             backgroundColor: 'var(--mis-bg-elevated)',
             color: 'var(--mis-text-primary)',
-            fontSize: '13px',
+            fontSize: 'calc(13px * var(--mis-font-scale, 1))',
           }}
         />
 
@@ -912,7 +912,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
                   border: '1px solid var(--mis-border-subtle)',
                   backgroundColor: isSelected ? 'var(--mis-brand-primary)' : 'var(--mis-bg-elevated)',
                   color: isSelected ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-primary)',
-                  fontSize: '12px',
+                  fontSize: 'calc(12px * var(--mis-font-scale, 1))',
                   fontWeight: 600,
                   cursor: 'pointer',
                   display: 'inline-flex',
@@ -933,7 +933,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
         >
           {showViews && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+              <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
                 Views ({matchedViews.length})
               </div>
               {matchedViews.map(({ pluginId, pluginTitle, pluginIcon, view, permittedMethods }) => {
@@ -982,14 +982,14 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <MonochromeLucideIcon name={view.icon || pluginIcon || 'box'} fallback="box" size={16} />
                         <div>
-                          <div style={{ fontSize: '13px', fontWeight: 700 }}>{view.title || pluginTitle}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                          <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 700 }}>{view.title || pluginTitle}</div>
+                          <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)' }}>
                             {pluginTitle} • /p/{pluginId}
                             {view.path === '/' ? '' : view.path} ({permittedMethods.length} methods)
                           </div>
                         </div>
                       </div>
-                      <span style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                         <span>Jump</span>
                         <MonochromeLucideIcon name="arrow-right" size={12} />
                       </span>
@@ -1006,7 +1006,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
                           border: '1px solid var(--mis-border-subtle)',
                           backgroundColor: isPinned ? 'var(--mis-brand-primary)' : 'var(--mis-bg-elevated)',
                           color: isPinned ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-primary)',
-                          fontSize: '11px',
+                          fontSize: 'calc(11px * var(--mis-font-scale, 1))',
                           fontWeight: 600,
                           cursor: 'pointer',
                           whiteSpace: 'nowrap',
@@ -1027,7 +1027,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
 
           {showWidgets && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+              <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
                 Dashboard Widgets ({matchedWidgets.length})
               </div>
               {matchedWidgets.map(({ widget, pluginTitle, pluginIcon }) => {
@@ -1053,8 +1053,8 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <MonochromeLucideIcon name={widget.icon || pluginIcon || 'layout-grid'} fallback="layout-grid" size={16} />
                       <div>
-                        <div style={{ fontSize: '13px', fontWeight: 700 }}>{widget.title}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                        <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 700 }}>{widget.title}</div>
+                        <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)' }}>
                           Widget • {pluginTitle}
                         </div>
                       </div>
@@ -1072,7 +1072,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
                         border: '1px solid var(--mis-border-subtle)',
                         backgroundColor: isPlaced ? 'var(--mis-bg-surface)' : 'var(--mis-brand-primary)',
                         color: isPlaced ? 'var(--mis-text-muted)' : 'var(--mis-brand-primary-fg)',
-                        fontSize: '12px',
+                        fontSize: 'calc(12px * var(--mis-font-scale, 1))',
                         fontWeight: 600,
                         cursor: isPlaced ? 'default' : 'pointer',
                         display: 'inline-flex',
@@ -1091,7 +1091,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
 
           {showPupils && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+              <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
                 Pupils ({pupils.length})
               </div>
               {pupils.map((pupil) => (
@@ -1120,15 +1120,15 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <MonochromeLucideIcon name="user" size={16} />
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 700 }}>
+                      <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 700 }}>
                         {pupil.first_name} {pupil.last_name}
                       </div>
-                      <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                      <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)' }}>
                         UPN {pupil.upn} • Year {pupil.nc_year_group || 'N/A'}
                       </div>
                     </div>
                   </div>
-                  <span style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     <span>Open Student</span>
                     <MonochromeLucideIcon name="arrow-right" size={12} />
                   </span>
@@ -1139,7 +1139,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
 
           {showGroups && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+              <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
                 Groups ({groups.length})
               </div>
               {groups.map((group) => (
@@ -1168,15 +1168,15 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <MonochromeLucideIcon name="users" size={16} />
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 700 }}>
+                      <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 700 }}>
                         {group.code} — {group.name}
                       </div>
-                      <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                      <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)' }}>
                         {group.group_type}
                       </div>
                     </div>
                   </div>
-                  <span style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     <span>Open Group</span>
                     <MonochromeLucideIcon name="arrow-right" size={12} />
                   </span>
@@ -1188,7 +1188,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
           {!showViews && !showWidgets && !showPupils && !showGroups && (
             <div
               data-testid="command-palette-empty-state"
-              style={{ fontSize: '12px', color: 'var(--mis-text-secondary)', padding: '6px 0' }}
+              style={{ fontSize: 'calc(12px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)', padding: '6px 0' }}
             >
               No matching items in this category.
             </div>
@@ -1293,7 +1293,7 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
     },
     {
       id: 'plugins',
-      label: `Plugins (${matchedViews.length})`,
+      label: `Pages (${matchedViews.length})`,
       icon: 'box',
     },
     {
@@ -1330,11 +1330,11 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
       }}
     >
       <div>
-        <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+        <h2 style={{ margin: 0, fontSize: 'calc(16px * var(--mis-font-scale, 1))', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
           <MonochromeLucideIcon name="search" size={16} />
           <span>Global Search &amp; Discovery</span>
         </h2>
-        <div style={{ fontSize: '12px', color: 'var(--mis-text-secondary)', marginTop: '4px' }}>
+        <div style={{ fontSize: 'calc(12px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)', marginTop: '4px' }}>
           Search plugin views, dashboard widgets, pupils, and teaching groups across your school workspace
         </div>
       </div>
@@ -1355,7 +1355,7 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
           border: '1px solid var(--mis-border-strong)',
           backgroundColor: 'var(--mis-bg-elevated)',
           color: 'var(--mis-text-primary)',
-          fontSize: '13px',
+          fontSize: 'calc(13px * var(--mis-font-scale, 1))',
         }}
       />
 
@@ -1388,7 +1388,7 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
                 border: '1px solid var(--mis-border-subtle)',
                 backgroundColor: isSelected ? 'var(--mis-brand-primary)' : 'var(--mis-bg-elevated)',
                 color: isSelected ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-primary)',
-                fontSize: '12px',
+                fontSize: 'calc(12px * var(--mis-font-scale, 1))',
                 fontWeight: 600,
                 cursor: 'pointer',
                 display: 'inline-flex',
@@ -1409,7 +1409,7 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
       >
         {showViews && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+            <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
               Views ({matchedViews.length})
             </div>
             {matchedViews.map(({ pluginId, pluginTitle, pluginIcon, view, permittedMethods }) => {
@@ -1455,14 +1455,14 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <MonochromeLucideIcon name={view.icon || pluginIcon || 'box'} fallback="box" size={16} />
                       <div>
-                        <div style={{ fontSize: '13px', fontWeight: 700 }}>{view.title || pluginTitle}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                        <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 700 }}>{view.title || pluginTitle}</div>
+                        <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)' }}>
                           {pluginTitle} • /p/{pluginId}
                           {view.path === '/' ? '' : view.path} ({permittedMethods.length} methods)
                         </div>
                       </div>
                     </div>
-                    <span style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                       <span>Open View</span>
                       <MonochromeLucideIcon name="arrow-right" size={12} />
                     </span>
@@ -1479,7 +1479,7 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
                         border: '1px solid var(--mis-border-subtle)',
                         backgroundColor: isPinned ? 'var(--mis-brand-primary)' : 'var(--mis-bg-elevated)',
                         color: isPinned ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-primary)',
-                        fontSize: '11px',
+                        fontSize: 'calc(11px * var(--mis-font-scale, 1))',
                         fontWeight: 600,
                         cursor: 'pointer',
                         whiteSpace: 'nowrap',
@@ -1500,7 +1500,7 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
 
         {showWidgets && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+            <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
               Dashboard Widgets ({matchedWidgets.length})
             </div>
             {matchedWidgets.map(({ widget, pluginTitle, pluginIcon }) => {
@@ -1526,8 +1526,8 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <MonochromeLucideIcon name={widget.icon || pluginIcon || 'layout-grid'} fallback="layout-grid" size={16} />
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 700 }}>{widget.title}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                      <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 700 }}>{widget.title}</div>
+                      <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)' }}>
                         Widget • {pluginTitle}
                       </div>
                     </div>
@@ -1545,7 +1545,7 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
                       border: '1px solid var(--mis-border-subtle)',
                       backgroundColor: isPlaced ? 'var(--mis-bg-surface)' : 'var(--mis-brand-primary)',
                       color: isPlaced ? 'var(--mis-text-muted)' : 'var(--mis-brand-primary-fg)',
-                      fontSize: '12px',
+                      fontSize: 'calc(12px * var(--mis-font-scale, 1))',
                       fontWeight: 600,
                       cursor: isPlaced ? 'default' : 'pointer',
                       display: 'inline-flex',
@@ -1564,7 +1564,7 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
 
         {showPupils && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+            <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
               Pupils ({pupils.length})
             </div>
             {pupils.map((pupil) => (
@@ -1590,15 +1590,15 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <MonochromeLucideIcon name="user" size={16} />
                   <div>
-                    <div style={{ fontSize: '13px', fontWeight: 700 }}>
+                    <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 700 }}>
                       {pupil.first_name} {pupil.last_name}
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                    <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)' }}>
                       UPN {pupil.upn} • Year {pupil.nc_year_group || 'N/A'}
                     </div>
                   </div>
                 </div>
-                <span style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                   <span>Open Student</span>
                   <MonochromeLucideIcon name="arrow-right" size={12} />
                 </span>
@@ -1609,7 +1609,7 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
 
         {showGroups && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+            <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
               Groups ({groups.length})
             </div>
             {groups.map((group) => (
@@ -1635,15 +1635,15 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <MonochromeLucideIcon name="users" size={16} />
                   <div>
-                    <div style={{ fontSize: '13px', fontWeight: 700 }}>
+                    <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', fontWeight: 700 }}>
                       {group.code} — {group.name}
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                    <div style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)' }}>
                       {group.group_type}
                     </div>
                   </div>
                 </div>
-                <span style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: 'calc(11px * var(--mis-font-scale, 1))', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                   <span>Open Group</span>
                   <MonochromeLucideIcon name="arrow-right" size={12} />
                 </span>
@@ -1655,7 +1655,7 @@ export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
         {!showViews && !showWidgets && !showPupils && !showGroups && (
           <div
             data-testid="host-search-empty-state"
-            style={{ fontSize: '12px', color: 'var(--mis-text-secondary)', padding: '6px 0' }}
+            style={{ fontSize: 'calc(12px * var(--mis-font-scale, 1))', color: 'var(--mis-text-secondary)', padding: '6px 0' }}
           >
             No matching items in this category.
           </div>

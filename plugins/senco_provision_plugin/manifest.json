@@ -102,6 +102,7 @@
     {
       "id": "sen_differentiation",
       "title": "Classroom SEN Differentiation",
+      "description": "Wide 2x1 classroom SEND differentiation summary surfacing active EHCP and SEN Support strategies.",
       "entry": "ui/dist/widget.html",
       "width": 2,
       "height": 1,

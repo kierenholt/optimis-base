@@ -1,0 +1,234 @@
+{
+  "id": "uk.org.optimis.widget.gallery",
+  "title": "Widget Gallery & Layout Bench",
+  "icon": "layout-grid",
+  "version": "0.1.0",
+  "core_dal_version": "~1.0",
+  "egress": {
+    "allowed_domains": []
+  },
+  "endpoints": {
+    "get_widget_gallery_summary": {
+      "scopes": [
+        "dal.pupils.read:own_groups",
+        "dal.groups.read:own_groups",
+        "dal.sen.read:own_groups",
+        "dal.medical.read:own_groups",
+        "dal.attendance.read:own_groups"
+      ],
+      "mutates": false
+    },
+    "get_pupil_quick_card": {
+      "scopes": [
+        "dal.pupils.read:own_groups"
+      ],
+      "mutates": false
+    }
+  },
+  "views": [
+    {
+      "id": "home",
+      "path": "/",
+      "title": "Widget Gallery & Layout Bench",
+      "icon": "layout-grid",
+      "entry": "ui/dist/index.html",
+      "keywords": [
+        "widget gallery",
+        "layout bench",
+        "dashboard cards",
+        "preset sizes"
+      ],
+      "query_params": [
+        "tab",
+        "pupil_id",
+        "second_pupil_id",
+        "group_id",
+        "other_group_id",
+        "reference_date",
+        "academic_year_id"
+      ]
+    }
+  ],
+  "widgets": [
+    {
+      "id": "wg_1x1_attendance_counter",
+      "title": "Session Attendance Counter (1x1)",
+      "description": "Compact 1x1 live statutory AM/PM session attendance counter with present and absent pupil totals.",
+      "icon": "clipboard-check",
+      "entry": "ui/dist/widget_1x1_attendance_counter.html",
+      "width": 1,
+      "height": 1,
+      "keywords": [
+        "attendance counter",
+        "1x1",
+        "compact stat",
+        "headcount"
+      ]
+    },
+    {
+      "id": "wg_1x1_sen_badge",
+      "title": "SEN & Medical Quick Badge (1x1)",
+      "description": "At-a-glance 1x1 indicator showing active SEN Support (K), EHCP (E), and medical condition counts for your teaching group.",
+      "icon": "heart-pulse",
+      "entry": "ui/dist/widget_1x1_sen_badge.html",
+      "width": 1,
+      "height": 1,
+      "keywords": [
+        "sen badge",
+        "medical count",
+        "1x1",
+        "ehcp"
+      ]
+    },
+    {
+      "id": "wg_1x1_group_size_stat",
+      "title": "Active Group Size Stat (1x1)",
+      "description": "Single-tile 1x1 headcount summary displaying temporally active enrolled pupils across your assigned classes.",
+      "icon": "users",
+      "entry": "ui/dist/widget_1x1_group_size_stat.html",
+      "width": 1,
+      "height": 1,
+      "keywords": [
+        "group size",
+        "class count",
+        "1x1",
+        "roster count"
+      ]
+    },
+    {
+      "id": "wg_2x1_attendance_pulse_bar",
+      "title": "AM/PM Attendance Pulse Bar (2x1)",
+      "description": "Wide 2x1 horizontal progress bar comparing statutory AM and PM session attendance percentages across your active group.",
+      "icon": "activity",
+      "entry": "ui/dist/widget_2x1_attendance_pulse_bar.html",
+      "width": 2,
+      "height": 1,
+      "keywords": [
+        "attendance pulse",
+        "2x1",
+        "wide banner",
+        "am pm bar"
+      ]
+    },
+    {
+      "id": "wg_2x1_pupil_quick_lookup",
+      "title": "Pupil Quick Lookup & Deep-Link (2x1)",
+      "description": "Wide 2x1 quick-action card for inspecting a pupil summary and launching their full profile via entity deep-linking.",
+      "icon": "search",
+      "entry": "ui/dist/widget_2x1_pupil_quick_lookup.html",
+      "width": 2,
+      "height": 1,
+      "keywords": [
+        "pupil lookup",
+        "quick link",
+        "2x1",
+        "student search"
+      ]
+    },
+    {
+      "id": "wg_2x1_next_lesson_banner",
+      "title": "Next Timetable Lesson Banner (2x1)",
+      "description": "Wide 2x1 banner highlighting the active teaching group code, assigned room, and session readiness status.",
+      "icon": "calendar",
+      "entry": "ui/dist/widget_2x1_next_lesson_banner.html",
+      "width": 2,
+      "height": 1,
+      "keywords": [
+        "next lesson",
+        "timetable banner",
+        "2x1",
+        "period schedule"
+      ]
+    },
+    {
+      "id": "wg_1x2_roster_ticker",
+      "title": "Class Roster Vertical Ticker (1x2)",
+      "description": "Tall 1x2 vertical scrolling ticker listing active pupils in your teaching group with live attendance status badges.",
+      "icon": "user-check",
+      "entry": "ui/dist/widget_1x2_roster_ticker.html",
+      "width": 1,
+      "height": 2,
+      "keywords": [
+        "roster ticker",
+        "1x2",
+        "tall list",
+        "class pupils"
+      ]
+    },
+    {
+      "id": "wg_1x2_sen_medical_watch_list",
+      "title": "SEN & IHCP Watch List (1x2)",
+      "description": "Tall 1x2 pastoral and SEND watch list surfacing pupils with active SEN provisions or Individual Healthcare Plans.",
+      "icon": "stethoscope",
+      "entry": "ui/dist/widget_1x2_sen_medical_watch_list.html",
+      "width": 1,
+      "height": 2,
+      "keywords": [
+        "sen watch list",
+        "ihcp alerts",
+        "1x2",
+        "medical watch"
+      ]
+    },
+    {
+      "id": "wg_1x2_period_timeline",
+      "title": "Daily Period Timeline (1x2)",
+      "description": "Tall 1x2 vertical schedule timeline tracking AM registration, teaching periods, and PM statutory roll call.",
+      "icon": "book-open",
+      "entry": "ui/dist/widget_1x2_period_timeline.html",
+      "width": 1,
+      "height": 2,
+      "keywords": [
+        "period timeline",
+        "daily schedule",
+        "1x2",
+        "vertical timeline"
+      ]
+    },
+    {
+      "id": "wg_2x2_class_overview_matrix",
+      "title": "Class Overview & RPC Matrix (2x2)",
+      "description": "Large 2x2 multi-metric classroom matrix combining headcount, SEN/medical flags, and live statutory attendance rollups.",
+      "icon": "layout-grid",
+      "entry": "ui/dist/widget_2x2_class_overview_matrix.html",
+      "width": 2,
+      "height": 2,
+      "keywords": [
+        "class matrix",
+        "2x2",
+        "large overview",
+        "classroom dashboard"
+      ]
+    },
+    {
+      "id": "wg_2x2_attendance_breakdown_grid",
+      "title": "Session Attendance Breakdown Grid (2x2)",
+      "description": "Large 2x2 per-pupil AM and PM statutory session mark breakdown table with live Core DAL refresh.",
+      "icon": "file-check",
+      "entry": "ui/dist/widget_2x2_attendance_breakdown_grid.html",
+      "width": 2,
+      "height": 2,
+      "keywords": [
+        "attendance breakdown",
+        "2x2",
+        "session grid",
+        "register table"
+      ]
+    },
+    {
+      "id": "wg_2x2_interactive_sandbox_bench",
+      "title": "Interactive Widget RPC & Link Bench (2x2)",
+      "description": "Large 2x2 interactive verification bench for testing on-demand Lua RPC calls and student/group entity deep-links.",
+      "icon": "award",
+      "entry": "ui/dist/widget_2x2_interactive_sandbox_bench.html",
+      "width": 2,
+      "height": 2,
+      "keywords": [
+        "interactive bench",
+        "2x2",
+        "rpc test",
+        "deep link bench"
+      ]
+    }
+  ]
+}

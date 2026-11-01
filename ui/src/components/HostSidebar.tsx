@@ -18,7 +18,7 @@ export interface HostSidebarProps {
   onNavigateHome: () => void;
   onOpenSearch: () => void;
   onSelectPinnedRoute: (item: PinnedRecentEntry) => void;
-  onUnpinRoute: (route: string) => void;
+  onUnpinRoute?: (route: string) => void;
   onOpenSettings: () => void;
   onLogout: () => void;
 }
@@ -37,7 +37,6 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
   onNavigateHome,
   onOpenSearch,
   onSelectPinnedRoute,
-  onUnpinRoute,
   onOpenSettings,
   onLogout,
 }) => {
@@ -78,13 +77,13 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
           textAlign: 'center',
         }}
       >
-        <div style={{ fontSize: '9px', textTransform: 'uppercase', opacity: 0.8 }}>
+        <div style={{ fontSize: 'calc(9px * var(--mis-font-scale, 1))', textTransform: 'uppercase', opacity: 0.8 }}>
           URN {schoolURN}
         </div>
         <h1
           data-testid="host-school-name"
           style={{
-            fontSize: '10px',
+            fontSize: 'calc(10px * var(--mis-font-scale, 1))',
             fontWeight: 700,
             margin: '2px 0 0 0',
             lineHeight: 1.2,
@@ -95,7 +94,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
         >
           {schoolName}
         </h1>
-        <div style={{ fontSize: '9px', marginTop: '2px', opacity: 0.75 }}>
+        <div style={{ fontSize: 'calc(9px * var(--mis-font-scale, 1))', marginTop: '2px', opacity: 0.75 }}>
           {configuredAcademicYear}
         </div>
       </div>
@@ -125,7 +124,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
               : 'rgba(255, 255, 255, 0.08)',
             color: isHomeActive ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-sidebar)',
             border: '1px solid var(--mis-border-subtle)',
-            fontSize: '11px',
+            fontSize: 'calc(11px * var(--mis-font-scale, 1))',
             fontWeight: 700,
             cursor: 'pointer',
             display: 'flex',
@@ -153,7 +152,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
               : 'rgba(255, 255, 255, 0.08)',
             color: isSearchActive ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-sidebar)',
             border: '1px solid var(--mis-border-subtle)',
-            fontSize: '11px',
+            fontSize: 'calc(11px * var(--mis-font-scale, 1))',
             fontWeight: 700,
             cursor: 'pointer',
             display: 'flex',
@@ -184,7 +183,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
       >
         <div
           style={{
-            fontSize: '9px',
+            fontSize: 'calc(9px * var(--mis-font-scale, 1))',
             fontWeight: 700,
             textTransform: 'uppercase',
             letterSpacing: '0.06em',
@@ -211,7 +210,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
               color: isCurrentRoutePinned
                 ? 'var(--mis-brand-primary-fg)'
                 : 'var(--mis-text-sidebar)',
-              fontSize: '10px',
+              fontSize: 'calc(10px * var(--mis-font-scale, 1))',
               fontWeight: 600,
               cursor: 'pointer',
               display: 'inline-flex',
@@ -258,7 +257,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
                     : 'rgba(255, 255, 255, 0.08)',
                   color: isRouteActive ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-sidebar)',
                   border: '1px solid var(--mis-border-subtle)',
-                  fontSize: '10px',
+                  fontSize: 'calc(10px * var(--mis-font-scale, 1))',
                   fontWeight: 600,
                   cursor: 'pointer',
                   display: 'flex',
@@ -279,35 +278,6 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
                 >
                   {item.title}
                 </span>
-              </button>
-              <button
-                type="button"
-                data-testid={`unpin-recent-btn-${idx}`}
-                title={`Unpin ${item.title}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUnpinRoute(item.route);
-                }}
-                style={{
-                  position: 'absolute',
-                  top: '2px',
-                  right: '2px',
-                  width: '16px',
-                  height: '16px',
-                  padding: 0,
-                  borderRadius: '999px',
-                  border: 'none',
-                  backgroundColor: 'rgba(15, 23, 42, 0.75)',
-                  color: '#ffffff',
-                  fontSize: '9px',
-                  lineHeight: 1,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <MonochromeLucideIcon name="x" size={10} />
               </button>
             </div>
           );
@@ -341,7 +311,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
               : 'rgba(255, 255, 255, 0.08)',
             color: isSettingsActive ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-sidebar)',
             border: '1px solid var(--mis-border-subtle)',
-            fontSize: '10px',
+            fontSize: 'calc(10px * var(--mis-font-scale, 1))',
             fontWeight: 600,
             cursor: 'pointer',
             display: 'flex',
@@ -366,7 +336,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
             backgroundColor: 'rgba(255, 255, 255, 0.08)',
             color: 'var(--mis-text-sidebar)',
             border: '1px solid var(--mis-border-subtle)',
-            fontSize: '10px',
+            fontSize: 'calc(10px * var(--mis-font-scale, 1))',
             fontWeight: 600,
             cursor: 'pointer',
             display: 'flex',

@@ -123,6 +123,11 @@ func readPluginFromDisk(dirPath string, folder string) (*LoadedPlugin, error) {
 			if w.Height != 1 && w.Height != 2 {
 				return nil, fmt.Errorf("manifest.json widget %q for plugin %s has invalid preset height %d: must be 1 or 2", wid, manifest.ID, w.Height)
 			}
+			wdesc := strings.TrimSpace(w.Description)
+			if wdesc == "" {
+				return nil, fmt.Errorf("MISSING_WIDGET_DESCRIPTION: manifest.json widget %q for plugin %s is missing mandatory description", wid, manifest.ID)
+			}
+			manifest.Widgets[idx].Description = wdesc
 			if _, dup := seenWidgetIDs[wid]; dup {
 				return nil, fmt.Errorf("manifest.json for plugin %s declares duplicate widget id %q", manifest.ID, wid)
 			}

@@ -132,6 +132,7 @@ test.describe('Plugin Authoring SDK & Developer Toolchain (Sections 10A–10D)',
     expect(manifestSchema.properties.widgets.items.required).toEqual([
       'id',
       'title',
+      'description',
       'entry',
       'width',
       'height',

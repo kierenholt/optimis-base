@@ -122,6 +122,13 @@ export function applyHostThemeToRoot(
     document.body.style.margin = '0';
     document.body.style.fontSize = preset.px;
   }
+  if (document.head && !document.getElementById('mis-host-typography-scale')) {
+    const styleEl = document.createElement('style');
+    styleEl.id = 'mis-host-typography-scale';
+    styleEl.textContent =
+      'button, input, select, textarea { font-family: inherit; font-size: calc(13px * var(--mis-font-scale, 1)); }';
+    document.head.appendChild(styleEl);
+  }
 }
 
 export interface SARSection {
@@ -171,7 +178,9 @@ export const MAX_KEEP_ALIVE_POOL_SIZE = 5;
 export interface PluginWidgetDescriptor {
   id: string;
   plugin_id: string;
+  plugin_title?: string;
   title: string;
+  description?: string;
   icon?: string;
   entry: string;
   entry_url: string;
@@ -218,6 +227,7 @@ export interface DashboardLayoutItem {
 
 export interface ResolvedDashboardWidgetSlot {
   plug_id: string;
+  plugin_title?: string;
   widget_id: string;
   col?: number;
   row?: number;
@@ -225,6 +235,7 @@ export interface ResolvedDashboardWidgetSlot {
   error_code?: string;
   error_title?: string;
   title?: string;
+  description?: string;
   icon?: string;
   entry?: string;
   entry_url?: string;
@@ -235,7 +246,9 @@ export interface ResolvedDashboardWidgetSlot {
 export interface PlacedDashboardWidget {
   id: string;
   plugin_id: string;
+  plugin_title?: string;
   title: string;
+  description?: string;
   icon?: string;
   entry: string;
   entry_url: string;

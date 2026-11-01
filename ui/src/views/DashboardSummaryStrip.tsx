@@ -20,7 +20,7 @@ export const DashboardSummaryStrip: React.FC<DashboardSummaryStripProps> = ({
         color: 'var(--mis-status-danger)',
         border: '1px solid var(--mis-border-strong)',
         borderRadius: 'var(--mis-radius-sm, 4px)',
-        fontSize: '13px',
+        fontSize: 'calc(13px * var(--mis-font-scale, 1))',
         fontWeight: 700,
       }}
     >

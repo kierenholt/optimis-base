@@ -297,9 +297,10 @@ test.describe('Monochrome Lucide Icon Theme Contract: Host Shell, Plugin SDK [da
     await expect(pinnedSvg0).toHaveAttribute('stroke', 'currentColor');
     await expect(pinnedSvg0).toHaveAttribute('fill', 'none');
 
-    const unpinBtn0 = page.getByTestId('unpin-recent-btn-0');
-    await expect(unpinBtn0).toBeVisible();
-    await expect(unpinBtn0.locator('svg').first()).toHaveAttribute('data-lucide-icon', 'x');
+    await expect(page.locator('[data-testid^="unpin-recent-btn-"]')).toHaveCount(0);
+    await expect(
+      page.getByTestId('nav-rail-pinned-recents').locator('svg[data-lucide-icon="x"]')
+    ).toHaveCount(0);
 
     // 3. Open Full-Page Search View via nav-rail-search and verify monochrome Lucide icons on view results and pin controls (no modal)
     await page.getByTestId('nav-rail-search').click();
