@@ -294,10 +294,12 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     // =========================================================================
     // Step 2: Cover Manager (personas.admin_staff_id) records teacher absence and assigns Cover Teacher to Absent Teacher's timetable slot
     // =========================================================================
-    const personaSelect = page.getByTestId('persona-switcher-select');
-    await expect(personaSelect).toBeVisible();
-    await personaSelect.selectOption(personas.admin_staff_id);
-    await expect(page.getByTestId('topbar-active-persona')).toContainText(personas.admin_staff_id);
+    await request.post('/api/auth/persona', {
+      data: { staff_id: personas.admin_staff_id },
+    });
+    params.set('staff_id', personas.admin_staff_id);
+    params.set('__persona', personas.admin_staff_id);
+    await page.goto(`/p/${coverPlugId}?${params.toString()}`);
     await expect(pluginFrame.getByTestId('cover-active-persona-badge')).toContainText(personas.admin_staff_id);
 
     const loadAbsentTimetableBtn = pluginFrame.getByTestId('load-absent-timetable-btn');
@@ -334,8 +336,12 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     // =========================================================================
     // Step 3: Switch back to Cover Teacher persona (seeded.other_teacher_staff_id) -> :own_groups now permits loading the class roster and submitting the statutory attendance register
     // =========================================================================
-    await personaSelect.selectOption(seeded.other_teacher_staff_id);
-    await expect(page.getByTestId('topbar-active-persona')).toContainText(seeded.other_teacher_staff_id);
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.other_teacher_staff_id },
+    });
+    params.set('staff_id', seeded.other_teacher_staff_id);
+    params.set('__persona', seeded.other_teacher_staff_id);
+    await page.goto(`/p/${coverPlugId}?${params.toString()}`);
     await expect(pluginFrame.getByTestId('cover-active-persona-badge')).toContainText(seeded.other_teacher_staff_id);
 
     await loadCoverRosterBtn.click();

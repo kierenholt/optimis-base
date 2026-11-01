@@ -258,10 +258,12 @@ test.describe('Admin-Exported PII-Scrubbed Diagnostic Bundle (Section 8 Gap 1, S
     await expect(page.getByTestId('admin-diagnostics-panel')).toHaveCount(0);
     await expect(page.getByTestId('download-plugin-diagnostic-bundle-btn')).toHaveCount(0);
 
-    // 5. Switch to System Admin / DPO via Topbar Persona Switcher and verify "Download Plugin Diagnostic Bundle" appears
-    const personaSelect = page.getByTestId('persona-switcher-select');
-    await expect(personaSelect).toBeVisible();
-    await personaSelect.selectOption(seeded.admin_staff_id);
+    // 5. Switch to System Admin / DPO via ?__persona= override and verify "Download Plugin Diagnostic Bundle" appears
+    await page.goto(
+      `/?pupil_id=${encodeURIComponent(seeded.pupil_id)}&__persona=${encodeURIComponent(
+        seeded.admin_staff_id
+      )}`
+    );
 
     const diagPanel = page.getByTestId('admin-diagnostics-panel');
     await expect(diagPanel).toBeVisible();
@@ -310,8 +312,8 @@ test.describe('Admin-Exported PII-Scrubbed Diagnostic Bundle (Section 8 Gap 1, S
     );
     expect(mutateMethodEntry).toBeDefined();
     expect(mutateMethodEntry!.file).toBe('src/init.lua');
-    expect(mutateMethodEntry!.line).toBe(365);
-    expect(mutateMethodEntry!.stack_trace).toContain('src/init.lua:365');
+    expect(mutateMethodEntry!.line).toBe(371);
+    expect(mutateMethodEntry!.stack_trace).toContain('src/init.lua:371');
     expect(mutateMethodEntry!.stack_trace).toContain('mutate_then_illegal_egress');
     expect(typeof mutateMethodEntry!.sqlite_lock_wait_ms).toBe('number');
     expect(mutateMethodEntry!.sqlite_lock_wait_ms).toBeGreaterThanOrEqual(0);

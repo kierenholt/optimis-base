@@ -131,3 +131,42 @@ func TestSessionCookieResolution_SwitchPersonaAndExecuteRPC_EnforcesSessionCalle
 		t.Fatalf("expected 400 BadRequest when Teacher lacks dal.pupils.read:all, got %d (%s)", recRPC.Code, recRPC.Body.String())
 	}
 }
+
+func TestResolveRequestCaller_TestDefaultPersonaEnvSet_ResolvesConfiguredPersonaAndRejectsUnknownStaff_test(t *testing.T) {
+	ctx := context.Background()
+	h, cleanup := setupIsolatedTestHost(t)
+	t.Cleanup(cleanup)
+
+	if err := h.ConfigureAuthMode(ctx, true); err != nil {
+		t.Fatalf("ConfigureAuthMode(true) failed: %v", err)
+	}
+
+	seeded, err := h.DAL().SeedPersonaTestFixtures(ctx, "ay_2026_2027", "2026-09-01")
+	if err != nil {
+		t.Fatalf("SeedPersonaTestFixtures failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = h.DAL().DeletePersonaTestFixtures(context.Background(), seeded.FixtureID)
+	})
+
+	// Clear any in-memory devPersonaStaffID so TEST_DEFAULT_PERSONA is evaluated
+	h.ResetDevPersonaSessions()
+
+	t.Setenv("TEST_DEFAULT_PERSONA", seeded.HoDStaffID)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/session", nil)
+	caller, err := h.ResolveRequestCaller(req, "")
+	if err != nil {
+		t.Fatalf("expected ResolveRequestCaller to resolve TEST_DEFAULT_PERSONA=%s, got error: %v", seeded.HoDStaffID, err)
+	}
+	if caller.StaffID != seeded.HoDStaffID {
+		t.Fatalf("expected caller.StaffID=%s from TEST_DEFAULT_PERSONA, got %s", seeded.HoDStaffID, caller.StaffID)
+	}
+
+	// Setting TEST_DEFAULT_PERSONA to a nonexistent staff ID must fail fast
+	h.ResetDevPersonaSessions()
+	t.Setenv("TEST_DEFAULT_PERSONA", "stf_nonexistent_999")
+	if _, err := h.ResolveRequestCaller(req, ""); err == nil {
+		t.Fatalf("expected ResolveRequestCaller to fail fast when TEST_DEFAULT_PERSONA is unknown")
+	}
+}
+

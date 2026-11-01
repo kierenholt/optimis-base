@@ -153,14 +153,15 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     await expect(hostShell).toBeVisible();
     await expect(page.getByTestId('host-sidebar')).toBeVisible();
     await expect(page.getByTestId('host-school-name')).toBeVisible();
-    await expect(page.getByTestId('host-topbar')).toBeVisible();
+    await expect(page.getByTestId('host-topbar')).toHaveCount(0);
     await expect(page.getByTestId('host-dashboard-grid')).toBeVisible();
-    await expect(page.getByTestId('dashboard-summary-strip')).toBeVisible();
+    await expect(page.getByText('Statutory Roll Call (AM / PM)')).toHaveCount(0);
+    await expect(page.getByText('Entity Link Handler (student / group)')).toHaveCount(0);
+    await expect(page.getByText('Sandboxed Plugin CSP')).toHaveCount(0);
     await expect(page.getByTestId('nav-rail-home')).toBeVisible();
     await expect(page.getByTestId('nav-rail-search')).toBeVisible();
 
-    const themeIndicator = page.getByTestId('active-theme-mode-indicator');
-    await expect(themeIndicator).toHaveText('light');
+    await expect(hostShell).toHaveAttribute('data-mis-theme', 'light');
 
     const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const sdkThemeStatus = pluginFrame.getByTestId('sdk-theme-status');
@@ -183,12 +184,16 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     expect(hostLightTokens.bgCanvas).toBe('#f1f5f9');
     expect(hostLightTokens.textPrimary).toBe('#0f172a');
 
-    // 2. Toggle High-Contrast Mode in Host Topbar and verify live propagation into both Host and sandboxed iframe
-    const toggleThemeBtn = page.getByTestId('theme-mode-toggle-btn');
+    // 2. Toggle High-Contrast Mode in Host Settings modal and verify live propagation into both Host and sandboxed iframe
+    await page.getByTestId('nav-rail-settings').click();
+    const settingsModal = page.getByTestId('host-settings-modal');
+    await expect(settingsModal).toBeVisible();
+    const toggleThemeBtn = settingsModal.getByTestId('theme-mode-toggle-btn');
     await expect(toggleThemeBtn).toBeVisible();
     await toggleThemeBtn.click();
+    await page.getByTestId('close-settings-modal-btn').click();
 
-    await expect(themeIndicator).toHaveText('high-contrast');
+    await expect(hostShell).toHaveAttribute('data-mis-theme', 'high-contrast');
     await expect(sdkThemeStatus).toContainText('THEME:high-contrast');
     await expect(sdkThemeStatus).toContainText('#facc15');
 
@@ -246,16 +251,9 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     await expect(studentDeepLink).toHaveAttribute('data-mis-link', 'student');
     await studentDeepLink.click();
 
-    // Verify Host Shell intercepts mis:link:navigate, resolves Student Handler Plugin (testPlugId), and updates context
-    const deepLinkStatus = page.getByTestId('deep-link-navigation-status');
-    await expect(deepLinkStatus).toContainText(`student:${secondPupilId}`);
-    await expect(deepLinkStatus).toContainText(testPlugId);
-
-    const activeEntityPill = page.getByTestId('active-entity-context-pill');
-    await expect(activeEntityPill).toContainText(`student:${secondPupilId}`);
-
-    // Verify child plugin iframe received updated context with secondPupilId without losing iframe mount
+    // Verify Host Shell intercepts mis:link:navigate, resolves Student Handler Plugin (testPlugId), and updates child plugin iframe context with secondPupilId without losing iframe mount
     await expect(contextStatus).toContainText(`PUPIL:${secondPupilId}`);
+    expect(new URL(page.url()).pathname).toBe(`/p/${testPlugId}/student/${secondPupilId}`);
 
     // 2. Click <a data-mis-link="group" data-group-id="grp_year7_7A"> inside the plugin iframe
     const groupDeepLink = pluginFrame.getByTestId('deep-link-group-anchor');
@@ -263,8 +261,8 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     await expect(groupDeepLink).toHaveAttribute('data-mis-link', 'group');
     await groupDeepLink.click();
 
-    await expect(deepLinkStatus).toContainText('group:grp_year7_7A');
     await expect(contextStatus).toContainText('GROUP:grp_year7_7A');
+    expect(new URL(page.url()).pathname).toBe(`/p/${testPlugId}/group/grp_year7_7A`);
   });
 
   test('connectSrcNoneCsp_sandboxedIframeAttemptsDirectExternalFetch_blocksNetworkRequest_test', async ({

@@ -1,4 +1,5 @@
 import React from 'react';
+import { MonochromeLucideIcon } from './components/MonochromeLucideIcon';
 import { SARSection } from './themeAndTypes';
 
 interface GdprSarPanelProps {
@@ -33,26 +34,41 @@ export function GdprSarPanel({
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <h2 style={{ fontSize: '16px', margin: 0 }}>
-          UK GDPR Subject Access Request (SAR) Redaction &amp; Statutory Retention Purge
+        <h2 style={{ fontSize: '16px', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+          <MonochromeLucideIcon name="file-check" size={18} />
+          <span>UK GDPR Subject Access Request (SAR) Redaction &amp; Statutory Retention Purge</span>
         </h2>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
             type="button"
             data-testid="sar-load-export-btn"
             onClick={onLoadSarExport}
-            style={{ padding: '6px 12px', cursor: 'pointer' }}
+            style={{
+              padding: '6px 12px',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
           >
-            Load SAR Package
+            <MonochromeLucideIcon name="file-check" size={14} />
+            <span>Load SAR Package</span>
           </button>
           <button
             type="button"
             data-testid="sar-finalize-export-btn"
             onClick={onFinalizeSarExport}
             disabled={sarSections.length === 0}
-            style={{ padding: '6px 12px', cursor: 'pointer' }}
+            style={{
+              padding: '6px 12px',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
           >
-            Finalize &amp; Export Redacted SAR
+            <MonochromeLucideIcon name="download" size={14} />
+            <span>Finalize &amp; Export Redacted SAR</span>
           </button>
           <button
             type="button"
@@ -65,9 +81,13 @@ export function GdprSarPanel({
               color: '#ffffff',
               border: 'none',
               borderRadius: '4px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
           >
-            Execute Retention Purge
+            <MonochromeLucideIcon name="trash-2" size={14} />
+            <span>Execute Retention Purge</span>
           </button>
         </div>
       </div>

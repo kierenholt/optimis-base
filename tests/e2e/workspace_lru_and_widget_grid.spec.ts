@@ -283,8 +283,8 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     const widgetGridSection = page.getByTestId('dashboard-widget-grid-section');
     await expect(widgetGridSection).toBeVisible();
 
-    const editModeStatus = page.getByTestId('dashboard-edit-mode-status');
-    await expect(editModeStatus).toHaveText('VIEW_MODE');
+    await expect(page.getByTestId('dashboard-layout-source')).toHaveCount(0);
+    await expect(page.getByTestId('dashboard-edit-mode-status')).toHaveCount(0);
 
     // Default placed widget (attendance_pulse) should be mounted inside the auto-flowing grid at its strict 2x1 preset size
     const widgetGrid = page.getByTestId('dashboard-widget-grid');
@@ -308,7 +308,7 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     await expect(editModeToggleBtn).toBeVisible();
     await editModeToggleBtn.click();
 
-    await expect(editModeStatus).toHaveText('EDIT_MODE');
+    await expect(editModeToggleBtn).toHaveText('Finish Editing Grid');
     await expect(page.getByTestId('dashboard-widget-catalog')).toBeVisible();
 
     // Place pastoral_watch widget onto the grid
@@ -344,7 +344,8 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
 
     // Exit Dashboard Edit Mode and verify layout persists at preset sizes
     await editModeToggleBtn.click();
-    await expect(editModeStatus).toHaveText('VIEW_MODE');
+    await expect(editModeToggleBtn).toHaveText('Edit Dashboard Grid');
+    await expect(page.getByTestId('dashboard-widget-catalog')).toHaveCount(0);
     await expect(attendanceWidgetCard).toHaveAttribute('data-col-span', '2');
     await expect(attendanceWidgetCard).toHaveAttribute('data-row-span', '1');
     await expect(pastoralWidgetCard).toHaveAttribute('data-col-span', '1');
@@ -372,7 +373,6 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
 
     await expect(page.getByTestId(`plugin-iframe-${testPlugId}`)).toBeVisible();
     await expect(page.getByTestId(`plugin-iframe-${lru1}`)).toBeHidden();
-    await expect(page.getByTestId('active-entity-context-pill')).toContainText(`student:${secondPupilId}`);
 
     const mainPluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     await expect(mainPluginFrame.getByTestId('sdk-context-status')).toContainText(`PUPIL:${secondPupilId}`);
@@ -404,7 +404,7 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
 
       await expect(page.getByTestId('placed-widget-card-attendance_pulse')).toBeVisible();
       await page.getByTestId('dashboard-edit-mode-toggle-btn').click();
-      await expect(page.getByTestId('dashboard-edit-mode-status')).toHaveText('EDIT_MODE');
+      await expect(page.getByTestId('dashboard-widget-catalog')).toBeVisible();
 
       await page.getByTestId('place-widget-btn-pastoral_watch').click();
       await expect(page.getByTestId('placed-widget-card-pastoral_watch')).toBeVisible();
@@ -449,16 +449,16 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
       await page.getByTestId('remove-widget-btn-pastoral_watch').click();
       await expect(page.getByTestId('placed-widget-card-pastoral_watch')).toHaveCount(0);
 
-      // 3. Switch to Admin persona -> Append pastoral_watch to TEACHER role default (and existing TEACHER staff layouts)
-      await page.getByTestId('persona-switcher-select').selectOption(adminStaffId);
+      // 3. Switch to Admin persona via ?__persona= override -> Append pastoral_watch to TEACHER role default (and existing TEACHER staff layouts)
+      await page.goto(`/?__persona=${encodeURIComponent(adminStaffId)}`);
       await expect(page.getByTestId('admin-role-dashboard-controls')).toBeVisible();
 
       await page.getByTestId('admin-role-default-select').selectOption('TEACHER');
       await page.getByTestId('admin-append-to-role-btn-pastoral_watch').click();
       await expect(page.getByTestId('dashboard-layout-save-status')).toContainText('ROLE_WIDGET_APPENDED');
 
-      // Switch back to Teacher persona -> Confirm pastoral_watch was appended to Teacher's personal 1D array!
-      await page.getByTestId('persona-switcher-select').selectOption(teacherStaffId);
+      // Switch back to Teacher persona via ?__persona= override -> Confirm pastoral_watch was appended to Teacher's personal 1D array!
+      await page.goto(`/?__persona=${encodeURIComponent(teacherStaffId)}`);
       await expect(page.getByTestId('placed-widget-card-attendance_pulse')).toHaveAttribute(
         'data-order-index',
         '0'
@@ -565,7 +565,7 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
 
     // 4. Enter Dashboard Edit Mode -> Verify catalog states and independent Move Up / Move Down for colliding widget IDs
     await page.getByTestId('dashboard-edit-mode-toggle-btn').click();
-    await expect(page.getByTestId('dashboard-edit-mode-status')).toHaveText('EDIT_MODE');
+    await expect(page.getByTestId('dashboard-widget-catalog')).toBeVisible();
 
     const catalogPlaceTestPastoral = page.locator(
       `[data-testid="place-widget-btn-pastoral_watch"][data-plug-id="${testPlugId}"]`
@@ -605,8 +605,10 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     await expect(testWidgetFrame.getByTestId('widget-theme-status')).toContainText('THEME:light');
     await expect(lru1WidgetFrame.getByTestId('widget-theme-status')).toContainText('THEME:light');
 
-    // Toggle theme to high-contrast -> BOTH colliding widget iframes must receive mis:init
-    await page.getByTestId('theme-mode-toggle-btn').click();
+    // Toggle theme to high-contrast via Settings modal -> BOTH colliding widget iframes must receive mis:init
+    await page.getByTestId('nav-rail-settings').click();
+    await page.getByTestId('host-settings-modal').getByTestId('theme-mode-toggle-btn').click();
+    await page.getByTestId('close-settings-modal-btn').click();
     await expect(testWidgetFrame.getByTestId('widget-theme-status')).toContainText(
       'THEME:high-contrast'
     );
@@ -621,8 +623,10 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     await expect(lru1AttendanceCard).toHaveCount(0);
     await expect(testAttendanceCard).toBeVisible();
 
-    // Toggle theme back to light -> remaining testPlugId:attendance_pulse iframe must still receive mis:init
-    await page.getByTestId('theme-mode-toggle-btn').click();
+    // Toggle theme back to light via Settings modal -> remaining testPlugId:attendance_pulse iframe must still receive mis:init
+    await page.getByTestId('nav-rail-settings').click();
+    await page.getByTestId('host-settings-modal').getByTestId('theme-mode-toggle-btn').click();
+    await page.getByTestId('close-settings-modal-btn').click();
     await expect(testWidgetFrame.getByTestId('widget-theme-status')).toContainText('THEME:light');
   });
 });

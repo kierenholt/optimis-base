@@ -1,11 +1,15 @@
 import React from 'react';
-import { PinnedRecentEntry } from '../themeAndTypes';
+import { PinnedRecentEntry, PluginNavEntry } from '../themeAndTypes';
+import { MonochromeLucideIcon } from './MonochromeLucideIcon';
 
 export interface HostSidebarProps {
   schoolURN: string;
   schoolName: string;
   configuredAcademicYear: string;
   activePluginId: string;
+  activePlugin?: PluginNavEntry | null;
+  isCurrentRoutePinned?: boolean;
+  onTogglePinCurrentRoute?: () => void;
   activeRouteUrl: string;
   activeEntityContext: string;
   pinnedRecents: PinnedRecentEntry[];
@@ -22,8 +26,10 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
   schoolName,
   configuredAcademicYear,
   activePluginId,
+  activePlugin,
+  isCurrentRoutePinned,
+  onTogglePinCurrentRoute,
   activeRouteUrl,
-  activeEntityContext,
   pinnedRecents,
   onNavigateHome,
   onOpenSearch,
@@ -48,6 +54,11 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
         alignItems: 'center',
         gap: '12px',
         width: '88px',
+        position: 'sticky',
+        top: 0,
+        height: 'calc(100vh / var(--mis-font-scale, 1))',
+        maxHeight: 'calc(100vh / var(--mis-font-scale, 1))',
+        overflowY: 'auto',
         boxSizing: 'border-box',
       }}
     >
@@ -84,7 +95,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
         </div>
       </div>
 
-      {/* Narrow Icon Rail Primary Actions: Home & Global Search (🔍) */}
+      {/* Narrow Icon Rail Primary Actions: Home & Global Search */}
       <nav
         aria-label="Primary Icon Rail"
         style={{
@@ -118,9 +129,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
             gap: '2px',
           }}
         >
-          <span aria-hidden="true" style={{ fontSize: '15px' }}>
-            🏠
-          </span>
+          <MonochromeLucideIcon name="house" size={16} />
           <span data-testid="nav-item-dashboard">Home</span>
         </button>
 
@@ -145,9 +154,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
             gap: '2px',
           }}
         >
-          <span aria-hidden="true" style={{ fontSize: '15px' }}>
-            🔍
-          </span>
+          <MonochromeLucideIcon name="search" size={16} />
           <span>Search</span>
         </button>
       </nav>
@@ -163,6 +170,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
           borderTop: '1px solid rgba(255, 255, 255, 0.16)',
           paddingTop: '10px',
           flex: 1,
+          minHeight: 0,
           overflowY: 'auto',
         }}
       >
@@ -178,6 +186,36 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
         >
           Pinned
         </div>
+
+        {activePlugin && onTogglePinCurrentRoute && (
+          <button
+            type="button"
+            data-testid="topbar-pin-view-btn"
+            onClick={onTogglePinCurrentRoute}
+            style={{
+              width: '100%',
+              padding: '5px 4px',
+              borderRadius: 'var(--mis-radius-sm, 4px)',
+              border: '1px solid var(--mis-border-strong)',
+              backgroundColor: isCurrentRoutePinned
+                ? 'var(--mis-brand-primary)'
+                : 'rgba(255, 255, 255, 0.08)',
+              color: isCurrentRoutePinned
+                ? 'var(--mis-brand-primary-fg)'
+                : 'var(--mis-text-sidebar)',
+              fontSize: '10px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '4px',
+            }}
+          >
+            <MonochromeLucideIcon name="pin" size={12} />
+            <span>{isCurrentRoutePinned ? 'Pinned' : 'Pin Current View'}</span>
+          </button>
+        )}
 
         {pinnedRecents.map((item, idx) => {
           const isRouteActive =
@@ -220,9 +258,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
                   overflow: 'hidden',
                 }}
               >
-                <span aria-hidden="true" style={{ fontSize: '12px' }}>
-                  📌
-                </span>
+                <MonochromeLucideIcon name={item.icon || 'pin'} fallback="pin" size={14} />
                 <span
                   style={{
                     maxWidth: '100%',
@@ -256,9 +292,12 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
                   fontSize: '9px',
                   lineHeight: 1,
                   cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
-                ×
+                <MonochromeLucideIcon name="x" size={10} />
               </button>
             </div>
           );
@@ -298,9 +337,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
             gap: '2px',
           }}
         >
-          <span aria-hidden="true" style={{ fontSize: '13px' }}>
-            ⚙️
-          </span>
+          <MonochromeLucideIcon name="settings" size={14} />
           <span>Settings</span>
         </button>
 
@@ -325,33 +362,11 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
             gap: '2px',
           }}
         >
-          <span aria-hidden="true" style={{ fontSize: '13px' }}>
-            🚪
-          </span>
+          <MonochromeLucideIcon name="log-out" size={14} />
           <span>Logout</span>
         </button>
-
-        <div
-          title={`Active Entity Context: ${activeEntityContext}`}
-          style={{
-            padding: '6px 4px',
-            borderRadius: 'var(--mis-radius-sm, 4px)',
-            border: '1px solid rgba(255, 255, 255, 0.16)',
-            fontSize: '9px',
-            textAlign: 'center',
-          }}
-        >
-          <div
-            data-testid="active-entity-context-pill"
-            style={{
-              fontWeight: 700,
-              wordBreak: 'break-all',
-            }}
-          >
-            {activeEntityContext}
-          </div>
-        </div>
       </div>
     </aside>
   );
 };
+

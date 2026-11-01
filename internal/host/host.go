@@ -52,6 +52,7 @@ type GDPRHooksSpec struct {
 type WidgetSpec struct {
 	ID       string   `json:"id"`
 	Title    string   `json:"title"`
+	Icon     string   `json:"icon,omitempty"`
 	Entry    string   `json:"entry"`
 	Width    int      `json:"width"`
 	Height   int      `json:"height"`
@@ -61,6 +62,7 @@ type WidgetSpec struct {
 type ViewSpec struct {
 	ID                 string   `json:"id"`
 	Title              string   `json:"title,omitempty"`
+	Icon               string   `json:"icon,omitempty"`
 	Path               string   `json:"path"`
 	Entry              string   `json:"entry"`
 	QueryParams        []string `json:"query_params,omitempty"`

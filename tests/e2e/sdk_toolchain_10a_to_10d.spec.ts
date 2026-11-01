@@ -387,9 +387,10 @@ end
     const adminHeaderBody = await adminHeaderRes.json();
     expect(adminHeaderBody.caller.staff_id).toBe(adminStaffId);
 
-    // 3. Navigate browser with ?__persona=<dslStaffId> and verify UI initializes as DSL persona
+    // 3. Navigate browser with ?__persona=<dslStaffId> and verify UI initializes as DSL persona without topbar switcher
     await page.goto(`/?__persona=${encodeURIComponent(dslStaffId)}`);
-    await expect(page.getByTestId('persona-switcher-select')).toHaveValue(dslStaffId);
+    await expect(page.getByTestId('host-topbar')).toHaveCount(0);
+    await expect(page.getByTestId('persona-switcher-select')).toHaveCount(0);
     await expect(page.getByTestId('dsl-safeguarding-vault-panel')).toBeVisible();
 
     // 4. Verify ./bin/mis-dev-server --help / --check-config exits cleanly and supports --plugin & --persona flags

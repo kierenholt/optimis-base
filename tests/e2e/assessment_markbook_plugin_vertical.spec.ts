@@ -350,10 +350,23 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     await expect(errorBanner).toBeVisible();
     await expect(errorBanner).toContainText('access denied under own_groups scope');
 
-    // 3. Switch to Head of Department (`personas.hod_staff_id`, holding `:all` scopes) via Topbar Persona Switcher
-    const personaSwitcher = page.getByTestId('persona-switcher-select');
-    await expect(personaSwitcher).toBeVisible();
-    await personaSwitcher.selectOption(personas.hod_staff_id);
+    // 3. Switch to Head of Department (`personas.hod_staff_id`, holding `:all` scopes) via ?__persona= override
+    const hodSwitchRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personas.hod_staff_id },
+    });
+    expect(hodSwitchRes.ok()).toBe(true);
+    const hodSession = await hodSwitchRes.json();
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: hodSession.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
+    query.set('staff_id', personas.hod_staff_id);
+    query.set('__persona', personas.hod_staff_id);
+    await page.goto(`/p/${markbookPlugId}?${query.toString()}`);
 
     await expect(pluginFrame.getByTestId('markbook-caller-role-badge')).toContainText('HOD');
 
@@ -397,7 +410,22 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     );
 
     // 4. Switch to System Admin / DPO (`personas.admin_staff_id`) and run UK GDPR SAR Redaction on teacher comments
-    await personaSwitcher.selectOption(personas.admin_staff_id);
+    const adminSwitchRes = await request.post('/api/auth/persona', {
+      data: { staff_id: personas.admin_staff_id },
+    });
+    expect(adminSwitchRes.ok()).toBe(true);
+    const adminSession = await adminSwitchRes.json();
+    await page.context().addCookies([
+      {
+        name: 'mis_session',
+        value: adminSession.session_token,
+        url: 'http://127.0.0.1:18080',
+        sameSite: 'Strict',
+      },
+    ]);
+    query.set('staff_id', personas.admin_staff_id);
+    query.set('__persona', personas.admin_staff_id);
+    await page.goto(`/p/${markbookPlugId}?${query.toString()}`);
 
     const sarPanel = page.getByTestId('sar-redaction-panel');
     await expect(sarPanel).toBeVisible();

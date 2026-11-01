@@ -1,4 +1,5 @@
 import React from 'react';
+import { MonochromeLucideIcon } from './components/MonochromeLucideIcon';
 import {
   getWidgetCompositeKey,
   PlacedDashboardWidget,
@@ -68,36 +69,10 @@ export const DashboardWidgetGridPanel: React.FC<DashboardWidgetGridPanelProps> =
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <h2 style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>
-            Home Dashboard Mini-Iframe Widgets (N×M Grid)
+          <h2 style={{ fontSize: '14px', fontWeight: 700, margin: 0, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <MonochromeLucideIcon name="layout-grid" size={16} />
+            <span>Home Dashboard Mini-Iframe Widgets (N×M Grid)</span>
           </h2>
-          <span
-            data-testid="dashboard-edit-mode-status"
-            style={{
-              padding: '2px 8px',
-              borderRadius: 'var(--mis-radius-sm, 4px)',
-              backgroundColor: 'var(--mis-bg-elevated)',
-              border: '1px solid var(--mis-border-subtle)',
-              fontSize: '11px',
-              fontWeight: 700,
-            }}
-          >
-            {isEditMode ? 'EDIT_MODE' : 'VIEW_MODE'}
-          </span>
-          <span
-            data-testid="dashboard-layout-source"
-            style={{
-              padding: '2px 8px',
-              borderRadius: 'var(--mis-radius-sm, 4px)',
-              backgroundColor: 'var(--mis-bg-elevated)',
-              border: '1px solid var(--mis-border-subtle)',
-              fontSize: '11px',
-              fontWeight: 600,
-              color: 'var(--mis-text-muted)',
-            }}
-          >
-            {dashboardLayoutSource}
-          </span>
           {dashboardSaveStatus && (
             <span
               data-testid="dashboard-layout-save-status"
@@ -128,9 +103,13 @@ export const DashboardWidgetGridPanel: React.FC<DashboardWidgetGridPanelProps> =
             fontSize: '12px',
             fontWeight: 700,
             cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
           }}
         >
-          {isEditMode ? 'Finish Editing Grid' : 'Edit Dashboard Grid'}
+          <MonochromeLucideIcon name={isEditMode ? 'check' : 'layout-grid'} size={14} />
+          <span>{isEditMode ? 'Finish Editing Grid' : 'Edit Dashboard Grid'}</span>
         </button>
       </div>
 

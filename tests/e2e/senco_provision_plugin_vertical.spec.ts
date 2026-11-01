@@ -370,10 +370,10 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     await expect(senFrame.getByTestId('sen-total-ta-hours')).toHaveText('5');
     await expect(senFrame.getByTestId('sen-provision-count')).toHaveText('1');
 
-    // 4. Switch to the Classroom Teacher persona (`m1Seed.teacher_staff_id`) via Topbar Persona Switcher and verify the Home Dashboard SEN Differentiation Mini-Widget
-    const personaSelect = page.getByTestId('persona-switcher-select');
-    await expect(personaSelect).toBeVisible();
-    await personaSelect.selectOption(m1Seed.teacher_staff_id);
+    // 4. Switch to the Classroom Teacher persona (`m1Seed.teacher_staff_id`) via ?__persona= override and verify the Home Dashboard SEN Differentiation Mini-Widget
+    sencoParams.set('staff_id', m1Seed.teacher_staff_id);
+    sencoParams.set('__persona', m1Seed.teacher_staff_id);
+    await page.goto(`/?${sencoParams.toString()}`);
 
     // Place the `sen_differentiation` Mini-Iframe Widget onto the Classroom Teacher's Home Dashboard Grid
     await editModeToggleBtn.click();
@@ -411,12 +411,7 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     const lruPool = page.getByTestId('keep-alive-lru-pool');
     await expect(lruPool).toHaveAttribute('data-lru-order', new RegExp(`${senPlugId}$`));
     await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeVisible();
-    await expect(page.getByTestId('active-entity-context-pill')).toContainText(
-      `student:${m1Seed.active_pupil_id}`
-    );
-    await expect(page.getByTestId('deep-link-navigation-status')).toContainText(
-      `student:${m1Seed.active_pupil_id} -> ${senPlugId}`
-    );
+    expect(new URL(page.url()).pathname).toBe(`/p/${senPlugId}/student/${m1Seed.active_pupil_id}`);
 
     // Verify `senPlugId` immediately reflects `active_pupil_id` (Ada Lovelace, E / ASD)
     await expect(senFrame.getByTestId('sen-context-status')).toContainText(

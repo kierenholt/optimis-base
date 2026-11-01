@@ -205,11 +205,30 @@ func (h *Host) ResolveRequestCaller(r *http.Request, explicitStaffID string) (Ca
 		}, nil
 	}
 
-	// 4. Default dev testbed caller when no persona has been explicitly switched yet
+	// 4. Check TEST_DEFAULT_PERSONA environment override in test/dev mode
+	defaultPersonaID := strings.TrimSpace(os.Getenv("TEST_DEFAULT_PERSONA"))
+	if defaultPersonaID == "" {
+		defaultPersonaID = "stf_001"
+	}
+	persona, pErr := h.coreDAL.ResolveStaffPersonaByID(r.Context(), defaultPersonaID)
+	if pErr == nil {
+		return CallerContext{
+			Type:        "USER",
+			UserID:      persona.UserID,
+			StaffID:     persona.StaffID,
+			ActiveRoles: persona.ActiveRoles,
+			Scopes:      persona.Scopes,
+			RequestID:   "req_" + uuid.NewString(),
+		}, nil
+	}
+	if defaultPersonaID != "stf_001" {
+		return CallerContext{}, fmt.Errorf("INVALID_TEST_DEFAULT_PERSONA: %w", pErr)
+	}
+
 	return CallerContext{
 		Type:        "USER",
 		UserID:      "usr_teacher_1",
-		StaffID:     "stf_001",
+		StaffID:     defaultPersonaID,
 		ActiveRoles: []string{"teacher"},
 		Scopes: []string{
 			"dal.pupils.read:all",

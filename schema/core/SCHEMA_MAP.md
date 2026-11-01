@@ -8,7 +8,7 @@
 
 | Domain File | Tables | Lines | DAL Scopes (`ctx.dal.*`) | Summary |
 | :--- | ---: | ---: | :--- | :--- |
-| [`00_system_and_academic_cycle.sql`](./00_system_and_academic_cycle.sql) | 8 | 127 | `host.internal`, `dal.academic.*`, `dal.census.read:all` | `__system_config`, Academic Years, Terms, Special Closure Days, Days of Week, Alert Levels, GDPR Retention Rules, `dashboard_layouts` |
+| [`00_system_and_academic_cycle.sql`](./00_system_and_academic_cycle.sql) | 9 | 135 | `host.internal`, `dal.academic.*`, `dal.census.read:all` | `__system_config`, Academic Years, Terms, Special Closure Days, Days of Week, Alert Levels, GDPR Retention Rules, `dashboard_layouts`, `staff_settings` |
 | [`01_identity_pupils_and_staff.sql`](./01_identity_pupils_and_staff.sql) | 9 | 216 | `dal.identity.*`, `dal.pupils.*`, `dal.staff.*`, `dal.census.read:all` | 1-row-per-person `persons`, `pupils` (DfE CBDS), & `staff` (SWC/SCR); temporal `person_roles`, `pupil_year_enrolments` (incl. EYFS hours), `staff_contracts`, `staff_absences`, `staff_cover_assignments` |
 | [`02_households_and_guardians.sql`](./02_households_and_guardians.sql) | 3 | 100 | `dal.guardians.*` | BS7666 `households` (`is_confidential_address`), temporal `household_memberships`, `guardian_relationships` (`has_parental_responsibility` & full `court_order_restricted` lockdown `CHECK`) |
 | [`03_groups_and_timetable.sql`](./03_groups_and_timetable.sql) | 10 | 177 | `dal.groups.*` | `year_groups`, `houses`, `departments`, `rooms`, `courses`, unified `groups`, temporal `group_pupil_memberships` & `group_staff_assignments` (`:own_groups` RBAC), `timetable_periods` & `timetable_slots` |
@@ -18,7 +18,7 @@
 
 ---
 
-## 2. Complete `core.db` Entity-Relationship Reference (46 Tables, 75 Indexed Foreign Keys)
+## 2. Complete `core.db` Entity-Relationship Reference (47 Tables, 75 Indexed Foreign Keys)
 
 | Table Name | File | Primary Key | Foreign Keys (`-> target`) | Temporal Columns | Key Invariants & DfE CBDS Alignment |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -30,6 +30,7 @@
 | `alert_levels` | `00` | `id` | `-` | `-` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` severity badges |
 | `data_retention_policies` | `00` | `domain_key` | `-` | `-` | Statutory retention floors (e.g., SEN = DOB+31y, Safeguarding = DOB+25y) |
 | `dashboard_layouts` | `00` | `id` | `-` | `updated_at` | **Section 9B:** Ordered 1D JSON array of `{ plug_id, widget_id }` objects per `ROLE_DEFAULT` or `STAFF` (`UNIQUE(scope_type, scope_target)`) |
+| `staff_settings` | `00` | `staff_id` | `-` | `updated_at` | Per-staff Host UI settings: `base_font_size IN ('small','medium','large','extra-large')`, `theme_mode IN ('light','high-contrast')`, and `pinned_recents_json` |
 | `roles` | `01` | `id` | `-` | `-` | `STAFF`, `PUPIL`, `GUARDIAN`, `SYSTEM` role definitions |
 | `persons` | `01` | `id` | `-` | **Non-temporal** (1 row/person) | Shared identity spine (`external_sso_sub`, legal vs preferred names, `dob`, `sex`) |
 | `person_roles` | `01` | `(person_id, role_id, effective_from)` | `person_id -> persons.id`, `role_id -> roles.id` | `effective_from`, `effective_to` | Temporal role assignment |

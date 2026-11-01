@@ -43,6 +43,8 @@
   /* Typography & Geometry Scale */
   --mis-font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --mis-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --mis-font-size-base: 16px;
+  --mis-font-scale: 1;
   --mis-radius-sm: 4px;
   --mis-radius-md: 8px;
   --mis-radius-lg: 12px;
@@ -80,6 +82,10 @@
   --mis-status-danger-border: #ff6b6b;
 }
 
+html {
+  font-size: var(--mis-font-size-base, 16px);
+}
+
 *,
 *::before,
 *::after {
@@ -89,6 +95,8 @@
 body {
   margin: 0;
   font-family: var(--mis-font-sans);
+  font-size: var(--mis-font-size-base, 16px);
+  zoom: var(--mis-font-scale, 1);
   background-color: var(--mis-bg-canvas);
   color: var(--mis-text-primary);
   line-height: 1.5;
@@ -135,3 +143,22 @@ body {
   text-decoration: underline;
   cursor: pointer;
 }
+
+.mis-icon,
+[data-mis-icon] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  stroke: currentColor;
+  fill: none;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.mis-icon svg,
+[data-mis-icon] svg {
+  stroke: currentColor;
+  fill: none;
+}
+

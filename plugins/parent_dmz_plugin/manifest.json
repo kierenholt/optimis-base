@@ -1,6 +1,7 @@
 {
   "id": "uk.org.optimis.parent.dmz",
   "title": "Parent Portal DMZ Sync",
+  "icon": "inbox",
   "version": "0.1.0",
   "core_dal_version": "~1.0",
   "max_concurrency": 4,

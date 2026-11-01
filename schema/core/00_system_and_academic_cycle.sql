@@ -123,3 +123,15 @@ CREATE TABLE IF NOT EXISTS dashboard_layouts (
 );
 CREATE INDEX IF NOT EXISTS idx_dashboard_layouts_scope ON dashboard_layouts(scope_type, scope_target);
 
+-- @domain: system
+-- @dal_scope: host.internal
+-- @description: Per-staff UI preferences and pinned recents (base_font_size, theme_mode, pinned_recents_json).
+CREATE TABLE IF NOT EXISTS staff_settings (
+    staff_id TEXT PRIMARY KEY,
+    base_font_size TEXT NOT NULL DEFAULT 'medium' CHECK (base_font_size IN ('small', 'medium', 'large', 'extra-large')),
+    theme_mode TEXT NOT NULL DEFAULT 'light' CHECK (theme_mode IN ('light', 'high-contrast')),
+    pinned_recents_json TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+

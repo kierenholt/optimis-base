@@ -315,12 +315,9 @@ test.describe('Strict Opaque URL Routing (/p/<plugid>), Manifest Views Contract 
     await pupilSelect.selectOption(m1Seed.second_active_pupil_id);
 
     // Selecting the student updates the Host URL path to /p/<senPlugId>/student/<second_active_pupil_id>
-    await expect(page.getByTestId('host-active-route-url')).toContainText(
-      `/p/${senPlugId}/student/${m1Seed.second_active_pupil_id}`
-    );
-    expect(new URL(page.url()).pathname).toBe(
-      `/p/${senPlugId}/student/${m1Seed.second_active_pupil_id}`
-    );
+    await expect
+      .poll(() => new URL(page.url()).pathname)
+      .toBe(`/p/${senPlugId}/student/${m1Seed.second_active_pupil_id}`);
 
     // Switch to the IEP tab inside the SEN plugin and verify ?tab=iep is reflected in the browser URL
     const iepTabBtn = senFrame.getByTestId('sen-tab-btn-iep');
@@ -328,10 +325,7 @@ test.describe('Strict Opaque URL Routing (/p/<plugid>), Manifest Views Contract 
     await iepTabBtn.click();
 
     await expect(senFrame.getByTestId('sen-active-tab-indicator')).toHaveText('iep');
-    await expect(page.getByTestId('host-active-route-url')).toContainText(
-      `/p/${senPlugId}/student/${m1Seed.second_active_pupil_id}?`
-    );
-    await expect(page.getByTestId('host-active-route-url')).toContainText('tab=iep');
+    await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('iep');
 
     const currentBrowserUrl = new URL(page.url());
     expect(currentBrowserUrl.pathname).toBe(
@@ -368,13 +362,10 @@ test.describe('Strict Opaque URL Routing (/p/<plugid>), Manifest Views Contract 
     // Verify colleagueTab did NOT reset to the default test plugin or home screen — it immediately mounted and activated senPlugId with student=second_active_pupil_id and tab=iep!
     await expect(colleagueTab.getByTestId('host-shell')).toBeVisible();
     await expect(colleagueTab.getByTestId(`plugin-iframe-${senPlugId}`)).toBeVisible();
-    await expect(colleagueTab.getByTestId('active-entity-context-pill')).toHaveText(
-      `student:${m1Seed.second_active_pupil_id}`
-    );
-    await expect(colleagueTab.getByTestId('host-active-route-url')).toContainText(
+    expect(new URL(colleagueTab.url()).pathname).toBe(
       `/p/${senPlugId}/student/${m1Seed.second_active_pupil_id}`
     );
-    await expect(colleagueTab.getByTestId('host-active-route-url')).toContainText('tab=iep');
+    expect(new URL(colleagueTab.url()).searchParams.get('tab')).toBe('iep');
 
     const colleagueSenFrame = colleagueTab.frameLocator(`[data-testid="plugin-iframe-${senPlugId}"]`);
     await expect(colleagueSenFrame.getByTestId('sen-active-tab-indicator')).toHaveText('iep');
@@ -405,12 +396,6 @@ test.describe('Strict Opaque URL Routing (/p/<plugid>), Manifest Views Contract 
       { targetPupilId: m1Seed.second_active_pupil_id, targetPluginId: testPlugId }
     );
 
-    await expect(page.getByTestId('deep-link-navigation-status')).toHaveText(
-      `student:${m1Seed.second_active_pupil_id} -> ${testPlugId}`
-    );
-    await expect(page.getByTestId('active-entity-context-pill')).toHaveText(
-      `student:${m1Seed.second_active_pupil_id}`
-    );
     await expect(page.getByTestId(`plugin-iframe-${testPlugId}`)).toBeVisible();
     expect(new URL(page.url()).pathname).toBe(
       `/p/${testPlugId}/student/${m1Seed.second_active_pupil_id}`

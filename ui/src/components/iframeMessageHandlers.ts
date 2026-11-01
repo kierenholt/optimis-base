@@ -1,8 +1,11 @@
 import React from 'react';
 import {
   ActiveCallerIdentity,
+  BASE_FONT_SIZE_PRESETS,
+  BaseFontSize,
   DEFAULT_PERMITTED_METHODS,
   DEFAULT_THEME_TOKENS,
+  normalizeBaseFontSize,
   PluginNavEntry,
   ThemeMode,
 } from '../themeAndTypes';
@@ -21,6 +24,7 @@ export interface InitContextOverrides {
 
 export interface BuildInitPayloadContext {
   themeMode: ThemeMode;
+  baseFontSize?: BaseFontSize;
   themeCatalog: Record<ThemeMode, Record<string, string>>;
   installedPlugins: PluginNavEntry[];
   activeCaller: ActiveCallerIdentity | null;
@@ -46,10 +50,18 @@ export function createInitPayload(
   overrideContext?: Partial<InitContextOverrides>,
   overrideThemeMode?: ThemeMode,
   overridePlugins?: PluginNavEntry[],
-  overrideCaller?: ActiveCallerIdentity | null
+  overrideCaller?: ActiveCallerIdentity | null,
+  overrideBaseFontSize?: BaseFontSize
 ) {
   const mode = overrideThemeMode || ctx.themeMode;
-  const activeTokens = ctx.themeCatalog[mode] || DEFAULT_THEME_TOKENS[mode];
+  const fontSizePreset = normalizeBaseFontSize(overrideBaseFontSize || ctx.baseFontSize || 'medium');
+  const fontSizeMetrics = BASE_FONT_SIZE_PRESETS[fontSizePreset];
+  const baseTokens = ctx.themeCatalog[mode] || DEFAULT_THEME_TOKENS[mode];
+  const activeTokens: Record<string, string> = {
+    ...baseTokens,
+    '--mis-font-size-base': fontSizeMetrics.px,
+    '--mis-font-scale': fontSizeMetrics.scale,
+  };
   const effectivePlugins = overridePlugins || ctx.installedPlugins;
   const effectiveCaller = overrideCaller !== undefined ? overrideCaller : ctx.activeCaller;
   const resolvedPupilId = overrideContext?.pupil_id !== undefined ? overrideContext.pupil_id : ctx.activePupilId;
@@ -87,6 +99,7 @@ export function createInitPayload(
   return {
     type: 'mis:init',
     theme_mode: mode,
+    base_font_size: fontSizePreset,
     theme_tokens: activeTokens,
     theme: {
       primary: activeTokens['--mis-brand-primary'],

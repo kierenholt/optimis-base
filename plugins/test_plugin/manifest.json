@@ -1,5 +1,6 @@
 {
   "id": "uk.org.optimis.test",
+  "icon": "box",
   "version": "0.2.0",
   "core_dal_version": "~1.0",
   "database": {

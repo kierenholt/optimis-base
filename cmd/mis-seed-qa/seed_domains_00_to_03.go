@@ -270,6 +270,12 @@ func seedDomain01And03StaffGroupsAndPupils(tx *sql.Tx, st *qaSeedState) error {
 			"cnt_"+a.staffID, a.staffID, contractType, a.swcPost, a.jobTitle, a.payScale, a.spinePoint, a.fte); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(`INSERT INTO staff_settings (staff_id, base_font_size, theme_mode, pinned_recents_json)
+			VALUES (?, 'medium', 'light', '[]')
+			ON CONFLICT(staff_id) DO NOTHING`,
+			a.staffID); err != nil {
+			return err
+		}
 		st.staffIDs = append(st.staffIDs, a.staffID)
 		if a.staffType == "TEACHING" || a.staffType == "LEADERSHIP" {
 			st.teacherStaffIDs = append(st.teacherStaffIDs, a.staffID)

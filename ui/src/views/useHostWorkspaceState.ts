@@ -7,9 +7,11 @@ import {
 import {
   ActiveCallerIdentity,
   applyHostThemeToRoot,
+  BaseFontSize,
   DashboardLayoutItem,
   DEFAULT_THEME_TOKENS,
   MAX_KEEP_ALIVE_POOL_SIZE,
+  normalizeBaseFontSize,
   PinnedRecentEntry,
   PlacedDashboardWidget,
   PluginNavEntry,
@@ -39,9 +41,10 @@ export function useHostWorkspaceState() {
 
   // Host Theme & School Branding state (Sections 9.4 & 9.5)
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
-    applyHostThemeToRoot('light', DEFAULT_THEME_TOKENS);
+    applyHostThemeToRoot('light', DEFAULT_THEME_TOKENS, 'medium');
     return 'light';
   });
+  const [baseFontSize, setBaseFontSize] = useState<BaseFontSize>('medium');
   const [themeCatalog, setThemeCatalog] = useState<Record<ThemeMode, Record<string, string>>>(DEFAULT_THEME_TOKENS);
   const [schoolName, setSchoolName] = useState<string>('Oakridge All-Through Academy');
   const [schoolURN, setSchoolURN] = useState<string>('100001');
@@ -397,6 +400,17 @@ export function useHostWorkspaceState() {
         if (serverEntityHandlers) {
           setEntityLinkHandlers((prev) => ({ ...prev, ...serverEntityHandlers }));
         }
+        if (body.user_settings && typeof body.user_settings === 'object') {
+          if (typeof body.user_settings.base_font_size === 'string') {
+            setBaseFontSize(normalizeBaseFontSize(body.user_settings.base_font_size));
+          }
+          if (
+            body.user_settings.theme_mode === 'light' ||
+            body.user_settings.theme_mode === 'high-contrast'
+          ) {
+            setThemeMode(body.user_settings.theme_mode);
+          }
+        }
         if (Array.isArray(body.pinned_recents)) {
           setPinnedRecents(body.pinned_recents as PinnedRecentEntry[]);
         }
@@ -420,8 +434,38 @@ export function useHostWorkspaceState() {
   }, [activeStaffId, refreshWorkspaceForStaff]);
 
   useEffect(() => {
-    applyHostThemeToRoot(themeMode, themeCatalog);
-  }, [themeMode, themeCatalog]);
+    applyHostThemeToRoot(themeMode, themeCatalog, baseFontSize);
+  }, [themeMode, themeCatalog, baseFontSize]);
+
+  const persistUserSettings = useCallback(
+    async (updates: { base_font_size?: BaseFontSize; theme_mode?: ThemeMode }) => {
+      try {
+        const res = await fetch('/api/system/user-settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            staff_id: activeStaffId || undefined,
+            ...updates,
+          }),
+        });
+        const body = await res.json().catch(() => null);
+        if (res.ok && body && body.ok && body.user_settings) {
+          if (typeof body.user_settings.base_font_size === 'string') {
+            setBaseFontSize(normalizeBaseFontSize(body.user_settings.base_font_size));
+          }
+          if (
+            body.user_settings.theme_mode === 'light' ||
+            body.user_settings.theme_mode === 'high-contrast'
+          ) {
+            setThemeMode(body.user_settings.theme_mode);
+          }
+        }
+      } catch {
+        // Ignore transient network errors after optimistic state update
+      }
+    },
+    [activeStaffId]
+  );
 
   const handleNavigateHome = useCallback(() => {
     setActivePluginId('');
@@ -681,6 +725,9 @@ export function useHostWorkspaceState() {
     initialPersonaParam,
     themeMode,
     setThemeMode,
+    baseFontSize,
+    setBaseFontSize,
+    persistUserSettings,
     themeCatalog,
     schoolName,
     schoolURN,

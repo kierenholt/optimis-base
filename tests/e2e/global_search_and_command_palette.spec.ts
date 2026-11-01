@@ -160,11 +160,25 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 3. Clean up installed plugins and seeded fixtures
+    // 3. Clean up installed plugins, pinned recents, and seeded fixtures
     if (personaSeed) {
       await request.post('/api/auth/persona', {
         data: { staff_id: personaSeed.admin_staff_id },
       });
+      await request.post('/api/system/pinned-recents', {
+        data: {
+          action: 'clear',
+          staff_id: personaSeed.admin_staff_id,
+        },
+      });
+      if (m1Seed) {
+        await request.post('/api/system/pinned-recents', {
+          data: {
+            action: 'clear',
+            staff_id: m1Seed.teacher_staff_id,
+          },
+        });
+      }
       for (const pid of [senPlugId, behaviourPlugId, testPlugId]) {
         if (pid) {
           await request.delete(`/api/admin/plugins/${encodeURIComponent(pid)}?staff_id=${encodeURIComponent(personaSeed.admin_staff_id)}`);
@@ -273,7 +287,7 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
     await expect(senViewItem).toBeVisible();
     await senViewItem.click();
 
-    await expect(page.getByTestId('host-active-route-url')).toContainText(`/p/${senPlugId}`);
+    await expect.poll(() => new URL(page.url()).pathname).toContain(`/p/${senPlugId}`);
     await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeVisible();
   });
 
@@ -320,11 +334,11 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
     const paletteInput = page.getByTestId('command-palette-input');
     await expect(paletteInput).toBeFocused();
 
-    // 4. Press Escape to close, then reopen via the Command Palette trigger button
+    // 4. Press Escape to close, then reopen via the Narrow Icon Rail Search button
     await page.keyboard.press('Escape');
     await expect(paletteModal).toHaveCount(0);
 
-    await page.getByTestId('command-palette-trigger-btn').click();
+    await page.getByTestId('nav-rail-search').click();
     await expect(paletteModal).toBeVisible();
 
     // 5. Search for SEN widget via keyword ("differentiation") and click inline "Add to Dashboard"
@@ -348,10 +362,9 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
     // Clicking Ada Lovelace routes to entity_link_handlers.student (/p/<testPlugId>/student/<active_pupil_id>) and closes palette
     await adaResult.click();
     await expect(paletteModal).toHaveCount(0);
-    await expect(page.getByTestId('host-active-route-url')).toContainText(
-      `/p/${testPlugId}/student/${m1Seed.active_pupil_id}`
-    );
-    await expect(page.getByTestId('active-entity-context-pill')).toHaveText(`student:${m1Seed.active_pupil_id}`);
+    await expect
+      .poll(() => new URL(page.url()).pathname)
+      .toBe(`/p/${testPlugId}/student/${m1Seed.active_pupil_id}`);
 
     // 7. Search for group "10Ma1" via Command Palette and navigate to /p/<testPlugId>/group/<own_group_id>
     await page.keyboard.press('Control+k');
@@ -362,9 +375,173 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
     await expect(groupResult).toContainText('Year 10 Maths Set 1');
     await groupResult.click();
     await expect(paletteModal).toHaveCount(0);
-    await expect(page.getByTestId('host-active-route-url')).toContainText(
-      `/p/${testPlugId}/group/${m1Seed.own_group_id}`
+    await expect
+      .poll(() => new URL(page.url()).pathname)
+      .toBe(`/p/${testPlugId}/group/${m1Seed.own_group_id}`);
+  });
+
+  test('fullListButtonAndCommandPaletteTabs_clickingFullListAndSwitchingTabs_filtersViewsWidgetsPupilsAndGroupsByTab_test', async ({
+    page,
+    request,
+  }) => {
+    if (!m1Seed || !personaSeed) {
+      throw new Error('Missing mandatory seeded fixtures');
+    }
+
+    // 1. Switch session to Classroom Teacher
+    const switchTeacherRes = await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
+    expect(switchTeacherRes.ok()).toBe(true);
+
+    await page.goto(
+      `/?__persona=${encodeURIComponent(m1Seed.teacher_staff_id)}&reference_date=2026-10-27&academic_year_id=ay_2026_2027`
     );
-    await expect(page.getByTestId('active-entity-context-pill')).toHaveText(`group:${m1Seed.own_group_id}`);
+
+    // 2. Verify the button is renamed to "Full list" and opens the modal when clicked
+    const fullListBtn = page.getByTestId('landing-open-command-palette-btn');
+    await expect(fullListBtn).toBeVisible();
+    await expect(fullListBtn).toHaveText('Full list');
+    await fullListBtn.click();
+
+    const paletteModal = page.getByTestId('command-palette-modal');
+    await expect(paletteModal).toBeVisible();
+
+    // 3. Verify tabs exist: All, Plugins, Widgets, Pupils, Groups (with All selected by default)
+    const tabAll = page.getByTestId('command-palette-tab-all');
+    const tabPlugins = page.getByTestId('command-palette-tab-plugins');
+    const tabWidgets = page.getByTestId('command-palette-tab-widgets');
+    const tabPupils = page.getByTestId('command-palette-tab-pupils');
+    const tabGroups = page.getByTestId('command-palette-tab-groups');
+
+    await expect(tabAll).toBeVisible();
+    await expect(tabPlugins).toBeVisible();
+    await expect(tabWidgets).toBeVisible();
+    await expect(tabPupils).toBeVisible();
+    await expect(tabGroups).toBeVisible();
+    await expect(tabAll).toHaveAttribute('aria-selected', 'true');
+
+    // Even with an empty search input, All tab shows Views, Widgets, Pupils, and Groups
+    const behViewItem = page.getByTestId(`command-palette-result-view-${behaviourPlugId}-home`);
+    const behWidgetItem = page.getByTestId('command-palette-result-widget-behaviour_summary');
+    const adaPupilItem = page.getByTestId(`command-palette-result-pupil-${m1Seed.active_pupil_id}`);
+    const ownGroupItem = page.getByTestId(`command-palette-result-group-${m1Seed.own_group_id}`);
+
+    await expect(behViewItem).toBeVisible();
+    await expect(behWidgetItem).toBeVisible();
+    await expect(adaPupilItem).toBeVisible();
+    await expect(ownGroupItem).toBeVisible();
+
+    // 4. Switch to "Plugins" tab -> only plugin views are shown
+    await tabPlugins.click();
+    await expect(tabPlugins).toHaveAttribute('aria-selected', 'true');
+    await expect(behViewItem).toBeVisible();
+    await expect(behWidgetItem).toHaveCount(0);
+    await expect(adaPupilItem).toHaveCount(0);
+    await expect(ownGroupItem).toHaveCount(0);
+
+    // 5. Switch to "Widgets" tab -> only dashboard widgets are shown
+    await tabWidgets.click();
+    await expect(tabWidgets).toHaveAttribute('aria-selected', 'true');
+    await expect(behWidgetItem).toBeVisible();
+    await expect(behViewItem).toHaveCount(0);
+    await expect(adaPupilItem).toHaveCount(0);
+    await expect(ownGroupItem).toHaveCount(0);
+
+    // 6. Switch to "Pupils" tab -> only caller-scoped pupils are shown
+    await tabPupils.click();
+    await expect(tabPupils).toHaveAttribute('aria-selected', 'true');
+    await expect(adaPupilItem).toBeVisible();
+    await expect(page.getByTestId(`command-palette-result-pupil-${m1Seed.other_group_pupil_id}`)).toHaveCount(0);
+    await expect(behViewItem).toHaveCount(0);
+    await expect(behWidgetItem).toHaveCount(0);
+    await expect(ownGroupItem).toHaveCount(0);
+
+    // 7. Switch to "Groups" tab -> only caller-scoped groups are shown
+    await tabGroups.click();
+    await expect(tabGroups).toHaveAttribute('aria-selected', 'true');
+    await expect(ownGroupItem).toBeVisible();
+    await expect(page.getByTestId(`command-palette-result-group-${m1Seed.other_group_id}`)).toHaveCount(0);
+    await expect(behViewItem).toHaveCount(0);
+    await expect(behWidgetItem).toHaveCount(0);
+    await expect(adaPupilItem).toHaveCount(0);
+  });
+
+  test('landingPageSearch_viewPinButtonAndRecordTypeFilter_pinsViewFromSearchResultsAndFiltersByRecordType_test', async ({
+    page,
+    request,
+  }) => {
+    if (!m1Seed || !personaSeed) {
+      throw new Error('Missing mandatory seeded fixtures');
+    }
+
+    const switchTeacherRes = await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seed.teacher_staff_id },
+    });
+    expect(switchTeacherRes.ok()).toBe(true);
+
+    await page.goto(
+      `/?__persona=${encodeURIComponent(m1Seed.teacher_staff_id)}&reference_date=2026-10-27&academic_year_id=ay_2026_2027`
+    );
+
+    // 1. Verify record type filter controls exist in the Landing Page Search panel
+    const filterAll = page.getByTestId('landing-search-filter-all');
+    const filterPlugins = page.getByTestId('landing-search-filter-plugins');
+    const filterWidgets = page.getByTestId('landing-search-filter-widgets');
+    const filterPupils = page.getByTestId('landing-search-filter-pupils');
+    const filterGroups = page.getByTestId('landing-search-filter-groups');
+
+    await expect(filterAll).toBeVisible();
+    await expect(filterPlugins).toBeVisible();
+    await expect(filterWidgets).toBeVisible();
+    await expect(filterPupils).toBeVisible();
+    await expect(filterGroups).toBeVisible();
+    await expect(filterAll).toHaveAttribute('aria-selected', 'true');
+
+    // 2. Search "detention" -> matches both Behaviour view and Behaviour widget
+    const landingInput = page.getByTestId('landing-search-input');
+    await landingInput.fill('detention');
+
+    const behViewItem = page.getByTestId(`landing-search-result-view-${behaviourPlugId}-home`);
+    const behWidgetItem = page.getByTestId('landing-search-result-widget-behaviour_summary');
+    await expect(behViewItem).toBeVisible();
+    await expect(behWidgetItem).toBeVisible();
+
+    // 3. Verify the returned view item displays a Pin button and clicking it pins/unpins the view to the sidebar
+    const behPinBtn = page.getByTestId(`landing-search-pin-view-btn-${behaviourPlugId}-home`);
+    await expect(behPinBtn).toBeVisible();
+    await expect(behPinBtn).toContainText('Pin');
+    await behPinBtn.click();
+
+    await expect(behPinBtn).toContainText('Pinned');
+    await expect(page.getByTestId('pinned-recent-item-0')).toBeVisible();
+    await expect(page.getByTestId('pinned-recent-item-0')).toHaveAttribute('data-pinned-route', `/p/${behaviourPlugId}`);
+
+    // 4. Filter by record type in Landing Page Search:
+    // Switch to "Plugins" filter -> only plugin views are shown, widgets hidden
+    await filterPlugins.click();
+    await expect(filterPlugins).toHaveAttribute('aria-selected', 'true');
+    await expect(behViewItem).toBeVisible();
+    await expect(behWidgetItem).toHaveCount(0);
+
+    // Switch to "Widgets" filter -> only widgets are shown, plugin views hidden
+    await filterWidgets.click();
+    await expect(filterWidgets).toHaveAttribute('aria-selected', 'true');
+    await expect(behWidgetItem).toBeVisible();
+    await expect(behViewItem).toHaveCount(0);
+
+    // Search "a" (matches Views, Widgets, Pupils, and Groups) and test "Pupils" and "Groups" filters
+    await landingInput.fill('a');
+    await filterPupils.click();
+    await expect(filterPupils).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId(`landing-search-result-pupil-${m1Seed.active_pupil_id}`)).toBeVisible();
+    await expect(page.getByTestId(`landing-search-result-group-${m1Seed.own_group_id}`)).toHaveCount(0);
+    await expect(behViewItem).toHaveCount(0);
+
+    await filterGroups.click();
+    await expect(filterGroups).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId(`landing-search-result-group-${m1Seed.own_group_id}`)).toBeVisible();
+    await expect(page.getByTestId(`landing-search-result-pupil-${m1Seed.active_pupil_id}`)).toHaveCount(0);
+    await expect(behViewItem).toHaveCount(0);
   });
 });

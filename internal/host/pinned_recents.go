@@ -14,6 +14,21 @@ type PinnedRecentItem struct {
 	Title  string `json:"title"`
 	PlugID string `json:"plug_id"`
 	ViewID string `json:"view_id,omitempty"`
+	Icon   string `json:"icon,omitempty"`
+}
+
+func resolvePinnedRouteIcon(plugin *LoadedPlugin, matchedView *MatchedPluginView) string {
+	if matchedView != nil {
+		if vIcon := strings.ToLower(strings.TrimSpace(matchedView.View.Icon)); vIcon != "" {
+			return vIcon
+		}
+	}
+	if plugin != nil {
+		if pIcon := strings.ToLower(strings.TrimSpace(plugin.Manifest.Icon)); pIcon != "" {
+			return pIcon
+		}
+	}
+	return "pin"
 }
 
 func pinnedRecentsConfigKey(staffID string) (string, error) {
@@ -76,35 +91,35 @@ func (h *Host) isPluginPermittedForCaller(plugin *LoadedPlugin, caller CallerCon
 	return false
 }
 
-func (h *Host) validatePinnedRouteForCaller(rawRoute string, caller CallerContext) (string, string, *MatchedPluginView, int, error) {
+func (h *Host) validatePinnedRouteForCaller(rawRoute string, caller CallerContext) (string, string, *LoadedPlugin, *MatchedPluginView, int, error) {
 	cleanRoute, plugID, subpath, queryValues, err := parseAndValidatePinnedRoute(rawRoute)
 	if err != nil {
-		return "", "", nil, http.StatusBadRequest, err
+		return "", "", nil, nil, http.StatusBadRequest, err
 	}
 	plugin, ok := h.GetLoadedPluginByPlugID(plugID)
 	if !ok || plugin == nil {
-		return "", "", nil, http.StatusNotFound, fmt.Errorf("PLUGIN_NOT_FOUND: unknown plug_id %q", plugID)
+		return "", "", nil, nil, http.StatusNotFound, fmt.Errorf("PLUGIN_NOT_FOUND: unknown plug_id %q", plugID)
 	}
 	if plugin.State != PluginStateActive {
-		return "", "", nil, http.StatusForbidden, fmt.Errorf("PLUGIN_DORMANT_QUARANTINE: plugin %q is not active", plugID)
+		return "", "", nil, nil, http.StatusForbidden, fmt.Errorf("PLUGIN_DORMANT_QUARANTINE: plugin %q is not active", plugID)
 	}
 	if !h.isPluginPermittedForCaller(plugin, caller) {
-		return "", "", nil, http.StatusForbidden, fmt.Errorf("FORBIDDEN_PLUGIN_ACCESS: caller %q lacks required scopes or roles for plugin %q", caller.StaffID, plugID)
+		return "", "", nil, nil, http.StatusForbidden, fmt.Errorf("FORBIDDEN_PLUGIN_ACCESS: caller %q lacks required scopes or roles for plugin %q", caller.StaffID, plugID)
 	}
 	matchedView, status, errCode := MatchPluginViewRoute(plugin, subpath, queryValues)
 	if status != http.StatusOK || matchedView == nil {
-		return "", "", nil, status, fmt.Errorf("%s: route %q does not match any declared view in plugin %q", errCode, cleanRoute, plugID)
+		return "", "", nil, nil, status, fmt.Errorf("%s: route %q does not match any declared view in plugin %q", errCode, cleanRoute, plugID)
 	}
-	return cleanRoute, plugID, matchedView, http.StatusOK, nil
+	return cleanRoute, plugID, plugin, matchedView, http.StatusOK, nil
 }
 
 func (h *Host) loadPinnedRecentsForStaff(ctx context.Context, staffID string) []PinnedRecentItem {
-	key, err := pinnedRecentsConfigKey(staffID)
+	settings, err := h.coreDAL.GetStaffSettings(ctx, staffID)
 	if err != nil {
 		return []PinnedRecentItem{}
 	}
-	rawVal, err := h.coreDAL.GetSystemConfigValue(ctx, key)
-	if err != nil || strings.TrimSpace(rawVal) == "" {
+	rawVal := strings.TrimSpace(settings.PinnedRecentsJSON)
+	if rawVal == "" || rawVal == "[]" {
 		return []PinnedRecentItem{}
 	}
 	var items []PinnedRecentItem
@@ -115,7 +130,7 @@ func (h *Host) loadPinnedRecentsForStaff(ctx context.Context, staffID string) []
 	targetCaller := h.resolveCallerForStaffID(ctx, staffID)
 	validItems := make([]PinnedRecentItem, 0, len(items))
 	for _, item := range items {
-		cleanRoute, plugID, matchedView, status, vErr := h.validatePinnedRouteForCaller(item.Route, targetCaller)
+		cleanRoute, plugID, plugin, matchedView, status, vErr := h.validatePinnedRouteForCaller(item.Route, targetCaller)
 		if vErr != nil || status != http.StatusOK || matchedView == nil {
 			continue
 		}
@@ -123,39 +138,85 @@ func (h *Host) loadPinnedRecentsForStaff(ctx context.Context, staffID string) []
 		if viewID == "" {
 			viewID = matchedView.View.ID
 		}
+		iconName := strings.ToLower(strings.TrimSpace(item.Icon))
+		if iconName == "" || iconName == "pin" {
+			iconName = resolvePinnedRouteIcon(plugin, matchedView)
+		}
 		validItems = append(validItems, PinnedRecentItem{
 			Route:  cleanRoute,
 			Title:  item.Title,
 			PlugID: plugID,
 			ViewID: viewID,
+			Icon:   iconName,
 		})
 	}
 	return validItems
 }
 
 func (h *Host) savePinnedRecentsForStaff(ctx context.Context, staffID string, items []PinnedRecentItem) error {
-	key, err := pinnedRecentsConfigKey(staffID)
-	if err != nil {
-		return err
-	}
 	if len(items) == 0 {
-		return h.coreDAL.DeleteSystemConfigKey(ctx, key)
+		return h.coreDAL.SaveStaffPinnedRecentsJSON(ctx, staffID, "[]")
 	}
 	encoded, err := json.Marshal(items)
 	if err != nil {
 		return fmt.Errorf("failed to marshal pinned_recents: %w", err)
 	}
-	_, err = h.coreDAL.SetSystemConfigValue(ctx, key, string(encoded))
-	return err
+	return h.coreDAL.SaveStaffPinnedRecentsJSON(ctx, staffID, string(encoded))
 }
 
 func (h *Host) RegisterPinnedRecentsAndLogoutRoutes(mux *http.ServeMux) {
+	handleUserSettings := func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			StaffID      string  `json:"staff_id"`
+			BaseFontSize *string `json:"base_font_size"`
+			ThemeMode    *string `json:"theme_mode"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"ok":         false,
+				"error_code": fmt.Sprintf("INVALID_JSON: %v", err),
+			})
+			return
+		}
+
+		caller, targetStaffID, authStatus, authErr := h.ResolveAuthenticatedCallerAndTargetStaff(r, in.StaffID)
+		if authErr != nil {
+			h.logError(fmt.Sprintf("Blocked user-settings update for target %q by caller %q: %v", in.StaffID, caller.StaffID, authErr))
+			writeJSON(w, authStatus, map[string]any{
+				"ok":         false,
+				"error_code": authErr.Error(),
+			})
+			return
+		}
+
+		updatedSettings, err := h.coreDAL.UpsertStaffUISettings(r.Context(), targetStaffID, in.BaseFontSize, in.ThemeMode)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"ok":         false,
+				"error_code": err.Error(),
+			})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true,
+			"user_settings": map[string]any{
+				"staff_id":       updatedSettings.StaffID,
+				"base_font_size": updatedSettings.BaseFontSize,
+				"theme_mode":     updatedSettings.ThemeMode,
+			},
+		})
+	}
+	mux.HandleFunc("PUT /api/system/user-settings", handleUserSettings)
+	mux.HandleFunc("POST /api/system/user-settings", handleUserSettings)
+
 	mux.HandleFunc("POST /api/system/pinned-recents", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Action  string `json:"action"`
 			Route   string `json:"route"`
 			Title   string `json:"title"`
 			ViewID  string `json:"view_id"`
+			Icon    string `json:"icon"`
 			StaffID string `json:"staff_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -188,7 +249,7 @@ func (h *Host) RegisterPinnedRecentsAndLogoutRoutes(mux *http.ServeMux) {
 
 		switch action {
 		case "pin":
-			cleanRoute, plugID, matchedView, routeStatus, routeErr := h.validatePinnedRouteForCaller(in.Route, targetCaller)
+			cleanRoute, plugID, plugin, matchedView, routeStatus, routeErr := h.validatePinnedRouteForCaller(in.Route, targetCaller)
 			if routeErr != nil {
 				writeJSON(w, routeStatus, map[string]any{
 					"ok":         false,
@@ -208,6 +269,10 @@ func (h *Host) RegisterPinnedRecentsAndLogoutRoutes(mux *http.ServeMux) {
 			if viewID == "" && matchedView != nil {
 				viewID = matchedView.View.ID
 			}
+			iconName := strings.ToLower(strings.TrimSpace(in.Icon))
+			if iconName == "" {
+				iconName = resolvePinnedRouteIcon(plugin, matchedView)
+			}
 
 			existing := h.loadPinnedRecentsForStaff(r.Context(), targetStaffID)
 			updated := make([]PinnedRecentItem, 0, len(existing)+1)
@@ -219,6 +284,7 @@ func (h *Host) RegisterPinnedRecentsAndLogoutRoutes(mux *http.ServeMux) {
 						Title:  cleanTitle,
 						PlugID: plugID,
 						ViewID: viewID,
+						Icon:   iconName,
 					})
 					found = true
 				} else {
@@ -231,6 +297,7 @@ func (h *Host) RegisterPinnedRecentsAndLogoutRoutes(mux *http.ServeMux) {
 					Title:  cleanTitle,
 					PlugID: plugID,
 					ViewID: viewID,
+					Icon:   iconName,
 				})
 			}
 

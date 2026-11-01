@@ -1,6 +1,7 @@
 {
   "id": "uk.co.sparx.maths",
   "title": "Sparx Maths Partner Sync",
+  "icon": "calculator",
   "version": "0.1.0",
   "core_dal_version": "~1.0",
   "max_concurrency": 4,

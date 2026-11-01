@@ -340,12 +340,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
 
     await expect(page.getByTestId(`plugin-iframe-${testPlugId}`)).toBeVisible();
     await expect(page.getByTestId(`plugin-iframe-${behaviourPlugId}`)).toBeHidden();
-    await expect(page.getByTestId('active-entity-context-pill')).toContainText(
-      `student:${m1Seed.active_pupil_id}`
-    );
-    await expect(page.getByTestId('deep-link-navigation-status')).toContainText(
-      `student:${m1Seed.active_pupil_id} -> ${testPlugId}`
-    );
+    expect(new URL(page.url()).pathname).toBe(`/p/${testPlugId}/student/${m1Seed.active_pupil_id}`);
 
     // 6. Switch to System Admin / DPO persona, run UK GDPR SAR Export, and redact third-party pupil name ("Draco Malfoy") in `incident_notes`
     const switchAdminRes = await request.post('/api/auth/persona', {

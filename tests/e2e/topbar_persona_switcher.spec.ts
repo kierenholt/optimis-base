@@ -159,51 +159,29 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
       throw new Error('Missing mandatory seeded persona state');
     }
 
-    await page.goto(`/?pupil_id=${encodeURIComponent(seeded.pupil_id)}`);
+    // =========================================================================
+    // 1. Open as Classroom Teacher (TEACHER) via ?__persona= override
+    // =========================================================================
+    await page.goto(
+      `/?pupil_id=${encodeURIComponent(seeded.pupil_id)}&__persona=${encodeURIComponent(
+        seeded.teacher_staff_id
+      )}`
+    );
 
-    const hostTopbar = page.getByTestId('host-topbar');
-    await expect(hostTopbar).toBeVisible();
+    // Host topbar and in-UI persona switcher must be completely removed
+    await expect(page.getByTestId('host-topbar')).toHaveCount(0);
+    await expect(page.getByTestId('persona-switcher-container')).toHaveCount(0);
+    await expect(page.getByTestId('persona-switcher-select')).toHaveCount(0);
 
-    const switcherContainer = page.getByTestId('persona-switcher-container');
-    await expect(switcherContainer).toBeVisible();
-
-    const personaSelect = page.getByTestId('persona-switcher-select');
-    await expect(personaSelect).toBeVisible();
-
-    // Verify active personas (Teacher, HoD, DSL, Admin) are present in dropdown options, and Terminated staff is excluded
-    await expect(page.getByTestId(`persona-option-${seeded.teacher_staff_id}`)).toBeAttached();
-    await expect(page.getByTestId(`persona-option-${seeded.hod_staff_id}`)).toBeAttached();
-    await expect(page.getByTestId(`persona-option-${seeded.dsl_staff_id}`)).toBeAttached();
-    await expect(page.getByTestId(`persona-option-${seeded.admin_staff_id}`)).toBeAttached();
-    await expect(page.getByTestId(`persona-option-${seeded.terminated_staff_id}`)).toHaveCount(0);
-
-    const activePersonaBadge = page.getByTestId('active-persona-badge');
-    const sidebarPluginBtn = page.getByTestId('topbar-active-plugin-badge');
-    const sidebarPluginMethodsCount = page.getByTestId('topbar-active-plugin-methods-count');
     const dslVaultPanel = page.getByTestId('dsl-safeguarding-vault-panel');
     const sarRedactionPanel = page.getByTestId('sar-redaction-panel');
     const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
-
-    // =========================================================================
-    // 1. Switch to Classroom Teacher (TEACHER)
-    // =========================================================================
-    await personaSelect.selectOption(seeded.teacher_staff_id);
-    await expect(activePersonaBadge).toContainText(seeded.teacher_staff_id);
-    await expect(activePersonaBadge).toContainText('TEACHER');
-
-    // Topbar plugin badge reflects 9 permitted methods for TEACHER (only :own_groups & dal.safeguarding.create)
-    await expect(sidebarPluginBtn).toBeVisible();
-    await expect(sidebarPluginMethodsCount).toHaveText('9');
-    await expect(sidebarPluginBtn).toHaveAttribute(
-      'data-permitted-methods',
-      'get_group_roster_summary,get_pupil_guardians,list_worker_event_logs,mutate_then_illegal_egress,push_external_sparx_post,record_group_am_attendance,submit_safeguarding_postbox,sync_external_sparx_get,trigger_loop_relay'
-    );
 
     // Neither DSL Vault console nor Admin/DPO SAR console may be visible for Teacher
     await expect(dslVaultPanel).toHaveCount(0);
     await expect(sarRedactionPanel).toHaveCount(0);
 
-    // Verify mis:init updated window.mis.permittedMethods and window.mis.scopes live inside the sandboxed iframe
+    // Verify mis:init populated window.mis.permittedMethods and window.mis.scopes inside the sandboxed iframe for TEACHER
     await expect
       .poll(
         async () =>
@@ -242,20 +220,19 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
     await expect(pluginFrame.getByTestId('rpc-error-banner')).toContainText('caller lacks required DAL scopes');
 
     // =========================================================================
-    // 2. Switch live to Head of Department (HOD)
+    // 2. Switch to Head of Department (HOD) via ?__persona= override
     // =========================================================================
-    await personaSelect.selectOption(seeded.hod_staff_id);
-    await expect(activePersonaBadge).toContainText(seeded.hod_staff_id);
-    await expect(activePersonaBadge).toContainText('HOD');
-
-    // Sidebar plugin badge updates live to 12 permitted methods (HOD holds dal.pupils.read:all & dal.groups.read:all)
-    await expect(sidebarPluginMethodsCount).toHaveText('12');
+    await page.goto(
+      `/?pupil_id=${encodeURIComponent(seeded.pupil_id)}&__persona=${encodeURIComponent(
+        seeded.hod_staff_id
+      )}`
+    );
 
     // Neither DSL Vault console nor Admin/DPO SAR console is visible for HoD
     await expect(dslVaultPanel).toHaveCount(0);
     await expect(sarRedactionPanel).toHaveCount(0);
 
-    // Verify mis:init updated window.mis.permittedMethods and window.mis.scopes live for HoD
+    // Verify mis:init updated window.mis.permittedMethods and window.mis.scopes for HoD
     await expect
       .poll(
         async () =>
@@ -286,7 +263,7 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
         hasGetPupilRecord: true,
       });
 
-    // Clicking print-record-btn now succeeds under HoD session without page reload
+    // Clicking print-record-btn succeeds under HoD session
     await pluginFrame.getByTestId('print-record-btn').click();
     await expect(pluginFrame.getByTestId('rpc-error-banner')).toBeHidden();
     const expectedLogSubstring = `[plugin:uk.org.optimis.test] {"id":"${seeded.pupil_id}"`;
@@ -297,13 +274,15 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
       .toBe(true);
 
     // =========================================================================
-    // 3. Switch live to Designated Safeguarding Lead (DSL)
+    // 3. Switch to Designated Safeguarding Lead (DSL) via ?__persona= override
     // =========================================================================
-    await personaSelect.selectOption(seeded.dsl_staff_id);
-    await expect(activePersonaBadge).toContainText(seeded.dsl_staff_id);
-    await expect(activePersonaBadge).toContainText('DSL');
+    await page.goto(
+      `/?pupil_id=${encodeURIComponent(seeded.pupil_id)}&__persona=${encodeURIComponent(
+        seeded.dsl_staff_id
+      )}`
+    );
 
-    // DSL Vault Console appears live; Admin/DPO SAR Console remains hidden
+    // DSL Vault Console appears; Admin/DPO SAR Console remains hidden
     await expect(dslVaultPanel).toBeVisible();
     await expect(sarRedactionPanel).toHaveCount(0);
 
@@ -336,27 +315,26 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
         hasGetGuardians: true,
       });
 
-    // DSL can renew OAuth Cloud Key in the live DSL Vault panel
+    // DSL can renew OAuth Cloud Key in the DSL Vault panel
     const renewCloudKeyBtn = page.getByTestId('renew-dsl-cloud-key-btn');
     await expect(renewCloudKeyBtn).toBeVisible();
     await renewCloudKeyBtn.click();
     await expect(page.getByTestId('dsl-cloud-key-input')).not.toHaveValue('');
 
     // =========================================================================
-    // 4. Switch live to System Administrator / DPO (ADMIN)
+    // 4. Switch to System Administrator / DPO (ADMIN) via ?__persona= override
     // =========================================================================
-    await personaSelect.selectOption(seeded.admin_staff_id);
-    await expect(activePersonaBadge).toContainText(seeded.admin_staff_id);
-    await expect(activePersonaBadge).toContainText('ADMIN');
+    await page.goto(
+      `/?pupil_id=${encodeURIComponent(seeded.pupil_id)}&__persona=${encodeURIComponent(
+        seeded.admin_staff_id
+      )}`
+    );
 
-    // Topbar plugin badge updates live to 14 permitted methods for Admin
-    await expect(sidebarPluginMethodsCount).toHaveText('14');
-
-    // DSL Vault Console hides immediately; Admin/DPO SAR Redaction Console appears live!
+    // DSL Vault Console hides; Admin/DPO SAR Redaction Console appears!
     await expect(dslVaultPanel).toHaveCount(0);
     await expect(sarRedactionPanel).toBeVisible();
 
-    // Admin can load the SAR export package live in the newly revealed SAR Redaction Console
+    // Admin can load the SAR export package in the SAR Redaction Console
     const loadSarBtn = page.getByTestId('sar-load-export-btn');
     await expect(loadSarBtn).toBeVisible();
     await loadSarBtn.click();
@@ -375,10 +353,10 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
     expect(modeRes.status()).toBe(500);
 
     await page.goto('/');
-    await expect(page.getByTestId('host-topbar')).toBeVisible();
-
-    // Persona switcher dropdown must NOT be rendered when ENABLE_DEV_PERSONA_SWITCHER=false
+    await expect(page.getByTestId('host-shell')).toBeVisible();
+    await expect(page.getByTestId('host-topbar')).toHaveCount(0);
     await expect(page.getByTestId('persona-switcher-container')).toHaveCount(0);
     await expect(page.getByTestId('persona-switcher-select')).toHaveCount(0);
   });
 });
+

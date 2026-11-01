@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import {
   ActiveCallerIdentity,
+  BaseFontSize,
   getWidgetCompositeKey,
   PlacedDashboardWidget,
   PluginNavEntry,
@@ -16,6 +17,7 @@ import { parseBrowserRoute } from './routeUtils';
 
 export interface UseHostIframeBridgeParams {
   themeMode: ThemeMode;
+  baseFontSize: BaseFontSize;
   themeCatalog: Record<ThemeMode, Record<string, string>>;
   installedPlugins: PluginNavEntry[];
   activePluginId: string;
@@ -64,6 +66,7 @@ export interface UseHostIframeBridgeParams {
 export function useHostIframeBridge(params: UseHostIframeBridgeParams) {
   const {
     themeMode,
+    baseFontSize,
     themeCatalog,
     installedPlugins,
     activePluginId,
@@ -129,11 +132,13 @@ export function useHostIframeBridge(params: UseHostIframeBridgeParams) {
       overrideContext?: Partial<InitContextOverrides>,
       overrideThemeMode?: ThemeMode,
       overridePlugins?: PluginNavEntry[],
-      overrideCaller?: ActiveCallerIdentity | null
+      overrideCaller?: ActiveCallerIdentity | null,
+      overrideBaseFontSize?: BaseFontSize
     ) =>
       createInitPayload(
         {
           themeMode,
+          baseFontSize,
           themeCatalog,
           installedPlugins,
           activeCaller,
@@ -156,10 +161,12 @@ export function useHostIframeBridge(params: UseHostIframeBridgeParams) {
         overrideContext,
         overrideThemeMode,
         overridePlugins,
-        overrideCaller
+        overrideCaller,
+        overrideBaseFontSize
       ),
     [
       themeMode,
+      baseFontSize,
       themeCatalog,
       installedPlugins,
       activeCaller,
@@ -185,12 +192,20 @@ export function useHostIframeBridge(params: UseHostIframeBridgeParams) {
       overrideContext?: Partial<InitContextOverrides>,
       overrideThemeMode?: ThemeMode,
       overridePlugins?: PluginNavEntry[],
-      overrideCaller?: ActiveCallerIdentity | null
+      overrideCaller?: ActiveCallerIdentity | null,
+      overrideBaseFontSize?: BaseFontSize
     ) => {
       for (const [pluginId, iframeEl] of pluginIframeRefs.current.entries()) {
         if (iframeEl?.contentWindow) {
           iframeEl.contentWindow.postMessage(
-            buildInitPayload(pluginId, overrideContext, overrideThemeMode, overridePlugins, overrideCaller),
+            buildInitPayload(
+              pluginId,
+              overrideContext,
+              overrideThemeMode,
+              overridePlugins,
+              overrideCaller,
+              overrideBaseFontSize
+            ),
             '*'
           );
         }
@@ -198,7 +213,14 @@ export function useHostIframeBridge(params: UseHostIframeBridgeParams) {
       for (const [, entry] of widgetIframeRefs.current.entries()) {
         if (entry.el?.contentWindow) {
           entry.el.contentWindow.postMessage(
-            buildInitPayload(entry.pluginId, overrideContext, overrideThemeMode, overridePlugins, overrideCaller),
+            buildInitPayload(
+              entry.pluginId,
+              overrideContext,
+              overrideThemeMode,
+              overridePlugins,
+              overrideCaller,
+              overrideBaseFontSize
+            ),
             '*'
           );
         }

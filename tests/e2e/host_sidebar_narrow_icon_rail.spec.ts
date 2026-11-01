@@ -206,9 +206,9 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
     await expect(sidebar).toBeVisible();
     await expect(sidebar).toHaveAttribute('data-rail-mode', 'narrow-icon-rail');
 
-    // Compact school identity and active entity context remain inside the Narrow Icon Rail
+    // Compact school identity remains inside the Narrow Icon Rail; active-entity-context-pill is removed
     await expect(page.getByTestId('host-school-name')).toBeVisible();
-    await expect(page.getByTestId('active-entity-context-pill')).toBeVisible();
+    await expect(page.getByTestId('active-entity-context-pill')).toHaveCount(0);
 
     // Narrow Icon Rail contains strictly: Home, Global Search (🔍), Pinned Recents, Settings, and Logout
     await expect(page.getByTestId('nav-rail-home')).toBeVisible();
@@ -262,15 +262,10 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
     await expect(page.getByTestId('host-shell')).toBeVisible();
     await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeVisible();
 
-    // Verify Topbar active plugin badge surfaces permitted_methods count & list
-    const activePluginBadge = page.getByTestId('topbar-active-plugin-badge');
-    await expect(activePluginBadge).toBeVisible();
-    await expect(activePluginBadge).toHaveAttribute('data-plug-id', senPlugId);
-
-    // 2. Manually pin the current route (/p/<senPlugId>/student/<second_active_pupil_id>?tab=iep) via Topbar "Pin View" button
+    // 2. Manually pin the current route (/p/<senPlugId>/student/<second_active_pupil_id>?tab=iep) via Narrow Icon Rail "Pin Current View" button
     const topbarPinBtn = page.getByTestId('topbar-pin-view-btn');
     await expect(topbarPinBtn).toBeVisible();
-    await expect(topbarPinBtn).toContainText('Pin View');
+    await expect(topbarPinBtn).toContainText('Pin Current View');
     await topbarPinBtn.click();
 
     await expect(topbarPinBtn).toContainText('Pinned');
@@ -326,17 +321,16 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
     // 5. Click the pinned item in the Narrow Icon Rail to restore /p/<senPlugId>/student/<second_active_pupil_id>?tab=iep
     await pinnedItem0.click();
     await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeVisible();
-    await expect(page.getByTestId('host-active-route-url')).toContainText(targetSenRoute);
+    expect(page.url()).toContain(
+      `/p/${senPlugId}/student/${encodeURIComponent(m1Seed.second_active_pupil_id)}`
+    );
 
-    // 6. Switch persona to Admin via Topbar Persona Switcher -> verify per-persona __system_config isolation
-    const personaSelect = page.getByTestId('persona-switcher-select');
-    await personaSelect.selectOption(personaSeed.admin_staff_id);
-    await expect(page.getByTestId('active-persona-badge')).toContainText(personaSeed.admin_staff_id);
+    // 6. Switch persona to Admin via ?__persona= override -> verify per-persona __system_config isolation
+    await page.goto(`/?__persona=${encodeURIComponent(personaSeed.admin_staff_id)}`);
     await expect(page.locator('[data-testid^="pinned-recent-item-"]')).toHaveCount(0);
 
-    // Switch back to Classroom Teacher -> teacher's 2 pinned routes are restored from __system_config
-    await personaSelect.selectOption(m1Seed.teacher_staff_id);
-    await expect(page.getByTestId('active-persona-badge')).toContainText(m1Seed.teacher_staff_id);
+    // Switch back to Classroom Teacher via ?__persona= override -> teacher's 2 pinned routes are restored from __system_config
+    await page.goto(`/?__persona=${encodeURIComponent(m1Seed.teacher_staff_id)}`);
     await expect(page.getByTestId('pinned-recent-item-0')).toBeVisible();
     await expect(page.getByTestId('pinned-recent-item-1')).toBeVisible();
 
@@ -377,11 +371,23 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
     // 2. Open Host UI Shell and click Settings in the Narrow Icon Rail
     await page.goto('/');
     await expect(page.getByTestId('host-settings-modal')).toHaveCount(0);
+    await expect(page.getByTestId('theme-mode-toggle-btn')).toHaveCount(0);
 
     await page.getByTestId('nav-rail-settings').click();
     const settingsModal = page.getByTestId('host-settings-modal');
     await expect(settingsModal).toBeVisible();
     await expect(settingsModal).toContainText('100001');
+
+    const settingsThemeToggleBtn = settingsModal.getByTestId('theme-mode-toggle-btn');
+    await expect(settingsThemeToggleBtn).toBeVisible();
+    await expect(settingsThemeToggleBtn).toHaveAttribute('role', 'switch');
+    await expect(settingsThemeToggleBtn).toHaveAttribute('aria-checked', 'false');
+    await settingsThemeToggleBtn.click();
+    await expect(settingsThemeToggleBtn).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByTestId('host-shell')).toHaveAttribute('data-mis-theme', 'high-contrast');
+    await settingsThemeToggleBtn.click();
+    await expect(settingsThemeToggleBtn).toHaveAttribute('aria-checked', 'false');
+    await expect(page.getByTestId('host-shell')).toHaveAttribute('data-mis-theme', 'light');
 
     await page.getByTestId('close-settings-modal-btn').click();
     await expect(settingsModal).toHaveCount(0);

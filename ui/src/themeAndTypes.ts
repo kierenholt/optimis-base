@@ -1,5 +1,27 @@
 export type ThemeMode = 'light' | 'high-contrast';
 
+export type BaseFontSize = 'small' | 'medium' | 'large' | 'extra-large';
+
+export const BASE_FONT_SIZE_PRESETS: Record<
+  BaseFontSize,
+  { label: string; px: string; scale: string }
+> = {
+  small: { label: 'Small', px: '14px', scale: '0.875' },
+  medium: { label: 'Medium', px: '16px', scale: '1' },
+  large: { label: 'Large', px: '18px', scale: '1.125' },
+  'extra-large': { label: 'Extra Large', px: '20px', scale: '1.25' },
+};
+
+export function normalizeBaseFontSize(raw: unknown): BaseFontSize {
+  if (typeof raw === 'string') {
+    const lower = raw.trim().toLowerCase();
+    if (lower === 'small' || lower === 'medium' || lower === 'large' || lower === 'extra-large') {
+      return lower;
+    }
+  }
+  return 'medium';
+}
+
 export const DEFAULT_THEME_TOKENS: Record<ThemeMode, Record<string, string>> = {
   light: {
     '--mis-brand-primary': '#1d4ed8',
@@ -24,6 +46,8 @@ export const DEFAULT_THEME_TOKENS: Record<ThemeMode, Record<string, string>> = {
     '--mis-status-danger': '#b91c1c',
     '--mis-status-danger-bg': '#fef2f2',
     '--mis-font-sans': "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    '--mis-font-size-base': '16px',
+    '--mis-font-scale': '1',
     '--mis-radius-sm': '4px',
     '--mis-radius-md': '8px',
     '--mis-radius-lg': '12px',
@@ -51,6 +75,8 @@ export const DEFAULT_THEME_TOKENS: Record<ThemeMode, Record<string, string>> = {
     '--mis-status-danger': '#ff6b6b',
     '--mis-status-danger-bg': '#2a0000',
     '--mis-font-sans': "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    '--mis-font-size-base': '16px',
+    '--mis-font-scale': '1',
     '--mis-radius-sm': '4px',
     '--mis-radius-md': '8px',
     '--mis-radius-lg': '12px',
@@ -72,15 +98,30 @@ export const DEFAULT_PERMITTED_METHODS = [
   'list_worker_event_logs',
 ];
 
-export function applyHostThemeToRoot(mode: ThemeMode, tokensMap: Record<ThemeMode, Record<string, string>>) {
+export function applyHostThemeToRoot(
+  mode: ThemeMode,
+  tokensMap: Record<ThemeMode, Record<string, string>>,
+  baseFontSize: BaseFontSize = 'medium'
+) {
   if (typeof document === 'undefined' || !document.documentElement) {
     return;
   }
   const root = document.documentElement;
+  const normalizedFontSize = normalizeBaseFontSize(baseFontSize);
+  const preset = BASE_FONT_SIZE_PRESETS[normalizedFontSize];
   root.setAttribute('data-mis-theme', mode);
+  root.setAttribute('data-mis-font-size', normalizedFontSize);
   const tokens = tokensMap[mode] || DEFAULT_THEME_TOKENS[mode];
   for (const [k, v] of Object.entries(tokens)) {
     root.style.setProperty(k, v);
+  }
+  root.style.setProperty('--mis-font-size-base', preset.px);
+  root.style.setProperty('--mis-font-scale', preset.scale);
+  root.style.fontSize = preset.px;
+  if (document.body) {
+    document.body.style.margin = '0';
+    document.body.style.fontSize = preset.px;
+    document.body.style.setProperty('zoom', preset.scale);
   }
 }
 
@@ -132,6 +173,7 @@ export interface PluginWidgetDescriptor {
   id: string;
   plugin_id: string;
   title: string;
+  icon?: string;
   entry: string;
   entry_url: string;
   width: 1 | 2;
@@ -144,6 +186,7 @@ export interface PluginViewDescriptor {
   plugin_id?: string;
   path: string;
   title?: string;
+  icon?: string;
   entry: string;
   entry_url: string;
   query_params?: string[];
@@ -207,6 +250,7 @@ export function getWidgetCompositeKey(pluginId: string, widgetId: string): strin
 export interface PluginNavEntry {
   id: string;
   title: string;
+  icon?: string;
   version: string;
   entry_url: string;
   permitted_methods: string[];
@@ -217,6 +261,7 @@ export interface PluginNavEntry {
 export interface PinnedRecentEntry {
   route: string;
   title: string;
+  icon?: string;
   plug_id: string;
   view_id?: string;
 }

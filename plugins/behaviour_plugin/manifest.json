@@ -1,6 +1,7 @@
 {
   "id": "uk.org.optimis.behaviour",
   "title": "Behaviour & Pastoral Points",
+  "icon": "award",
   "version": "0.2.0",
   "core_dal_version": "~1.0",
   "max_concurrency": 4,

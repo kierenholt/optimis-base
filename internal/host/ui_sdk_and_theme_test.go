@@ -861,3 +861,154 @@ func TestPinnedRecentsSecurityAndValidation_CrossStaffSpoofingUnvalidatedRoutesD
 	}
 }
 
+func TestUserSettingsAndPinnedRecents_StaffSettingsTablePersistenceAndValidation_EnforcesSchemaAndRBAC_test(t *testing.T) {
+	tempDir := t.TempDir()
+	pluginsDir, err := filepath.Abs("../../plugins")
+	if err != nil {
+		t.Fatalf("failed to resolve plugins directory: %v", err)
+	}
+
+	t.Setenv("ENABLE_DEV_PERSONA_SWITCHER", "true")
+
+	h, err := NewHost(Config{
+		DataDirPath:      tempDir,
+		SchoolURN:        "100001",
+		HostKMSKeyHandle: "local-dev-kms-key-01",
+		PluginsDir:       pluginsDir,
+	})
+	if err != nil {
+		t.Fatalf("NewHost failed: %v", err)
+	}
+	defer h.Close()
+
+	if err := h.LoadPlugin("test_plugin"); err != nil {
+		t.Fatalf("LoadPlugin(test_plugin) failed: %v", err)
+	}
+	testPlug, ok := h.GetLoadedPlugin("uk.org.optimis.test")
+	if !ok || testPlug == nil {
+		t.Fatalf("expected uk.org.optimis.test to be loaded")
+	}
+
+	ctx := context.Background()
+	fx, err := h.DAL().SeedPersonaTestFixtures(ctx, "ay_2026_2027", "2026-09-01")
+	if err != nil {
+		t.Fatalf("SeedPersonaTestFixtures failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = h.DAL().DeletePersonaTestFixtures(ctx, fx.FixtureID)
+	})
+
+	handler, err := h.NewHTTPHandler()
+	if err != nil {
+		t.Fatalf("NewHTTPHandler failed: %v", err)
+	}
+
+	loginBody, _ := json.Marshal(map[string]any{"staff_id": fx.TeacherStaffID})
+	reqLogin := httptest.NewRequest(http.MethodPost, "/api/auth/persona", bytes.NewReader(loginBody))
+	recLogin := httptest.NewRecorder()
+	handler.ServeHTTP(recLogin, reqLogin)
+	if recLogin.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/persona expected 200, got %d: %s", recLogin.Code, recLogin.Body.String())
+	}
+	var teacherCookie *http.Cookie
+	for _, c := range recLogin.Result().Cookies() {
+		if c.Name == "mis_session" {
+			teacherCookie = c
+			break
+		}
+	}
+	if teacherCookie == nil {
+		t.Fatalf("expected mis_session cookie for Teacher")
+	}
+
+	// 1. Default GET /api/system/ui-config returns base_font_size="medium" and theme_mode="light"
+	reqDefaultCfg := httptest.NewRequest(http.MethodGet, "/api/system/ui-config", nil)
+	reqDefaultCfg.AddCookie(teacherCookie)
+	recDefaultCfg := httptest.NewRecorder()
+	handler.ServeHTTP(recDefaultCfg, reqDefaultCfg)
+	if recDefaultCfg.Code != http.StatusOK {
+		t.Fatalf("GET /api/system/ui-config expected 200, got %d", recDefaultCfg.Code)
+	}
+	var defaultCfg struct {
+		UserSettings struct {
+			StaffID      string `json:"staff_id"`
+			BaseFontSize string `json:"base_font_size"`
+			ThemeMode    string `json:"theme_mode"`
+		} `json:"user_settings"`
+	}
+	if err := json.Unmarshal(recDefaultCfg.Body.Bytes(), &defaultCfg); err != nil {
+		t.Fatalf("failed to decode default ui-config: %v", err)
+	}
+	if defaultCfg.UserSettings.BaseFontSize != "medium" || defaultCfg.UserSettings.ThemeMode != "light" {
+		t.Fatalf("expected default user_settings (medium, light), got %+v", defaultCfg.UserSettings)
+	}
+
+	// 2. Cross-staff spoofing on PUT /api/system/user-settings fails fast with 403 FORBIDDEN_STAFF_ID_MISMATCH
+	spoofBody, _ := json.Marshal(map[string]any{
+		"staff_id":       fx.HoDStaffID,
+		"base_font_size": "large",
+	})
+	reqSpoof := httptest.NewRequest(http.MethodPut, "/api/system/user-settings", bytes.NewReader(spoofBody))
+	reqSpoof.AddCookie(teacherCookie)
+	recSpoof := httptest.NewRecorder()
+	handler.ServeHTTP(recSpoof, reqSpoof)
+	if recSpoof.Code != http.StatusForbidden || !strings.Contains(recSpoof.Body.String(), "FORBIDDEN_STAFF_ID_MISMATCH") {
+		t.Fatalf("expected 403 FORBIDDEN_STAFF_ID_MISMATCH on cross-staff user-settings update, got %d: %s", recSpoof.Code, recSpoof.Body.String())
+	}
+
+	// 3. Invalid base_font_size fails fast with 400 INVALID_BASE_FONT_SIZE
+	invalidFontBody, _ := json.Marshal(map[string]any{
+		"base_font_size": "24px",
+	})
+	reqInvalidFont := httptest.NewRequest(http.MethodPut, "/api/system/user-settings", bytes.NewReader(invalidFontBody))
+	reqInvalidFont.AddCookie(teacherCookie)
+	recInvalidFont := httptest.NewRecorder()
+	handler.ServeHTTP(recInvalidFont, reqInvalidFont)
+	if recInvalidFont.Code != http.StatusBadRequest || !strings.Contains(recInvalidFont.Body.String(), "INVALID_BASE_FONT_SIZE") {
+		t.Fatalf("expected 400 INVALID_BASE_FONT_SIZE, got %d: %s", recInvalidFont.Code, recInvalidFont.Body.String())
+	}
+
+	// 4. Pin a route and update user-settings -> both persist in staff_settings table without overwriting each other
+	pinBody, _ := json.Marshal(map[string]any{
+		"action": "pin",
+		"route":  "/p/" + testPlug.PlugID,
+		"title":  "Test Workspace",
+	})
+	reqPin := httptest.NewRequest(http.MethodPost, "/api/system/pinned-recents", bytes.NewReader(pinBody))
+	reqPin.AddCookie(teacherCookie)
+	recPin := httptest.NewRecorder()
+	handler.ServeHTTP(recPin, reqPin)
+	if recPin.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on pin, got %d: %s", recPin.Code, recPin.Body.String())
+	}
+
+	updateBody, _ := json.Marshal(map[string]any{
+		"base_font_size": "extra-large",
+		"theme_mode":     "high-contrast",
+	})
+	reqUpdate := httptest.NewRequest(http.MethodPut, "/api/system/user-settings", bytes.NewReader(updateBody))
+	reqUpdate.AddCookie(teacherCookie)
+	recUpdate := httptest.NewRecorder()
+	handler.ServeHTTP(recUpdate, reqUpdate)
+	if recUpdate.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on PUT /api/system/user-settings, got %d: %s", recUpdate.Code, recUpdate.Body.String())
+	}
+
+	// Verify row directly in core.db staff_settings table
+	var dbFontSize, dbThemeMode, dbPinnedJSON string
+	if err := h.DAL().ReadDB().QueryRowContext(
+		ctx,
+		`SELECT base_font_size, theme_mode, pinned_recents_json FROM staff_settings WHERE staff_id = ?`,
+		fx.TeacherStaffID,
+	).Scan(&dbFontSize, &dbThemeMode, &dbPinnedJSON); err != nil {
+		t.Fatalf("expected row in staff_settings for %s, got error: %v", fx.TeacherStaffID, err)
+	}
+	if dbFontSize != "extra-large" || dbThemeMode != "high-contrast" {
+		t.Fatalf("expected staff_settings (extra-large, high-contrast), got (%s, %s)", dbFontSize, dbThemeMode)
+	}
+	if !strings.Contains(dbPinnedJSON, testPlug.PlugID) {
+		t.Fatalf("expected staff_settings.pinned_recents_json to retain pinned route, got %s", dbPinnedJSON)
+	}
+}
+
+

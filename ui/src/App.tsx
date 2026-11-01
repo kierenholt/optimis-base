@@ -5,12 +5,18 @@ import {
   LandingPageTopHalfSearch,
 } from './components/GlobalSearchAndCommandPalette';
 import { HostSidebar } from './components/HostSidebar';
-import { HostTopbar } from './components/HostTopbar';
+import { MonochromeLucideIcon } from './components/MonochromeLucideIcon';
 import { useHostIframeBridge } from './components/useHostIframeBridge';
 import { DashboardWidgetGridPanel } from './DashboardWidgetGridPanel';
 import { GdprSarPanel } from './GdprSarPanel';
 import { SafeguardingVaultPanel } from './SafeguardingVaultPanel';
-import { applyHostThemeToRoot, PluginViewDescriptor, ThemeMode } from './themeAndTypes';
+import {
+  applyHostThemeToRoot,
+  BASE_FONT_SIZE_PRESETS,
+  BaseFontSize,
+  PluginViewDescriptor,
+  ThemeMode,
+} from './themeAndTypes';
 import { DashboardSummaryStrip } from './views/DashboardSummaryStrip';
 import { KeepAlivePluginWorkspace } from './views/KeepAlivePluginWorkspace';
 import { useHostAdminAndDslState } from './views/useHostAdminAndDslState';
@@ -32,6 +38,9 @@ export function App() {
     initialPersonaParam,
     themeMode,
     setThemeMode,
+    baseFontSize,
+    setBaseFontSize,
+    persistUserSettings,
     themeCatalog,
     schoolName,
     schoolURN,
@@ -97,6 +106,7 @@ export function App() {
     broadcastInitToMountedIframes,
   } = useHostIframeBridge({
     themeMode,
+    baseFontSize,
     themeCatalog,
     installedPlugins,
     activePluginId,
@@ -134,10 +144,6 @@ export function App() {
   });
 
   const {
-    devPersonaSwitcherEnabled,
-    availablePersonas,
-    personaSwitchError,
-    handleSelectPersona,
     hasSafeguardingRead,
     safeguardingEnvelopes,
     cloudKeyToken,
@@ -188,9 +194,17 @@ export function App() {
 
   const handleToggleThemeMode = () => {
     const nextMode: ThemeMode = themeMode === 'light' ? 'high-contrast' : 'light';
-    applyHostThemeToRoot(nextMode, themeCatalog);
+    applyHostThemeToRoot(nextMode, themeCatalog, baseFontSize);
     setThemeMode(nextMode);
-    broadcastInitToMountedIframes(undefined, nextMode);
+    broadcastInitToMountedIframes(undefined, nextMode, undefined, undefined, baseFontSize);
+    void persistUserSettings({ theme_mode: nextMode });
+  };
+
+  const handleSelectBaseFontSize = (nextSize: BaseFontSize) => {
+    applyHostThemeToRoot(themeMode, themeCatalog, nextSize);
+    setBaseFontSize(nextSize);
+    broadcastInitToMountedIframes(undefined, themeMode, undefined, undefined, nextSize);
+    void persistUserSettings({ base_font_size: nextSize });
   };
 
   const activePlugin = installedPlugins.find((p) => p.id === activePluginId);
@@ -311,11 +325,13 @@ export function App() {
     <div
       data-testid="host-shell"
       data-mis-theme={themeMode}
+      data-mis-font-size={baseFontSize}
       style={{
         display: 'grid',
         gridTemplateColumns: '88px 1fr',
-        minHeight: '100vh',
+        minHeight: 'calc(100vh / var(--mis-font-scale, 1))',
         fontFamily: 'var(--mis-font-sans, system-ui, sans-serif)',
+        fontSize: 'var(--mis-font-size-base, 16px)',
         backgroundColor: 'var(--mis-bg-canvas)',
         color: 'var(--mis-text-primary)',
       }}
@@ -325,6 +341,9 @@ export function App() {
         schoolName={schoolName}
         configuredAcademicYear={configuredAcademicYear}
         activePluginId={activePluginId}
+        activePlugin={activePlugin}
+        isCurrentRoutePinned={isCurrentRoutePinned}
+        onTogglePinCurrentRoute={handleTogglePinCurrentRoute}
         activeRouteUrl={canonicalActivePluginRoute || activeRouteUrl}
         activeEntityContext={activeEntityContext}
         pinnedRecents={pinnedRecents}
@@ -337,23 +356,6 @@ export function App() {
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <HostTopbar
-          deepLinkNavigationStatus={deepLinkNavigationStatus}
-          activeRouteUrl={activeRouteUrl}
-          activePlugin={activePlugin}
-          isCurrentRoutePinned={isCurrentRoutePinned}
-          devPersonaSwitcherEnabled={devPersonaSwitcherEnabled}
-          availablePersonas={availablePersonas}
-          activeCaller={activeCaller}
-          activeStaffId={activeStaffId}
-          personaSwitchError={personaSwitchError}
-          themeMode={themeMode}
-          onSelectPersona={handleSelectPersona}
-          onToggleThemeMode={handleToggleThemeMode}
-          onTogglePinCurrentRoute={handleTogglePinCurrentRoute}
-          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-        />
-
         {isLoggedOut && (
           <div
             data-testid="host-logged-out-banner"
@@ -381,10 +383,7 @@ export function App() {
             gap: '20px',
           }}
         >
-          <DashboardSummaryStrip
-            routeError={routeError}
-            studentEntityLinkHandler={entityLinkHandlers.student}
-          />
+          <DashboardSummaryStrip routeError={routeError} />
 
           <LandingPageTopHalfSearch
             installedPlugins={installedPlugins}
@@ -395,10 +394,12 @@ export function App() {
             activeStaffId={activeCaller?.staff_id || activeStaffId}
             referenceDate={initialReferenceDate}
             academicYearId={configuredAcademicYear}
+            pinnedRecents={pinnedRecents}
             onPlaceWidget={handlePlaceWidget}
             onSelectViewResult={handleSelectSearchViewResult}
             onSelectPupilResult={handleSelectSearchPupilResult}
             onSelectGroupResult={handleSelectSearchGroupResult}
+            onTogglePinView={handleTogglePinSearchView}
             onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
           />
 
@@ -503,13 +504,18 @@ export function App() {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700 }}>Host Settings &amp; Preferences</h2>
+              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <MonochromeLucideIcon name="settings" size={16} />
+                <span>Host Settings &amp; Preferences</span>
+              </h2>
               <button
                 type="button"
+                aria-label="Close"
+                title="Close"
                 data-testid="close-settings-modal-btn"
                 onClick={() => setIsSettingsModalOpen(false)}
                 style={{
-                  padding: '4px 10px',
+                  padding: '4px',
                   borderRadius: 'var(--mis-radius-sm, 4px)',
                   border: '1px solid var(--mis-border-subtle)',
                   backgroundColor: 'var(--mis-bg-elevated)',
@@ -517,12 +523,15 @@ export function App() {
                   fontSize: '12px',
                   fontWeight: 600,
                   cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
-                Close
+                <MonochromeLucideIcon name="x" size={14} />
               </button>
             </div>
-            <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div>
                 <strong>School Name:</strong> {schoolName}
               </div>
@@ -532,8 +541,119 @@ export function App() {
               <div>
                 <strong>Academic Year:</strong> {configuredAcademicYear}
               </div>
-              <div>
-                <strong>Theme Mode:</strong> {themeMode}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <label
+                  htmlFor="theme-mode-toggle-switch"
+                  style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <strong>High-Contrast Mode:</strong>{' '}
+                  <span style={{ color: 'var(--mis-text-secondary)' }}>({themeMode})</span>
+                </label>
+                <button
+                  id="theme-mode-toggle-switch"
+                  type="button"
+                  role="switch"
+                  aria-checked={themeMode === 'high-contrast'}
+                  aria-label="Toggle High-Contrast Theme"
+                  data-testid="theme-mode-toggle-btn"
+                  onClick={handleToggleThemeMode}
+                  style={{
+                    position: 'relative',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    width: '44px',
+                    height: '24px',
+                    padding: '2px',
+                    borderRadius: '999px',
+                    border: '1px solid var(--mis-border-strong)',
+                    backgroundColor:
+                      themeMode === 'high-contrast'
+                        ? 'var(--mis-brand-primary)'
+                        : 'var(--mis-bg-elevated)',
+                    cursor: 'pointer',
+                    transition: 'background-color 150ms ease-in-out',
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '50%',
+                      backgroundColor:
+                        themeMode === 'high-contrast'
+                          ? 'var(--mis-brand-primary-fg)'
+                          : 'var(--mis-text-primary)',
+                      transform:
+                        themeMode === 'high-contrast' ? 'translateX(20px)' : 'translateX(0px)',
+                      transition: 'transform 150ms ease-in-out',
+                    }}
+                  />
+                </button>
+              </div>
+              <div
+                data-testid="base-font-size-control"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                }}
+              >
+                <div>
+                  <strong>Base Font Size:</strong>{' '}
+                  <span style={{ color: 'var(--mis-text-secondary)' }}>
+                    ({BASE_FONT_SIZE_PRESETS[baseFontSize].label} — {BASE_FONT_SIZE_PRESETS[baseFontSize].px})
+                  </span>
+                </div>
+                <div
+                  role="group"
+                  aria-label="Base Font Size"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(4, 1fr)',
+                    gap: '6px',
+                  }}
+                >
+                  {(['small', 'medium', 'large', 'extra-large'] as BaseFontSize[]).map((presetKey) => {
+                    const preset = BASE_FONT_SIZE_PRESETS[presetKey];
+                    const isSelected = baseFontSize === presetKey;
+                    return (
+                      <button
+                        key={presetKey}
+                        type="button"
+                        data-testid={`font-size-btn-${presetKey}`}
+                        aria-pressed={isSelected}
+                        onClick={() => handleSelectBaseFontSize(presetKey)}
+                        style={{
+                          padding: '6px 8px',
+                          borderRadius: 'var(--mis-radius-sm, 4px)',
+                          border: isSelected
+                            ? '1px solid var(--mis-brand-primary)'
+                            : '1px solid var(--mis-border-subtle)',
+                          backgroundColor: isSelected
+                            ? 'var(--mis-brand-primary)'
+                            : 'var(--mis-bg-elevated)',
+                          color: isSelected
+                            ? 'var(--mis-brand-primary-fg)'
+                            : 'var(--mis-text-primary)',
+                          fontSize: '12px',
+                          fontWeight: isSelected ? 700 : 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div>
                 <strong>Pinned Views:</strong> {pinnedRecents.length}

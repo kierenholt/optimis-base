@@ -1,4 +1,5 @@
 import React from 'react';
+import { MonochromeLucideIcon } from './components/MonochromeLucideIcon';
 import { DecryptedSafeguardingNote, SafeguardingNoteEnvelope } from './themeAndTypes';
 
 interface SafeguardingVaultPanelProps {
@@ -31,8 +32,9 @@ export function SafeguardingVaultPanel({
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <h2 style={{ fontSize: '16px', margin: 0 }}>
-          Designated Safeguarding Lead (DSL) Envelope-Encrypted Vault
+        <h2 style={{ fontSize: '16px', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+          <MonochromeLucideIcon name="shield-alert" size={18} />
+          <span>Designated Safeguarding Lead (DSL) Envelope-Encrypted Vault</span>
         </h2>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <input
@@ -47,9 +49,16 @@ export function SafeguardingVaultPanel({
             type="button"
             data-testid="renew-dsl-cloud-key-btn"
             onClick={onRenewCloudKey}
-            style={{ padding: '6px 12px', cursor: 'pointer' }}
+            style={{
+              padding: '6px 12px',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
           >
-            Renew OAuth Cloud Key
+            <MonochromeLucideIcon name="key-round" size={14} />
+            <span>Renew OAuth Cloud Key</span>
           </button>
         </div>
       </div>
@@ -93,9 +102,16 @@ export function SafeguardingVaultPanel({
                 type="button"
                 data-testid={`decrypt-safeguarding-note-btn-${env.note_id}`}
                 onClick={() => onDecryptNote(env.note_id)}
-                style={{ padding: '4px 10px', cursor: 'pointer' }}
+                style={{
+                  padding: '4px 10px',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
               >
-                Unlock &amp; Decrypt Note
+                <MonochromeLucideIcon name="lock-open" size={14} />
+                <span>Unlock &amp; Decrypt Note</span>
               </button>
             </div>
 

@@ -45,11 +45,6 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
     broadcastInitToMountedIframes,
   } = params;
 
-  // In-UI Topbar Persona Switcher state (Section 8A)
-  const [devPersonaSwitcherEnabled, setDevPersonaSwitcherEnabled] = useState<boolean>(false);
-  const [availablePersonas, setAvailablePersonas] = useState<StaffPersonaSummary[]>([]);
-  const [personaSwitchError, setPersonaSwitchError] = useState<string>('');
-
   // DSL Safeguarding Vault state (Section 5B)
   const [hasSafeguardingRead, setHasSafeguardingRead] = useState<boolean>(false);
   const [safeguardingEnvelopes, setSafeguardingEnvelopes] = useState<SafeguardingNoteEnvelope[]>([]);
@@ -68,31 +63,6 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
   const [diagnosticBundleStatus, setDiagnosticBundleStatus] = useState<string>('');
   const [diagnosticBundleJson, setDiagnosticBundleJson] = useState<string>('');
   const [diagnosticBundleLog, setDiagnosticBundleLog] = useState<string>('');
-
-  useEffect(() => {
-    const loadPersonas = async () => {
-      try {
-        const res = await fetch('/api/auth/personas');
-        if (!res.ok) {
-          setDevPersonaSwitcherEnabled(false);
-          setAvailablePersonas([]);
-          return;
-        }
-        const body = await res.json();
-        if (body && body.ok && Array.isArray(body.personas)) {
-          setDevPersonaSwitcherEnabled(true);
-          setAvailablePersonas(body.personas);
-        } else {
-          setDevPersonaSwitcherEnabled(false);
-          setAvailablePersonas([]);
-        }
-      } catch {
-        setDevPersonaSwitcherEnabled(false);
-        setAvailablePersonas([]);
-      }
-    };
-    void loadPersonas();
-  }, []);
 
   useEffect(() => {
     const loadSessionAndSafeguarding = async () => {
@@ -114,12 +84,19 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
         const scopes: string[] = Array.isArray(caller?.scopes) ? caller.scopes : [];
         const roles: string[] = Array.isArray(caller?.active_roles) ? caller.active_roles : [];
         if (caller && typeof caller.staff_id === 'string') {
-          setActiveCaller({
+          const nextCaller: ActiveCallerIdentity = {
             staff_id: caller.staff_id,
             user_id: caller.user_id || '',
             active_roles: roles,
             scopes,
-          });
+          };
+          setActiveCaller(nextCaller);
+          broadcastInitToMountedIframes(
+            { staff_id: caller.staff_id },
+            undefined,
+            undefined,
+            nextCaller
+          );
         }
         setHasAdminOrDpoAccess(checkCallerAdminOrDpo(roles, scopes));
 
@@ -151,78 +128,6 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
     };
     void loadSessionAndSafeguarding();
   }, [activePupilId, activeStaffId, initialPersonaParam]);
-
-  const handleSelectPersona = async (nextStaffId: string) => {
-    const trimmed = nextStaffId.trim();
-    if (!trimmed) {
-      throw new Error('Missing mandatory staff_id for persona switch');
-    }
-    setPersonaSwitchError('');
-
-    const switchRes = await fetch('/api/auth/persona', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ staff_id: trimmed }),
-    });
-    const switchBody = await switchRes.json();
-    if (!switchRes.ok || !switchBody.ok) {
-      setPersonaSwitchError(switchBody.error_code || 'Failed to switch persona');
-      return;
-    }
-
-    const caller = switchBody.caller;
-    const resolvedStaffId: string = caller?.staff_id || trimmed;
-    const roles: string[] = Array.isArray(caller?.active_roles) ? caller.active_roles : [];
-    const scopes: string[] = Array.isArray(caller?.scopes) ? caller.scopes : [];
-    const nextCaller: ActiveCallerIdentity = {
-      staff_id: resolvedStaffId,
-      user_id: caller?.user_id || '',
-      active_roles: roles,
-      scopes,
-    };
-
-    const updatedPlugins = await refreshWorkspaceForStaff(resolvedStaffId);
-    setActiveStaffId(resolvedStaffId);
-    setActiveCaller(nextCaller);
-
-    const isAdminOrDpo = checkCallerAdminOrDpo(roles, scopes);
-    setHasAdminOrDpoAccess(isAdminOrDpo);
-    if (!isAdminOrDpo) {
-      setSarSections([]);
-      setSarExportStatus('');
-      setSarFinalizedJson('');
-      setSarPurgeStatus('');
-      setDiagnosticBundleStatus('');
-      setDiagnosticBundleJson('');
-      setDiagnosticBundleLog('');
-    }
-
-    if (scopes.includes('dal.safeguarding.read')) {
-      setHasSafeguardingRead(true);
-      setDslVaultError('');
-      const query = activePupilId ? `?pupil_id=${encodeURIComponent(activePupilId)}` : '';
-      const notesRes = await fetch(`/api/safeguarding/notes${query}`);
-      if (notesRes.ok) {
-        const notesBody = await notesRes.json();
-        if (notesBody.ok && Array.isArray(notesBody.notes)) {
-          setSafeguardingEnvelopes(notesBody.notes);
-        }
-      }
-    } else {
-      setHasSafeguardingRead(false);
-      setSafeguardingEnvelopes([]);
-      setDecryptedNotes({});
-      setCloudKeyToken('');
-      setDslVaultError('');
-    }
-
-    broadcastInitToMountedIframes(
-      { staff_id: resolvedStaffId },
-      undefined,
-      updatedPlugins,
-      nextCaller
-    );
-  };
 
   const handleRenewCloudKey = async () => {
     setDslVaultError('');
@@ -361,11 +266,7 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
   };
 
   return {
-    devPersonaSwitcherEnabled,
-    availablePersonas,
     activeCaller,
-    personaSwitchError,
-    handleSelectPersona,
     hasSafeguardingRead,
     safeguardingEnvelopes,
     cloudKeyToken,

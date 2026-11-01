@@ -1,4 +1,5 @@
 import React from 'react';
+import { MonochromeLucideIcon } from './components/MonochromeLucideIcon';
 
 interface AdminDiagnosticsPanelProps {
   diagnosticBundleStatus: string;
@@ -34,8 +35,9 @@ export function AdminDiagnosticsPanel({
         }}
       >
         <div>
-          <h2 style={{ fontSize: '16px', margin: 0 }}>
-            Day-2 Operations — Admin-Exported PII-Scrubbed Plugin Diagnostic Bundle
+          <h2 style={{ fontSize: '16px', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <MonochromeLucideIcon name="activity" size={18} />
+            <span>Day-2 Operations — Admin-Exported PII-Scrubbed Plugin Diagnostic Bundle</span>
           </h2>
           <div style={{ fontSize: '12px', color: 'var(--mis-text-secondary)', marginTop: '4px' }}>
             Zero outbound telemetry. Exports sanitized Lua stack traces, error classes, and execution/SQLite lock durations with zero pupil IDs or local variables.
@@ -54,9 +56,13 @@ export function AdminDiagnosticsPanel({
             borderRadius: 'var(--mis-radius-sm, 4px)',
             fontSize: '13px',
             fontWeight: 700,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
           }}
         >
-          Download Plugin Diagnostic Bundle
+          <MonochromeLucideIcon name="download" size={14} />
+          <span>Download Plugin Diagnostic Bundle</span>
         </button>
       </div>
 

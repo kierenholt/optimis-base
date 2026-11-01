@@ -1,6 +1,7 @@
 {
   "id": "uk.org.optimis.ops.cover",
   "title": "Staff Absence & Cover Manager",
+  "icon": "user-check",
   "version": "0.1.0",
   "core_dal_version": "~1.0",
   "max_concurrency": 4,

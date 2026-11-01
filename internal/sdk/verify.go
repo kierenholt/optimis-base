@@ -21,14 +21,16 @@ import (
 )
 
 var (
-	manifestIDPattern      = regexp.MustCompile(`^[a-z0-9]+(\.[a-z0-9_-]+)+$`)
-	dbAliasPattern         = regexp.MustCompile(`^plugin_[a-z0-9_]+$`)
-	dataMisRPCAttrRegex    = regexp.MustCompile(`data-mis-rpc\s*=\s*["']([^"']+)["']`)
-	externalScriptSrcRegex = regexp.MustCompile(`(?i)<script[^>]+src\s*=\s*["'](https?://[^"']+)["']`)
-	externalLinkHrefRegex  = regexp.MustCompile(`(?i)<link[^>]+href\s*=\s*["'](https?://[^"']+)["']`)
-	externalCSSImportRegex = regexp.MustCompile(`(?i)@import\s+(?:url\s*\(\s*)?["']?(https?://[^"')]+)["']?`)
-	externalFetchRegex     = regexp.MustCompile(`(?i)\bfetch\s*\(\s*["'](https?://[^"']+)["']`)
-	destructiveSQLRegex    = regexp.MustCompile(`(?i)\b(DROP\s+COLUMN|RENAME\s+COLUMN|DROP\s+TABLE)\b`)
+	manifestIDPattern          = regexp.MustCompile(`^[a-z0-9]+(\.[a-z0-9_-]+)+$`)
+	dbAliasPattern             = regexp.MustCompile(`^plugin_[a-z0-9_]+$`)
+	dataMisRPCAttrRegex        = regexp.MustCompile(`data-mis-rpc\s*=\s*["']([^"']+)["']`)
+	dataMisIconAttrRegex       = regexp.MustCompile(`data-mis-icon\s*=\s*["']([^"']+)["']`)
+	disallowedUIIconEmojiRegex = regexp.MustCompile(`[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]`)
+	externalScriptSrcRegex     = regexp.MustCompile(`(?i)<script[^>]+src\s*=\s*["'](https?://[^"']+)["']`)
+	externalLinkHrefRegex      = regexp.MustCompile(`(?i)<link[^>]+href\s*=\s*["'](https?://[^"']+)["']`)
+	externalCSSImportRegex     = regexp.MustCompile(`(?i)@import\s+(?:url\s*\(\s*)?["']?(https?://[^"')]+)["']?`)
+	externalFetchRegex         = regexp.MustCompile(`(?i)\bfetch\s*\(\s*["'](https?://[^"']+)["']`)
+	destructiveSQLRegex        = regexp.MustCompile(`(?i)\b(DROP\s+COLUMN|RENAME\s+COLUMN|DROP\s+TABLE)\b`)
 )
 
 type VerifyReport struct {
@@ -116,6 +118,9 @@ func ReadAndValidateManifest(pluginDir string) (*host.Manifest, error) {
 	if len(manifest.Endpoints) == 0 {
 		return nil, errors.New("manifest.json must declare at least one endpoint in endpoints")
 	}
+	if !IsValidLucideIcon(manifest.Icon) {
+		return nil, fmt.Errorf("UNKNOWN_LUCIDE_ICON: manifest.json for plugin %s declares unknown monochrome Lucide icon %q", manifest.ID, manifest.Icon)
+	}
 
 	if manifest.Database != nil && strings.TrimSpace(manifest.Database.Alias) != "" {
 		if !dbAliasPattern.MatchString(strings.TrimSpace(manifest.Database.Alias)) {
@@ -136,6 +141,9 @@ func ReadAndValidateManifest(pluginDir string) (*host.Manifest, error) {
 			ventry := strings.TrimSpace(v.Entry)
 			if vid == "" || vpath == "" || ventry == "" {
 				return nil, fmt.Errorf("manifest.json views[%d] for plugin %s is missing mandatory id, path, or entry", idx, manifest.ID)
+			}
+			if !IsValidLucideIcon(v.Icon) {
+				return nil, fmt.Errorf("UNKNOWN_LUCIDE_ICON: manifest.json view %q for plugin %s declares unknown monochrome Lucide icon %q", vid, manifest.ID, v.Icon)
 			}
 			if !strings.HasPrefix(vpath, "/") {
 				return nil, fmt.Errorf("manifest.json view %q for plugin %s has invalid path %q: must start with '/'", vid, manifest.ID, vpath)
@@ -164,6 +172,9 @@ func ReadAndValidateManifest(pluginDir string) (*host.Manifest, error) {
 			wentry := strings.TrimSpace(w.Entry)
 			if wid == "" || wtitle == "" || wentry == "" {
 				return nil, fmt.Errorf("manifest.json widget[%d] for plugin %s is missing mandatory id, title, or entry", idx, manifest.ID)
+			}
+			if !IsValidLucideIcon(w.Icon) {
+				return nil, fmt.Errorf("UNKNOWN_LUCIDE_ICON: manifest.json widget %q for plugin %s declares unknown monochrome Lucide icon %q", wid, manifest.ID, w.Icon)
 			}
 			if w.Width != 1 && w.Width != 2 {
 				return nil, fmt.Errorf("manifest.json widget %q for plugin %s has invalid preset width %d: must be 1 or 2", wid, manifest.ID, w.Width)
@@ -245,15 +256,25 @@ func verifyManifestLuaAndUI(pluginDir string) (*host.Manifest, error) {
 			if readErr != nil {
 				return readErr
 			}
-			matches := dataMisRPCAttrRegex.FindAllStringSubmatch(string(content), -1)
+			text := string(content)
+			relPath, _ := filepath.Rel(pluginDir, path)
+
+			matches := dataMisRPCAttrRegex.FindAllStringSubmatch(text, -1)
 			for _, m := range matches {
 				rpcMethod := strings.TrimSpace(m[1])
 				if rpcMethod == "" {
 					continue
 				}
 				if _, declared := manifest.Endpoints[rpcMethod]; !declared {
-					relPath, _ := filepath.Rel(pluginDir, path)
 					return fmt.Errorf("UI_MANIFEST_MISMATCH: undeclared data-mis-rpc method %q in %s (not declared in manifest.json endpoints)", rpcMethod, relPath)
+				}
+			}
+
+			iconMatches := dataMisIconAttrRegex.FindAllStringSubmatch(text, -1)
+			for _, m := range iconMatches {
+				iconName := strings.TrimSpace(m[1])
+				if iconName != "" && !IsValidLucideIcon(iconName) {
+					return fmt.Errorf("UNKNOWN_LUCIDE_ICON: undeclared or unsupported data-mis-icon %q in %s (all icons must be monochrome Lucide)", iconName, relPath)
 				}
 			}
 			return nil
@@ -290,6 +311,10 @@ func verifyOfflineCSPAssets(pluginDir string) error {
 		}
 		text := string(raw)
 		relPath, _ := filepath.Rel(pluginDir, path)
+
+		if m := disallowedUIIconEmojiRegex.FindString(text); m != "" {
+			return fmt.Errorf("NON_MONOCHROME_ICON_EMOJI_VIOLATION: disallowed emoji glyph %q in %s (all UI icons must be monochrome Lucide SVGs with stroke='currentColor')", m, relPath)
+		}
 
 		for _, re := range []*regexp.Regexp{
 			externalScriptSrcRegex,

@@ -20,6 +20,7 @@ type PluginUIWidgetDescriptor struct {
 	ID       string   `json:"id"`
 	PluginID string   `json:"plugin_id"`
 	Title    string   `json:"title"`
+	Icon     string   `json:"icon"`
 	Entry    string   `json:"entry"`
 	EntryURL string   `json:"entry_url"`
 	Width    int      `json:"width"`
@@ -31,6 +32,7 @@ type PluginUIViewDescriptor struct {
 	ID          string   `json:"id"`
 	PluginID    string   `json:"plugin_id"`
 	Title       string   `json:"title"`
+	Icon        string   `json:"icon"`
 	Path        string   `json:"path"`
 	Entry       string   `json:"entry"`
 	EntryURL    string   `json:"entry_url"`
@@ -42,6 +44,7 @@ type PluginUINavDescriptor struct {
 	ID               string                     `json:"id"`
 	PlugID           string                     `json:"plug_id"`
 	Title            string                     `json:"title"`
+	Icon             string                     `json:"icon"`
 	Version          string                     `json:"version"`
 	EntryURL         string                     `json:"entry_url"`
 	PermittedMethods []string                   `json:"permitted_methods"`
@@ -179,6 +182,8 @@ func DefaultThemeTokens() map[string]map[string]string {
 			"--mis-status-warning":      "#b45309",
 			"--mis-status-danger":       "#b91c1c",
 			"--mis-status-danger-bg":    "#fef2f2",
+			"--mis-font-size-base":      "16px",
+			"--mis-font-scale":          "1",
 		},
 		"high-contrast": {
 			"--mis-brand-primary":       "#facc15",
@@ -200,6 +205,8 @@ func DefaultThemeTokens() map[string]map[string]string {
 			"--mis-status-warning":      "#facc15",
 			"--mis-status-danger":       "#ff6b6b",
 			"--mis-status-danger-bg":    "#2a0000",
+			"--mis-font-size-base":      "16px",
+			"--mis-font-scale":          "1",
 		},
 	}
 }
@@ -446,6 +453,11 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 				}
 			}
 
+			pluginIcon := strings.ToLower(strings.TrimSpace(p.Manifest.Icon))
+			if pluginIcon == "" {
+				pluginIcon = "box"
+			}
+
 			viewsList := p.Manifest.Views
 			if len(viewsList) == 0 {
 				viewsList = defaultPluginViews()
@@ -476,10 +488,15 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 				if vTitle == "" {
 					vTitle = title
 				}
+				vIcon := strings.ToLower(strings.TrimSpace(vSpec.Icon))
+				if vIcon == "" {
+					vIcon = pluginIcon
+				}
 				views = append(views, PluginUIViewDescriptor{
 					ID:          vSpec.ID,
 					PluginID:    plugID,
 					Title:       vTitle,
+					Icon:        vIcon,
 					Path:        vSpec.Path,
 					Entry:       vSpec.Entry,
 					EntryURL:    fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
@@ -500,10 +517,15 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 						wKeywords = append(wKeywords, trimmedKW)
 					}
 				}
+				wIcon := strings.ToLower(strings.TrimSpace(wSpec.Icon))
+				if wIcon == "" {
+					wIcon = pluginIcon
+				}
 				widgets = append(widgets, PluginUIWidgetDescriptor{
 					ID:       wSpec.ID,
 					PluginID: plugID,
 					Title:    wSpec.Title,
+					Icon:     wIcon,
 					Entry:    wSpec.Entry,
 					EntryURL: fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
 					Width:    wSpec.Width,
@@ -516,6 +538,7 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 				ID:               plugID,
 				PlugID:           plugID,
 				Title:            title,
+				Icon:             pluginIcon,
 				Version:          p.Manifest.Version,
 				EntryURL:         fmt.Sprintf("/p/%s/ui/index.html", plugID),
 				PermittedMethods: methods,
@@ -552,6 +575,15 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 			}
 		}
 
+		staffSettings, settingsErr := h.coreDAL.GetStaffSettings(r.Context(), caller.StaffID)
+		if settingsErr != nil {
+			staffSettings = dal.StaffSettings{
+				StaffID:      caller.StaffID,
+				BaseFontSize: "medium",
+				ThemeMode:    "light",
+			}
+		}
+
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":                   true,
 			"school_urn":           schoolURN,
@@ -561,6 +593,11 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 			"entity_link_handlers": entityHandlers,
 			"plugins":              pluginDescriptors,
 			"pinned_recents":       h.loadPinnedRecentsForStaff(r.Context(), caller.StaffID),
+			"user_settings": map[string]any{
+				"staff_id":       staffSettings.StaffID,
+				"base_font_size": staffSettings.BaseFontSize,
+				"theme_mode":     staffSettings.ThemeMode,
+			},
 		})
 	})
 
@@ -701,6 +738,10 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 			if pluginTitle == "" {
 				pluginTitle = p.Folder
 			}
+			pluginIcon := strings.ToLower(strings.TrimSpace(p.Manifest.Icon))
+			if pluginIcon == "" {
+				pluginIcon = "box"
+			}
 
 			viewsList := p.Manifest.Views
 			if len(viewsList) == 0 {
@@ -715,6 +756,10 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 				if vTitle == "" {
 					vTitle = pluginTitle
 				}
+				vIcon := strings.ToLower(strings.TrimSpace(vSpec.Icon))
+				if vIcon == "" {
+					vIcon = pluginIcon
+				}
 				vKeywords := make([]string, 0, len(vSpec.Keywords))
 				for _, kw := range vSpec.Keywords {
 					if trimmedKW := strings.TrimSpace(kw); trimmedKW != "" {
@@ -726,6 +771,7 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 						ID:          vSpec.ID,
 						PluginID:    plugID,
 						Title:       vTitle,
+						Icon:        vIcon,
 						Path:        vSpec.Path,
 						Entry:       vSpec.Entry,
 						EntryURL:    fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
@@ -740,6 +786,10 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 				if err != nil {
 					continue
 				}
+				wIcon := strings.ToLower(strings.TrimSpace(wSpec.Icon))
+				if wIcon == "" {
+					wIcon = pluginIcon
+				}
 				wKeywords := make([]string, 0, len(wSpec.Keywords))
 				for _, kw := range wSpec.Keywords {
 					if trimmedKW := strings.TrimSpace(kw); trimmedKW != "" {
@@ -751,6 +801,7 @@ func (h *Host) RegisterUISDKAndConfigRoutes(mux *http.ServeMux) {
 						ID:       wSpec.ID,
 						PluginID: plugID,
 						Title:    wSpec.Title,
+						Icon:     wIcon,
 						Entry:    wSpec.Entry,
 						EntryURL: fmt.Sprintf("/p/%s/ui/%s", plugID, relEntry),
 						Width:    wSpec.Width,

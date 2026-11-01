@@ -29,7 +29,7 @@
     "icon": {
       "type": "string",
       "pattern": "^[a-z0-9-]+$",
-      "description": "Lucide icon name (e.g., award, calendar, shield-alert,calculator) extracted by mis-pack into icon.svg."
+      "description": "Monochrome Lucide icon name (e.g., award, calendar, shield-alert, calculator, heart-pulse, book-open, bus, users, file-check, box) extracted by mis-pack into icon.svg with stroke='currentColor' and fill='none'."
     },
     "version": {
       "type": "string",
@@ -224,6 +224,11 @@
             "type": "string",
             "minLength": 1
           },
+          "icon": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$",
+            "description": "Optional monochrome Lucide icon override for this view."
+          },
           "path": {
             "type": "string",
             "pattern": "^/([a-zA-Z0-9_:.-]+(/[a-zA-Z0-9_:.-]+)*)?$",
@@ -276,6 +281,11 @@
           "title": {
             "type": "string",
             "minLength": 1
+          },
+          "icon": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$",
+            "description": "Optional monochrome Lucide icon override for this widget."
           },
           "entry": {
             "type": "string",
