@@ -56,6 +56,16 @@
       "path": "/",
       "title": "Department Assessment & Markbook",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "grades",
+        "gradebook",
+        "markbook",
+        "attainment",
+        "progress",
+        "scores",
+        "exams",
+        "targets"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -71,6 +81,12 @@
       "path": "/group/:group_id",
       "title": "Class Markbook",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "enter grades",
+        "class markbook",
+        "set attainment",
+        "grading"
+      ],
       "query_params": [
         "tab",
         "pupil_id",

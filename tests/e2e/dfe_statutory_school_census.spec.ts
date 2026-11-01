@@ -218,7 +218,8 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     const hostShell = page.getByTestId('host-shell');
     await expect(hostShell).toBeVisible();
 
-    const censusNavBtn = page.getByTestId('nav-item-plugin-uk.gov.dfe.census');
+    await page.getByTestId('nav-rail-search').click();
+    const censusNavBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Census' }).first();
     await expect(censusNavBtn).toBeVisible();
     await censusNavBtn.click();
 
@@ -389,7 +390,8 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     await page.goto(
       `/?pupil_id=${encodeURIComponent(seeded.pupil_sen_k_fsm_id)}&reference_date=2026-10-01&academic_year_id=ay_2026_2027`
     );
-    await page.getByTestId('nav-item-plugin-uk.gov.dfe.census').click();
+    await page.getByTestId('nav-rail-search').click();
+    await page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Census' }).first().click();
 
     const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.gov.dfe.census"]');
     await pluginFrame.getByTestId('generate-census-btn').click();

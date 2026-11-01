@@ -132,7 +132,8 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 3. Clean up synthetic LRU plugins and remove runtime-installed test_plugin
+    // 3. Clean up synthetic LRU plugins, dashboard layouts, and remove runtime-installed test_plugin
+    await request.delete('/api/test/dashboard-layouts');
     await request.delete('/api/test/seed-lru-plugins');
     await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
@@ -180,9 +181,14 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
       'PROMISE_OK:Grace Hopper:W100000000001'
     );
 
+    const selectPluginViaRailSearch = async (pid: string) => {
+      await page.getByTestId('nav-rail-search').click();
+      await page.getByTestId(`command-palette-result-view-${pid}-home`).click();
+    };
+
     // Visit lru1, lru2, lru3, lru4 -> Pool now holds 5 mounted iframes: [testPlugId, lru1, lru2, lru3, lru4]
     for (const pid of [lru1, lru2, lru3, lru4]) {
-      await page.getByTestId(`nav-item-plugin-${pid}`).click();
+      await selectPluginViaRailSearch(pid);
       await expect(page.getByTestId(`plugin-iframe-${pid}`)).toBeVisible();
     }
 
@@ -195,7 +201,7 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     expect(defaultDisplay).toBe('none');
 
     // Mutate in-memory DOM state inside lru1 and switch back to testPlugId to refresh testPlugId as Most-Recently-Used (MRU)
-    await page.getByTestId(`nav-item-plugin-${lru1}`).click();
+    await selectPluginViaRailSearch(lru1);
     const lru1Frame = page.frameLocator(`[data-testid="plugin-iframe-${lru1}"]`);
     await lru1Frame.getByTestId('sdk-promise-rpc-btn').click();
     await expect(lru1Frame.getByTestId('sdk-promise-rpc-result')).toHaveText(
@@ -203,7 +209,7 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     );
 
     // Switch back to testPlugId: verify instant zero-reload tab switch (previous RPC result text is still intact without re-clicking!)
-    await page.getByTestId(`nav-item-plugin-${testPlugId}`).click();
+    await selectPluginViaRailSearch(testPlugId);
     await expect(defaultIframe).toBeVisible();
     await expect(defaultFrame.getByTestId('sdk-promise-rpc-result')).toHaveText(
       'PROMISE_OK:Grace Hopper:W100000000001'
@@ -216,7 +222,7 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     );
 
     // Visit a 6th distinct plugin (lru5): pool is full (N=5), so the Least-Recently-Used (lru2) must be evicted from the DOM!
-    await page.getByTestId(`nav-item-plugin-${lru5}`).click();
+    await selectPluginViaRailSearch(lru5);
     await expect(page.getByTestId(`plugin-iframe-${lru5}`)).toBeVisible();
     await expect(lruPool).toHaveAttribute('data-pool-size', '5');
 
@@ -228,20 +234,20 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     await expect(page.getByTestId(`plugin-iframe-${lru4}`)).toBeAttached();
 
     // Switch back to lru1 and confirm its in-memory DOM state was never reloaded when lru5 mounted
-    await page.getByTestId(`nav-item-plugin-${lru1}`).click();
+    await selectPluginViaRailSearch(lru1);
     await expect(page.getByTestId(`plugin-iframe-${lru1}`)).toBeVisible();
     await expect(lru1Frame.getByTestId('sdk-promise-rpc-result')).toHaveText(
       'PROMISE_OK:Grace Hopper:W100000000001'
     );
   });
 
-  test('dashboardWidgetGridAndEditMode_manifestWidgetsLoaded_placesResizesExecutesRpcAndDeepLinksToKeepAlivePool_test', async ({
+  test('dashboardWidgetGridAndEditMode_manifestWidgetsLoaded_placesPresetSizedWidgetsAutoFlowingExecutesRpcAndDeepLinksToKeepAlivePool_test', async ({
     page,
     request,
   }) => {
     const [lru1] = lruPlugIds;
 
-    // 1. Verify GET /api/system/ui-config includes manifest widgets for testPlugId
+    // 1. Verify GET /api/system/ui-config includes manifest widgets with strict preset width (1|2) and height (1|2)
     const uiConfigRes = await request.get('/api/system/ui-config');
     expect(uiConfigRes.ok()).toBe(true);
     const uiConfigBody = await uiConfigRes.json();
@@ -257,12 +263,16 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
           title: 'Statutory Attendance Pulse',
           entry: 'ui/dist/widget.html',
           entry_url: `/p/${testPlugId}/ui/widget.html`,
+          width: 2,
+          height: 1,
         }),
         expect.objectContaining({
           id: 'pastoral_watch',
           title: 'Pastoral & Behaviour Watch',
           entry: 'ui/dist/widget.html',
           entry_url: `/p/${testPlugId}/ui/widget.html`,
+          width: 1,
+          height: 1,
         }),
       ])
     );
@@ -276,12 +286,16 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     const editModeStatus = page.getByTestId('dashboard-edit-mode-status');
     await expect(editModeStatus).toHaveText('VIEW_MODE');
 
-    // Default placed widget (attendance_pulse) should be mounted inside the NxM grid
+    // Default placed widget (attendance_pulse) should be mounted inside the auto-flowing grid at its strict 2x1 preset size
     const widgetGrid = page.getByTestId('dashboard-widget-grid');
     await expect(widgetGrid).toBeVisible();
+    const gridAutoFlow = await widgetGrid.evaluate((el) => (el as HTMLElement).style.gridAutoFlow);
+    expect(gridAutoFlow).toBe('row');
 
     const attendanceWidgetCard = page.getByTestId('placed-widget-card-attendance_pulse');
     await expect(attendanceWidgetCard).toBeVisible();
+    await expect(attendanceWidgetCard).toHaveAttribute('data-width', '2');
+    await expect(attendanceWidgetCard).toHaveAttribute('data-height', '1');
     await expect(attendanceWidgetCard).toHaveAttribute('data-col-span', '2');
     await expect(attendanceWidgetCard).toHaveAttribute('data-row-span', '1');
 
@@ -289,7 +303,7 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     await expect(attendanceWidgetIframe).toBeVisible();
     await expect(attendanceWidgetIframe).toHaveAttribute('sandbox', 'allow-scripts');
 
-    // 3. Enter Dashboard Edit Mode -> Place a second widget (pastoral_watch) and resize attendance_pulse on the NxM grid
+    // 3. Enter Dashboard Edit Mode -> Place a second widget (pastoral_watch, preset 1x1) and verify strict preset sizes (no freeform resize controls)
     const editModeToggleBtn = page.getByTestId('dashboard-edit-mode-toggle-btn');
     await expect(editModeToggleBtn).toBeVisible();
     await editModeToggleBtn.click();
@@ -304,32 +318,37 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
 
     const pastoralWidgetCard = page.getByTestId('placed-widget-card-pastoral_watch');
     await expect(pastoralWidgetCard).toBeVisible();
+    await expect(pastoralWidgetCard).toHaveAttribute('data-width', '1');
+    await expect(pastoralWidgetCard).toHaveAttribute('data-height', '1');
+    await expect(pastoralWidgetCard).toHaveAttribute('data-col-span', '1');
+    await expect(pastoralWidgetCard).toHaveAttribute('data-row-span', '1');
     await expect(page.getByTestId('widget-iframe-pastoral_watch')).toBeVisible();
 
-    // Resize attendance_pulse widget to 3 columns x 2 rows
-    const colSelect = page.getByTestId('resize-widget-col-select-attendance_pulse');
-    const rowSelect = page.getByTestId('resize-widget-row-select-attendance_pulse');
-    await expect(colSelect).toBeVisible();
-    await expect(rowSelect).toBeVisible();
+    // Widgets cannot be arbitrarily resized by users; verify freeform resize selects are absent and preset spans are locked
+    await expect(page.getByTestId('resize-widget-col-select-attendance_pulse')).toHaveCount(0);
+    await expect(page.getByTestId('resize-widget-row-select-attendance_pulse')).toHaveCount(0);
 
-    await colSelect.selectOption('3');
-    await rowSelect.selectOption('2');
-
-    await expect(attendanceWidgetCard).toHaveAttribute('data-col-span', '3');
-    await expect(attendanceWidgetCard).toHaveAttribute('data-row-span', '2');
-
-    const gridStyles = await attendanceWidgetCard.evaluate((el) => {
+    const attendanceStyles = await attendanceWidgetCard.evaluate((el) => {
       const s = (el as HTMLElement).style;
       return { gridColumn: s.gridColumn, gridRow: s.gridRow };
     });
-    expect(gridStyles.gridColumn).toContain('span 3');
-    expect(gridStyles.gridRow).toContain('span 2');
+    expect(attendanceStyles.gridColumn).toContain('span 2');
+    expect(attendanceStyles.gridRow).toContain('span 1');
 
-    // Exit Dashboard Edit Mode and verify layout persists
+    const pastoralStyles = await pastoralWidgetCard.evaluate((el) => {
+      const s = (el as HTMLElement).style;
+      return { gridColumn: s.gridColumn, gridRow: s.gridRow };
+    });
+    expect(pastoralStyles.gridColumn).toContain('span 1');
+    expect(pastoralStyles.gridRow).toContain('span 1');
+
+    // Exit Dashboard Edit Mode and verify layout persists at preset sizes
     await editModeToggleBtn.click();
     await expect(editModeStatus).toHaveText('VIEW_MODE');
-    await expect(attendanceWidgetCard).toHaveAttribute('data-col-span', '3');
-    await expect(attendanceWidgetCard).toHaveAttribute('data-row-span', '2');
+    await expect(attendanceWidgetCard).toHaveAttribute('data-col-span', '2');
+    await expect(attendanceWidgetCard).toHaveAttribute('data-row-span', '1');
+    await expect(pastoralWidgetCard).toHaveAttribute('data-col-span', '1');
+    await expect(pastoralWidgetCard).toHaveAttribute('data-row-span', '1');
     await expect(pastoralWidgetCard).toBeVisible();
 
     // 4. Verify mini-iframe widget independently receives mis:init and executes window.mis.rpc()
@@ -344,8 +363,9 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
 
     // 5. Switch active workspace tab to lru1, then click <a data-mis-link="student"> inside the mini-iframe widget
     // Verify it wakes the designated Student Handler Plugin (testPlugId) in the Keep-Alive LRU Pool with secondPupilId!
-    await page.getByTestId(`nav-item-plugin-${lru1}`).click();
-    await expect(page.getByTestId(`plugin-iframe-${lru1}`)).toBeVisible();
+    await page.getByTestId('nav-rail-search').click();
+    await page.getByTestId(`command-palette-result-view-${lru1}-home`).click();
+    await expect(page.getByTestId(`plugin-iframe-${lru1}`).first()).toBeVisible();
     await expect(page.getByTestId(`plugin-iframe-${testPlugId}`)).toBeHidden();
 
     await attendanceWidgetFrame.getByTestId('widget-deep-link-student').click();
@@ -356,5 +376,253 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
 
     const mainPluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     await expect(mainPluginFrame.getByTestId('sdk-context-status')).toContainText(`PUPIL:${secondPupilId}`);
+  });
+
+  test('dashboardPersistenceCoreDb_ordered1dArrayRoleDefaultsTeacherReorderAndRevokedWidgetInlineError_persistsAcrossReloadsAndPersonas_test', async ({
+    page,
+    request,
+  }) => {
+    // 1. Seed persona fixtures (TEACHER, HOD, DSL, ADMIN) for role default & personal layout persistence testing
+    const personaRes = await request.post('/api/test/seed-personas', {
+      data: {
+        academic_year_id: 'ay_2026_2027',
+        effective_from: '2026-09-01',
+      },
+    });
+    if (!personaRes.ok()) {
+      throw new Error(`Failed to seed persona fixtures: ${personaRes.status()}`);
+    }
+    const personaFixture = await personaRes.json();
+    const teacherStaffId: string = personaFixture.teacher_staff_id;
+    const adminStaffId: string = personaFixture.admin_staff_id;
+
+    try {
+      // 2. Open dashboard as Teacher, place pastoral_watch, and reorder 1D array so pastoral_watch is index 0
+      await page.goto(
+        `/?__persona=${encodeURIComponent(teacherStaffId)}&pupil_id=${encodeURIComponent(seededPupilId)}`
+      );
+
+      await expect(page.getByTestId('placed-widget-card-attendance_pulse')).toBeVisible();
+      await page.getByTestId('dashboard-edit-mode-toggle-btn').click();
+      await expect(page.getByTestId('dashboard-edit-mode-status')).toHaveText('EDIT_MODE');
+
+      await page.getByTestId('place-widget-btn-pastoral_watch').click();
+      await expect(page.getByTestId('placed-widget-card-pastoral_watch')).toBeVisible();
+
+      // Reorder pastoral_watch up to slot 0
+      await page.getByTestId('move-widget-up-btn-pastoral_watch').click();
+      await expect(page.getByTestId('placed-widget-card-pastoral_watch')).toHaveAttribute(
+        'data-order-index',
+        '0'
+      );
+      await expect(page.getByTestId('placed-widget-card-attendance_pulse')).toHaveAttribute(
+        'data-order-index',
+        '1'
+      );
+
+      // Verify core.db persisted the exact ordered 1D array of { plug_id, widget_id } objects
+      const teacherLayoutRes = await request.get(
+        `/api/dashboard/layout?staff_id=${encodeURIComponent(teacherStaffId)}`
+      );
+      expect(teacherLayoutRes.ok()).toBe(true);
+      const teacherLayoutBody = await teacherLayoutRes.json();
+      expect(teacherLayoutBody.ok).toBe(true);
+      expect(teacherLayoutBody.layout_source).toBe('STAFF');
+      expect(teacherLayoutBody.layout).toEqual([
+        { plug_id: testPlugId, widget_id: 'pastoral_watch' },
+        { plug_id: testPlugId, widget_id: 'attendance_pulse' },
+      ]);
+
+      // Reload page and confirm 1D order is restored from core.db
+      await page.reload();
+      await expect(page.getByTestId('placed-widget-card-pastoral_watch')).toHaveAttribute(
+        'data-order-index',
+        '0'
+      );
+      await expect(page.getByTestId('placed-widget-card-attendance_pulse')).toHaveAttribute(
+        'data-order-index',
+        '1'
+      );
+
+      // Teacher removes pastoral_watch so their personal layout has only [attendance_pulse]
+      await page.getByTestId('dashboard-edit-mode-toggle-btn').click();
+      await page.getByTestId('remove-widget-btn-pastoral_watch').click();
+      await expect(page.getByTestId('placed-widget-card-pastoral_watch')).toHaveCount(0);
+
+      // 3. Switch to Admin persona -> Append pastoral_watch to TEACHER role default (and existing TEACHER staff layouts)
+      await page.getByTestId('persona-switcher-select').selectOption(adminStaffId);
+      await expect(page.getByTestId('admin-role-dashboard-controls')).toBeVisible();
+
+      await page.getByTestId('admin-role-default-select').selectOption('TEACHER');
+      await page.getByTestId('admin-append-to-role-btn-pastoral_watch').click();
+      await expect(page.getByTestId('dashboard-layout-save-status')).toContainText('ROLE_WIDGET_APPENDED');
+
+      // Switch back to Teacher persona -> Confirm pastoral_watch was appended to Teacher's personal 1D array!
+      await page.getByTestId('persona-switcher-select').selectOption(teacherStaffId);
+      await expect(page.getByTestId('placed-widget-card-attendance_pulse')).toHaveAttribute(
+        'data-order-index',
+        '0'
+      );
+      await expect(page.getByTestId('placed-widget-card-pastoral_watch')).toHaveAttribute(
+        'data-order-index',
+        '1'
+      );
+
+      // 4. Persist a widget belonging to a revoked/unpermitted plugin in Teacher's 1D array and verify inline permission error card renders in its slot
+      const saveRevokedRes = await request.put('/api/dashboard/layout', {
+        data: {
+          staff_id: teacherStaffId,
+          layout: [
+            { plug_id: testPlugId, widget_id: 'attendance_pulse' },
+            { plug_id: 'revoked99', widget_id: 'restricted_safeguarding_widget' },
+          ],
+        },
+      });
+      expect(saveRevokedRes.ok()).toBe(true);
+
+      await page.reload();
+      await expect(page.getByTestId('placed-widget-card-attendance_pulse')).toBeVisible();
+      const errorCard = page.getByTestId('widget-permission-error-card-restricted_safeguarding_widget');
+      await expect(errorCard).toBeVisible();
+      await expect(errorCard).toHaveAttribute('data-plug-id', 'revoked99');
+    } finally {
+      await request.delete(
+        `/api/test/seed-personas/${encodeURIComponent(personaFixture.fixture_id)}`
+      );
+    }
+  });
+
+  test('widgetIdCollisionAcrossPlugins_twoPluginsSharingSameWidgetId_placesReordersRemovesAndBroadcastsInitByCompositeKey_test', async ({
+    page,
+    request,
+  }) => {
+    // 1. Seed synthetic plugin lru1 WITH cloned widgets so testPlugId and lru1 share generic widget IDs ('attendance_pulse' & 'pastoral_watch')
+    const seedWithWidgetsRes = await request.post('/api/test/seed-lru-plugins', {
+      data: {
+        plugin_ids: ['uk.org.optimis.lru1'],
+        include_widgets: true,
+      },
+    });
+    expect(seedWithWidgetsRes.ok()).toBe(true);
+    const seedWithWidgetsBody = await seedWithWidgetsRes.json();
+    const [lru1] = seedWithWidgetsBody.seeded_plugin_ids as string[];
+    expect(lru1).toBeTruthy();
+
+    await page.goto(
+      `/?pupil_id=${encodeURIComponent(seededPupilId)}&second_pupil_id=${encodeURIComponent(secondPupilId)}`
+    );
+
+    // Initially, only testPlugId's attendance_pulse is placed on the dashboard
+    const testAttendanceCard = page.locator(
+      `[data-testid="placed-widget-card-attendance_pulse"][data-plug-id="${testPlugId}"]`
+    );
+    const lru1AttendanceCard = page.locator(
+      `[data-testid="placed-widget-card-attendance_pulse"][data-plug-id="${lru1}"]`
+    );
+    await expect(testAttendanceCard).toBeVisible();
+    await expect(lru1AttendanceCard).toHaveCount(0);
+
+    // 2. Search in Landing Page Top-Half Search for 'Attendance Pulse':
+    // testPlugId's widget is already placed (disabled), while lru1's widget with the same ID must be enabled and placeable
+    const landingInput = page.getByTestId('landing-search-input');
+    await landingInput.fill('Attendance Pulse');
+
+    const landingAddTestBtn = page.locator(
+      `[data-testid="landing-search-add-widget-btn-attendance_pulse"][data-plug-id="${testPlugId}"]`
+    );
+    const landingAddLru1Btn = page.locator(
+      `[data-testid="landing-search-add-widget-btn-attendance_pulse"][data-plug-id="${lru1}"]`
+    );
+    await expect(landingAddTestBtn).toBeDisabled();
+    await expect(landingAddLru1Btn).toBeEnabled();
+
+    // Place lru1's attendance_pulse via Landing Search
+    await landingAddLru1Btn.click();
+    await expect(lru1AttendanceCard).toBeVisible();
+    await expect(landingAddLru1Btn).toBeDisabled();
+    await landingInput.fill('');
+
+    // 3. Open Global Command Palette (Ctrl+K) and search 'Pastoral':
+    // Placing testPlugId's pastoral_watch must NOT disable lru1's pastoral_watch button
+    await page.keyboard.press('Control+k');
+    const paletteInput = page.getByTestId('command-palette-input');
+    await expect(paletteInput).toBeVisible();
+    await paletteInput.fill('Pastoral');
+
+    const paletteAddTestPastoralBtn = page.locator(
+      `[data-testid="command-palette-add-widget-btn-pastoral_watch"][data-plug-id="${testPlugId}"]`
+    );
+    const paletteAddLru1PastoralBtn = page.locator(
+      `[data-testid="command-palette-add-widget-btn-pastoral_watch"][data-plug-id="${lru1}"]`
+    );
+    await expect(paletteAddTestPastoralBtn).toBeEnabled();
+    await expect(paletteAddLru1PastoralBtn).toBeEnabled();
+
+    await paletteAddTestPastoralBtn.click();
+    await expect(paletteAddTestPastoralBtn).toBeDisabled();
+    await expect(paletteAddLru1PastoralBtn).toBeEnabled();
+    await page.keyboard.press('Escape');
+
+    // 4. Enter Dashboard Edit Mode -> Verify catalog states and independent Move Up / Move Down for colliding widget IDs
+    await page.getByTestId('dashboard-edit-mode-toggle-btn').click();
+    await expect(page.getByTestId('dashboard-edit-mode-status')).toHaveText('EDIT_MODE');
+
+    const catalogPlaceTestPastoral = page.locator(
+      `[data-testid="place-widget-btn-pastoral_watch"][data-plug-id="${testPlugId}"]`
+    );
+    const catalogPlaceLru1Pastoral = page.locator(
+      `[data-testid="place-widget-btn-pastoral_watch"][data-plug-id="${lru1}"]`
+    );
+    await expect(catalogPlaceTestPastoral).toBeDisabled();
+    await expect(catalogPlaceLru1Pastoral).toBeEnabled();
+
+    // Current order: 0 -> testPlugId:attendance_pulse, 1 -> lru1:attendance_pulse, 2 -> testPlugId:pastoral_watch
+    await expect(testAttendanceCard).toHaveAttribute('data-order-index', '0');
+    await expect(lru1AttendanceCard).toHaveAttribute('data-order-index', '1');
+
+    // Move lru1:attendance_pulse UP to index 0
+    await page
+      .locator(`[data-testid="move-widget-up-btn-attendance_pulse"][data-plug-id="${lru1}"]`)
+      .click();
+    await expect(lru1AttendanceCard).toHaveAttribute('data-order-index', '0');
+    await expect(testAttendanceCard).toHaveAttribute('data-order-index', '1');
+
+    // Move lru1:attendance_pulse DOWN back to index 1
+    await page
+      .locator(`[data-testid="move-widget-down-btn-attendance_pulse"][data-plug-id="${lru1}"]`)
+      .click();
+    await expect(testAttendanceCard).toHaveAttribute('data-order-index', '0');
+    await expect(lru1AttendanceCard).toHaveAttribute('data-order-index', '1');
+
+    // 5. Verify both widget iframes with colliding widget ID 'attendance_pulse' are registered in widgetIframeRefs and receive mis:init broadcasts
+    const testWidgetFrame = page.frameLocator(
+      `[data-testid="widget-iframe-attendance_pulse"][data-plug-id="${testPlugId}"]`
+    );
+    const lru1WidgetFrame = page.frameLocator(
+      `[data-testid="widget-iframe-attendance_pulse"][data-plug-id="${lru1}"]`
+    );
+
+    await expect(testWidgetFrame.getByTestId('widget-theme-status')).toContainText('THEME:light');
+    await expect(lru1WidgetFrame.getByTestId('widget-theme-status')).toContainText('THEME:light');
+
+    // Toggle theme to high-contrast -> BOTH colliding widget iframes must receive mis:init
+    await page.getByTestId('theme-mode-toggle-btn').click();
+    await expect(testWidgetFrame.getByTestId('widget-theme-status')).toContainText(
+      'THEME:high-contrast'
+    );
+    await expect(lru1WidgetFrame.getByTestId('widget-theme-status')).toContainText(
+      'THEME:high-contrast'
+    );
+
+    // 6. Remove ONLY lru1's attendance_pulse widget -> testPlugId's attendance_pulse must remain mounted and continue receiving mis:init broadcasts
+    await page
+      .locator(`[data-testid="remove-widget-btn-attendance_pulse"][data-plug-id="${lru1}"]`)
+      .click();
+    await expect(lru1AttendanceCard).toHaveCount(0);
+    await expect(testAttendanceCard).toBeVisible();
+
+    // Toggle theme back to light -> remaining testPlugId:attendance_pulse iframe must still receive mis:init
+    await page.getByTestId('theme-mode-toggle-btn').click();
+    await expect(testWidgetFrame.getByTestId('widget-theme-status')).toContainText('THEME:light');
   });
 });

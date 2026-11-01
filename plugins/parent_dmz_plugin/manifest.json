@@ -54,6 +54,14 @@
       "path": "/",
       "title": "Parent Portal DMZ Sync",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "parent portal",
+        "dmz",
+        "inbox",
+        "absence notice",
+        "guardian sync",
+        "parental responsibility"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -69,6 +77,11 @@
       "path": "/student/:pupil_id",
       "title": "Pupil DMZ Sync History",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "parent messages",
+        "dmz projection",
+        "guardian portal"
+      ],
       "query_params": [
         "tab",
         "second_pupil_id",

@@ -180,6 +180,26 @@ func seedDomain00SystemAndCalendar(tx *sql.Tx, st *qaSeedState) error {
 		}
 	}
 
+	dashboardLayouts := []struct {
+		id, scopeType, scopeTarget, widgetsJSON string
+	}{
+		{"role:ADMIN", "ROLE_DEFAULT", "ADMIN", `[]`},
+		{"role:TEACHER", "ROLE_DEFAULT", "TEACHER", `[]`},
+		{"role:HOD", "ROLE_DEFAULT", "HOD", `[]`},
+		{"role:DSL", "ROLE_DEFAULT", "DSL", `[]`},
+		{"role:SENCO", "ROLE_DEFAULT", "SENCO", `[]`},
+	}
+	for _, dl := range dashboardLayouts {
+		if _, err := tx.Exec(
+			`INSERT INTO dashboard_layouts (id, scope_type, scope_target, widgets_json, updated_by_staff_id)
+			 VALUES (?, ?, ?, ?, 'stf_admin_01')
+			 ON CONFLICT(scope_type, scope_target) DO UPDATE SET widgets_json = excluded.widgets_json`,
+			dl.id, dl.scopeType, dl.scopeTarget, dl.widgetsJSON,
+		); err != nil {
+			return fmt.Errorf("dashboard_layouts insert failed: %w", err)
+		}
+	}
+
 	return nil
 }
 

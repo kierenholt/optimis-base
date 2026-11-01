@@ -61,6 +61,16 @@
       "path": "/",
       "title": "Medical Room & First Aid",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "nurse",
+        "injury",
+        "anaphylaxis",
+        "epipen",
+        "ihcp",
+        "allergy",
+        "medication",
+        "treatment"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -76,6 +86,13 @@
       "path": "/student/:pupil_id",
       "title": "Pupil Medical & First Aid Profile",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "allergy",
+        "anaphylaxis",
+        "ihcp",
+        "first aid log",
+        "emergency contact"
+      ],
       "query_params": [
         "tab",
         "second_pupil_id",

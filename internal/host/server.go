@@ -37,6 +37,7 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 	h.RegisterEgressTestRoutes(mux)
 	h.RegisterCensusTestRoutes(mux)
 	h.RegisterUISDKAndConfigRoutes(mux)
+	h.RegisterDashboardLayoutRoutes(mux)
 	h.RegisterExternalSyncAndTestRoutes(mux)
 	h.RegisterPluginLifecycleRoutes(mux)
 

@@ -1,18 +1,26 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AdminDiagnosticsPanel } from './AdminDiagnosticsPanel';
+import {
+  GlobalCommandPaletteModal,
+  LandingPageTopHalfSearch,
+} from './components/GlobalSearchAndCommandPalette';
 import { HostSidebar } from './components/HostSidebar';
 import { HostTopbar } from './components/HostTopbar';
 import { useHostIframeBridge } from './components/useHostIframeBridge';
 import { DashboardWidgetGridPanel } from './DashboardWidgetGridPanel';
 import { GdprSarPanel } from './GdprSarPanel';
 import { SafeguardingVaultPanel } from './SafeguardingVaultPanel';
-import { applyHostThemeToRoot, ThemeMode } from './themeAndTypes';
+import { applyHostThemeToRoot, PluginViewDescriptor, ThemeMode } from './themeAndTypes';
 import { DashboardSummaryStrip } from './views/DashboardSummaryStrip';
 import { KeepAlivePluginWorkspace } from './views/KeepAlivePluginWorkspace';
 import { useHostAdminAndDslState } from './views/useHostAdminAndDslState';
 import { useHostWorkspaceState } from './views/useHostWorkspaceState';
 
 export function App() {
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState<boolean>(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
+  const [isLoggedOut, setIsLoggedOut] = useState<boolean>(false);
+
   const {
     initialSecondPupilId,
     initialOtherGroupId,
@@ -30,6 +38,8 @@ export function App() {
     configuredAcademicYear,
     entityLinkHandlers,
     installedPlugins,
+    pinnedRecents,
+    setPinnedRecents,
     activePluginId,
     setActivePluginId,
     lruPluginOrder,
@@ -48,6 +58,10 @@ export function App() {
     setIsDashboardEditMode,
     placedWidgets,
     availableWidgets,
+    dashboardLayoutSource,
+    dashboardSaveStatus,
+    selectedAdminRoleTarget,
+    setSelectedAdminRoleTarget,
     activePupilId,
     setActivePupilId,
     activeGroupId,
@@ -63,9 +77,17 @@ export function App() {
     syncBrowserRouteUrl,
     applyInstalledPluginsState,
     activatePluginInKeepAlivePool,
+    handleNavigateHome,
+    handlePinOrUnpinRoute,
+    handleUnpinRoute,
+    handleSelectPinnedRoute,
     handlePlaceWidget,
     handleResizeWidget,
     handleRemoveWidget,
+    handleMoveWidgetUp,
+    handleMoveWidgetDown,
+    handleSaveRoleDefaultLayout,
+    handleAppendWidgetToRoleDefault,
   } = useHostWorkspaceState();
 
   const {
@@ -144,9 +166,24 @@ export function App() {
     activeCaller,
     setActiveCaller,
     initialPersonaParam,
+    setPinnedRecents,
     applyInstalledPluginsState,
     broadcastInitToMountedIframes,
   });
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      } else if (e.key === 'Escape') {
+        setIsCommandPaletteOpen(false);
+        setIsSettingsModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const handleToggleThemeMode = () => {
     const nextMode: ThemeMode = themeMode === 'light' ? 'high-contrast' : 'light';
@@ -155,13 +192,118 @@ export function App() {
     broadcastInitToMountedIframes(undefined, nextMode);
   };
 
+  const activePlugin = installedPlugins.find((p) => p.id === activePluginId);
+
+  const canonicalActivePluginRoute = (() => {
+    if (!activePluginId) {
+      return '';
+    }
+    const cleanSubpath =
+      !activeViewPath || activeViewPath === '/'
+        ? ''
+        : activeViewPath.startsWith('/')
+          ? activeViewPath
+          : `/${activeViewPath}`;
+    const qsParams = new URLSearchParams();
+    for (const [k, v] of Object.entries(activeRouteQuery)) {
+      if (v !== undefined && v !== null && String(v) !== '') {
+        qsParams.set(k, String(v));
+      }
+    }
+    const qs = qsParams.toString();
+    return qs ? `/p/${activePluginId}${cleanSubpath}?${qs}` : `/p/${activePluginId}${cleanSubpath}`;
+  })();
+
+  const isCurrentRoutePinned = Boolean(
+    canonicalActivePluginRoute && pinnedRecents.some((r) => r.route === canonicalActivePluginRoute)
+  );
+
+  const handleTogglePinCurrentRoute = () => {
+    if (!canonicalActivePluginRoute || !activePlugin) {
+      return;
+    }
+    void handlePinOrUnpinRoute(canonicalActivePluginRoute, activePlugin.title);
+  };
+
+  const handleTogglePinSearchView = (
+    pluginId: string,
+    view: PluginViewDescriptor,
+    pluginTitle: string
+  ) => {
+    let resolvedPath = view.path || '/';
+    if (resolvedPath.includes(':pupil_id')) {
+      resolvedPath = activePupilId ? resolvedPath.replace(':pupil_id', activePupilId) : '/';
+    } else if (resolvedPath.includes(':group_id')) {
+      resolvedPath = activeGroupId ? resolvedPath.replace(':group_id', activeGroupId) : '/';
+    } else if (resolvedPath.includes(':staff_id')) {
+      resolvedPath = activeStaffId ? resolvedPath.replace(':staff_id', activeStaffId) : '/';
+    }
+    const route = `/p/${pluginId}${resolvedPath === '/' ? '' : resolvedPath}`;
+    void handlePinOrUnpinRoute(route, view.title || pluginTitle, view.id);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      setIsLoggedOut(true);
+    }
+  };
+
+  const handleSelectSearchViewResult = (pluginId: string, view: PluginViewDescriptor) => {
+    let resolvedPath = view.path || '/';
+    if (resolvedPath.includes(':pupil_id')) {
+      resolvedPath = activePupilId ? resolvedPath.replace(':pupil_id', activePupilId) : '/';
+    } else if (resolvedPath.includes(':group_id')) {
+      resolvedPath = activeGroupId ? resolvedPath.replace(':group_id', activeGroupId) : '/';
+    } else if (resolvedPath.includes(':staff_id')) {
+      resolvedPath = activeStaffId ? resolvedPath.replace(':staff_id', activeStaffId) : '/';
+    }
+    setActiveViewPath(resolvedPath);
+    setActiveRouteQuery({});
+    setRouteError('');
+    activatePluginInKeepAlivePool(pluginId, resolvedPath, {});
+  };
+
+  const handleSelectSearchPupilResult = (pupilId: string) => {
+    const targetPluginId = entityLinkHandlers.student || installedPlugins[0]?.id || '';
+    if (!targetPluginId) {
+      return;
+    }
+    const targetPath = `/student/${pupilId}`;
+    setActivePupilId(pupilId);
+    setActiveViewPath(targetPath);
+    setActiveRouteQuery({});
+    setRouteError('');
+    setActiveEntityContext(`student:${pupilId}`);
+    setDeepLinkNavigationStatus(`DEEP_LINK_OK:student:${pupilId}->${targetPluginId}`);
+    activatePluginInKeepAlivePool(targetPluginId, targetPath, {});
+    broadcastInitToMountedIframes({ pupil_id: pupilId });
+  };
+
+  const handleSelectSearchGroupResult = (groupId: string) => {
+    const targetPluginId = entityLinkHandlers.group || installedPlugins[0]?.id || '';
+    if (!targetPluginId) {
+      return;
+    }
+    const targetPath = `/group/${groupId}`;
+    setActiveGroupId(groupId);
+    setActiveViewPath(targetPath);
+    setActiveRouteQuery({});
+    setRouteError('');
+    setActiveEntityContext(`group:${groupId}`);
+    setDeepLinkNavigationStatus(`DEEP_LINK_OK:group:${groupId}->${targetPluginId}`);
+    activatePluginInKeepAlivePool(targetPluginId, targetPath, {});
+    broadcastInitToMountedIframes({ group_id: groupId });
+  };
+
   return (
     <div
       data-testid="host-shell"
       data-mis-theme={themeMode}
       style={{
         display: 'grid',
-        gridTemplateColumns: '260px 1fr',
+        gridTemplateColumns: '88px 1fr',
         minHeight: '100vh',
         fontFamily: 'var(--mis-font-sans, system-ui, sans-serif)',
         backgroundColor: 'var(--mis-bg-canvas)',
@@ -172,16 +314,24 @@ export function App() {
         schoolURN={schoolURN}
         schoolName={schoolName}
         configuredAcademicYear={configuredAcademicYear}
-        installedPlugins={installedPlugins}
         activePluginId={activePluginId}
+        activeRouteUrl={canonicalActivePluginRoute || activeRouteUrl}
         activeEntityContext={activeEntityContext}
-        onActivatePlugin={activatePluginInKeepAlivePool}
+        pinnedRecents={pinnedRecents}
+        onNavigateHome={handleNavigateHome}
+        onOpenSearch={() => setIsCommandPaletteOpen(true)}
+        onSelectPinnedRoute={handleSelectPinnedRoute}
+        onUnpinRoute={(route) => void handleUnpinRoute(route)}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onLogout={() => void handleLogout()}
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <HostTopbar
           deepLinkNavigationStatus={deepLinkNavigationStatus}
           activeRouteUrl={activeRouteUrl}
+          activePlugin={activePlugin}
+          isCurrentRoutePinned={isCurrentRoutePinned}
           devPersonaSwitcherEnabled={devPersonaSwitcherEnabled}
           availablePersonas={availablePersonas}
           activeCaller={activeCaller}
@@ -190,7 +340,27 @@ export function App() {
           themeMode={themeMode}
           onSelectPersona={handleSelectPersona}
           onToggleThemeMode={handleToggleThemeMode}
+          onTogglePinCurrentRoute={handleTogglePinCurrentRoute}
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         />
+
+        {isLoggedOut && (
+          <div
+            data-testid="host-logged-out-banner"
+            style={{
+              margin: '16px 24px 0',
+              padding: '10px 14px',
+              borderRadius: 'var(--mis-radius-sm, 4px)',
+              border: '1px solid var(--mis-border-strong)',
+              backgroundColor: 'var(--mis-bg-elevated)',
+              color: 'var(--mis-text-primary)',
+              fontSize: '13px',
+              fontWeight: 700,
+            }}
+          >
+            Signed out of active MIS session. Select a persona or refresh to sign back in.
+          </div>
+        )}
 
         <main
           data-testid="host-dashboard-grid"
@@ -206,6 +376,22 @@ export function App() {
             studentEntityLinkHandler={entityLinkHandlers.student}
           />
 
+          <LandingPageTopHalfSearch
+            installedPlugins={installedPlugins}
+            placedWidgets={placedWidgets}
+            entityLinkHandlers={entityLinkHandlers}
+            activePupilId={activePupilId}
+            activeGroupId={activeGroupId}
+            activeStaffId={activeCaller?.staff_id || activeStaffId}
+            referenceDate={initialReferenceDate}
+            academicYearId={configuredAcademicYear}
+            onPlaceWidget={handlePlaceWidget}
+            onSelectViewResult={handleSelectSearchViewResult}
+            onSelectPupilResult={handleSelectSearchPupilResult}
+            onSelectGroupResult={handleSelectSearchGroupResult}
+            onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+          />
+
           <DashboardWidgetGridPanel
             isEditMode={isDashboardEditMode}
             availableWidgets={availableWidgets}
@@ -214,6 +400,15 @@ export function App() {
             onPlaceWidget={handlePlaceWidget}
             onResizeWidget={handleResizeWidget}
             onRemoveWidget={handleRemoveWidget}
+            onMoveWidgetUp={handleMoveWidgetUp}
+            onMoveWidgetDown={handleMoveWidgetDown}
+            isAdmin={hasAdminOrDpoAccess}
+            dashboardLayoutSource={dashboardLayoutSource}
+            dashboardSaveStatus={dashboardSaveStatus}
+            selectedAdminRoleTarget={selectedAdminRoleTarget}
+            onSelectAdminRoleTarget={setSelectedAdminRoleTarget}
+            onSaveRoleDefaultLayout={handleSaveRoleDefaultLayout}
+            onAppendWidgetToRoleDefault={handleAppendWidgetToRoleDefault}
             onRegisterWidgetIframeRef={handleRegisterWidgetIframeRef}
           />
 
@@ -263,6 +458,100 @@ export function App() {
           )}
         </main>
       </div>
+
+      {isSettingsModalOpen && (
+        <div
+          data-testid="host-settings-backdrop"
+          onClick={() => setIsSettingsModalOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 9998,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Host Settings"
+            data-testid="host-settings-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '480px',
+              backgroundColor: 'var(--mis-bg-surface)',
+              color: 'var(--mis-text-primary)',
+              border: '1px solid var(--mis-border-strong)',
+              borderRadius: 'var(--mis-radius-md, 8px)',
+              boxShadow: 'var(--mis-shadow-card)',
+              padding: '20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700 }}>Host Settings &amp; Preferences</h2>
+              <button
+                type="button"
+                data-testid="close-settings-modal-btn"
+                onClick={() => setIsSettingsModalOpen(false)}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 'var(--mis-radius-sm, 4px)',
+                  border: '1px solid var(--mis-border-subtle)',
+                  backgroundColor: 'var(--mis-bg-elevated)',
+                  color: 'var(--mis-text-primary)',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div>
+                <strong>School Name:</strong> {schoolName}
+              </div>
+              <div>
+                <strong>School URN:</strong> {schoolURN}
+              </div>
+              <div>
+                <strong>Academic Year:</strong> {configuredAcademicYear}
+              </div>
+              <div>
+                <strong>Theme Mode:</strong> {themeMode}
+              </div>
+              <div>
+                <strong>Pinned Views:</strong> {pinnedRecents.length}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <GlobalCommandPaletteModal
+        isOpen={isCommandPaletteOpen}
+        installedPlugins={installedPlugins}
+        placedWidgets={placedWidgets}
+        entityLinkHandlers={entityLinkHandlers}
+        activePupilId={activePupilId}
+        activeGroupId={activeGroupId}
+        activeStaffId={activeCaller?.staff_id || activeStaffId}
+        referenceDate={initialReferenceDate}
+        academicYearId={configuredAcademicYear}
+        pinnedRecents={pinnedRecents}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onPlaceWidget={handlePlaceWidget}
+        onSelectViewResult={handleSelectSearchViewResult}
+        onSelectPupilResult={handleSelectSearchPupilResult}
+        onSelectGroupResult={handleSelectSearchGroupResult}
+        onTogglePinView={handleTogglePinSearchView}
+      />
     </div>
   );
 }

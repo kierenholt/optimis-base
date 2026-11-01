@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import {
   ActiveCallerIdentity,
+  getWidgetCompositeKey,
   PlacedDashboardWidget,
   PluginNavEntry,
   ThemeMode,
@@ -112,10 +113,11 @@ export function useHostIframeBridge(params: UseHostIframeBridgeParams) {
 
   const handleRegisterWidgetIframeRef = useCallback(
     (widgetId: string, pluginId: string, el: HTMLIFrameElement | null) => {
+      const key = getWidgetCompositeKey(pluginId, widgetId);
       if (el) {
-        widgetIframeRefs.current.set(widgetId, { pluginId, el });
+        widgetIframeRefs.current.set(key, { pluginId, el });
       } else {
-        widgetIframeRefs.current.delete(widgetId);
+        widgetIframeRefs.current.delete(key);
       }
     },
     []

@@ -297,7 +297,8 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     await page.goto(`/?${query.toString()}`);
 
     await expect(page.getByTestId('host-shell')).toBeVisible();
-    const dmzNavBtn = page.getByTestId('nav-item-plugin-uk.org.optimis.parent.dmz');
+    await page.getByTestId('nav-rail-search').click();
+    const dmzNavBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Parent' }).first();
     await expect(dmzNavBtn).toBeVisible();
     await dmzNavBtn.click();
 
@@ -451,7 +452,8 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
         m1Seeded.reference_date
       )}&academic_year_id=${encodeURIComponent(m1Seeded.academic_year_id)}`
     );
-    await page.getByTestId('nav-item-plugin-uk.org.optimis.parent.dmz').click();
+    await page.getByTestId('nav-rail-search').click();
+    await page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Parent' }).first().click();
 
     const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.parent.dmz"]');
     await pluginFrame.getByTestId('push-dmz-projection-btn').click();

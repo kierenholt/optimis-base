@@ -38,6 +38,24 @@ func TestVerifyPluginDir_ValidAndInvalidBundles(t *testing.T) {
 	if _, err := VerifyPluginDir(brokenDir, nil); err == nil || !strings.Contains(err.Error(), "undeclared_fn") {
 		t.Fatalf("expected VerifyPluginDir to fail on undeclared data-mis-rpc, got: %v", err)
 	}
+
+	// 3. Broken manifest widget with invalid preset width (outside {1, 2}) or missing height should fail fast
+	brokenWidgetDir := filepath.Join(tmpDir, "broken_widget_plugin")
+	if err := copyDirectory(filepath.Join("..", "..", "plugins", "behaviour_plugin"), brokenWidgetDir); err != nil {
+		t.Fatalf("failed to copy plugin: %v", err)
+	}
+	brokenManifestPath := filepath.Join(brokenWidgetDir, "manifest.json")
+	rawManifest, err := os.ReadFile(brokenManifestPath)
+	if err != nil {
+		t.Fatalf("failed to read manifest.json: %v", err)
+	}
+	invalidWidgetManifest := strings.Replace(string(rawManifest), `"width": 2`, `"width": 3`, 1)
+	if err := os.WriteFile(brokenManifestPath, []byte(invalidWidgetManifest), 0o644); err != nil {
+		t.Fatalf("failed to write broken manifest.json: %v", err)
+	}
+	if _, err := VerifyPluginDir(brokenWidgetDir, nil); err == nil || !strings.Contains(err.Error(), "width") {
+		t.Fatalf("expected VerifyPluginDir to fail on invalid widget width, got: %v", err)
+	}
 }
 
 func TestRunPluginTestsAndPackPlugin_ExecutesAndBundles(t *testing.T) {

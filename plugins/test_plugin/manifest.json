@@ -112,6 +112,13 @@
       "path": "/",
       "title": "Pupil & Classroom Workspace",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "pupil",
+        "classroom",
+        "workspace",
+        "notes",
+        "safeguarding postbox"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -130,6 +137,12 @@
       "path": "/student/:pupil_id",
       "title": "Pupil Profile",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "student profile",
+        "pupil record",
+        "guardians",
+        "contacts"
+      ],
       "query_params": [
         "tab",
         "second_pupil_id",
@@ -144,6 +157,11 @@
       "path": "/group/:group_id",
       "title": "Group Roster",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "class list",
+        "group roster",
+        "teaching set"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -158,6 +176,11 @@
       "path": "/staff/:staff_id",
       "title": "Staff Workspace",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "staff profile",
+        "teacher",
+        "colleague"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -171,12 +194,29 @@
     {
       "id": "attendance_pulse",
       "title": "Statutory Attendance Pulse",
-      "entry": "ui/dist/widget.html"
+      "entry": "ui/dist/widget.html",
+      "width": 2,
+      "height": 1,
+      "keywords": [
+        "attendance",
+        "register",
+        "roll call",
+        "absence",
+        "punctuality"
+      ]
     },
     {
       "id": "pastoral_watch",
       "title": "Pastoral & Behaviour Watch",
-      "entry": "ui/dist/widget.html"
+      "entry": "ui/dist/widget.html",
+      "width": 1,
+      "height": 1,
+      "keywords": [
+        "pastoral",
+        "behaviour",
+        "welfare",
+        "conduct"
+      ]
     }
   ]
 }

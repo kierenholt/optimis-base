@@ -247,7 +247,8 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
 
     await expect(page.getByTestId('host-shell')).toBeVisible();
 
-    const navItem = page.getByTestId(`nav-item-plugin-${PLUGIN_ID}`);
+    await page.getByTestId('nav-rail-search').click();
+    const navItem = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Cover' }).first();
     await expect(navItem).toBeVisible();
     await navItem.click();
 

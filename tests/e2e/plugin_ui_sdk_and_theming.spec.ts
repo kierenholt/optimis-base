@@ -156,7 +156,8 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     await expect(page.getByTestId('host-topbar')).toBeVisible();
     await expect(page.getByTestId('host-dashboard-grid')).toBeVisible();
     await expect(page.getByTestId('dashboard-summary-strip')).toBeVisible();
-    await expect(page.getByTestId(`nav-item-plugin-${testPlugId}`)).toBeVisible();
+    await expect(page.getByTestId('nav-rail-home')).toBeVisible();
+    await expect(page.getByTestId('nav-rail-search')).toBeVisible();
 
     const themeIndicator = page.getByTestId('active-theme-mode-indicator');
     await expect(themeIndicator).toHaveText('light');

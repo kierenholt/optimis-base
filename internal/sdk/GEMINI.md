@@ -6,7 +6,7 @@ This package implements the core verification, headless Lua test execution, synt
 
 * [`verify.go`](file:///home/kieren/Documents/code/optimis/internal/sdk/verify.go):
   * [`VerifyPluginDir`](file:///home/kieren/Documents/code/optimis/internal/sdk/verify.go): Executes the 4 automated CI gates before packaging into `.mispkg` (Sections 8B & 10A):
-    1. `MANIFEST_LUA_UI_OK`: Validates `manifest.json`, verifies every declared `endpoints`, `workers`, and `gdpr_hooks` method is a function in `src/init.lua`, and cross-checks all `data-mis-rpc` attributes in `ui/` against `manifest.json` `endpoints`.
+    1. `MANIFEST_LUA_UI_OK`: Validates `manifest.json` (including `views[]` and `widgets[]` `keywords: string[]` validation and strict `widgets[]` preset `"width": 1 | 2` and `"height": 1 | 2` enforcement), verifies every declared `endpoints`, `workers`, and `gdpr_hooks` method is a function in `src/init.lua`, and cross-checks all `data-mis-rpc` attributes in `ui/` against `manifest.json` `endpoints`.
     2. `CSP_OFFLINE_OK`: Scans `ui/` HTML/JS/CSS assets for external `http://` or `https://` URLs violating offline `connect-src 'none'` sandbox rules.
     3. `MIGRATIONS_OK`: Enforces Expand-and-Contract SQL migration rules (forbidding `DROP COLUMN`, `RENAME COLUMN`, and `DROP TABLE`) and executes all `migrations/*.sql` inside an immediate SQLite transaction.
     4. `GDPR_ZERO_ORPHANS_OK`: Provisions a temporary headless `Host`, seeds synthetic rows across every attached plugin table containing a `pupil_id` column, invokes `gdpr_hooks.export_pupil_data` & `gdpr_hooks.purge_pupil_data`, and verifies `0` orphaned rows remain.

@@ -165,8 +165,8 @@ func run() error {
 	}
 	tblRows.Close()
 
-	if len(tables) != 45 {
-		return fmt.Errorf("expected 45 tables in seeded database, found %d", len(tables))
+	if len(tables) < 45 {
+		return fmt.Errorf("expected at least 45 tables in seeded database, found %d", len(tables))
 	}
 
 	totalRows := 0

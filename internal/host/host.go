@@ -50,17 +50,22 @@ type GDPRHooksSpec struct {
 }
 
 type WidgetSpec struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	Entry string `json:"entry"`
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Entry    string   `json:"entry"`
+	Width    int      `json:"width"`
+	Height   int      `json:"height"`
+	Keywords []string `json:"keywords,omitempty"`
 }
 
 type ViewSpec struct {
-	ID          string   `json:"id"`
-	Title       string   `json:"title,omitempty"`
-	Path        string   `json:"path"`
-	Entry       string   `json:"entry"`
-	QueryParams []string `json:"query_params,omitempty"`
+	ID                 string   `json:"id"`
+	Title              string   `json:"title,omitempty"`
+	Path               string   `json:"path"`
+	Entry              string   `json:"entry"`
+	QueryParams        []string `json:"query_params,omitempty"`
+	AllowedQueryParams []string `json:"allowed_query_params,omitempty"`
+	Keywords           []string `json:"keywords,omitempty"`
 }
 
 type Manifest struct {

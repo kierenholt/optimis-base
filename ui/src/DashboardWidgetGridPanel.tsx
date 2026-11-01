@@ -1,5 +1,9 @@
 import React from 'react';
-import { PlacedDashboardWidget, PluginWidgetDescriptor } from './themeAndTypes';
+import {
+  getWidgetCompositeKey,
+  PlacedDashboardWidget,
+  PluginWidgetDescriptor,
+} from './themeAndTypes';
 
 export interface DashboardWidgetGridPanelProps {
   isEditMode: boolean;
@@ -7,10 +11,21 @@ export interface DashboardWidgetGridPanelProps {
   placedWidgets: PlacedDashboardWidget[];
   onToggleEditMode: () => void;
   onPlaceWidget: (widget: PluginWidgetDescriptor) => void;
-  onResizeWidget: (widgetId: string, colSpan: number, rowSpan: number) => void;
-  onRemoveWidget: (widgetId: string) => void;
+  onResizeWidget?: (pluginId: string, widgetId: string, colSpan: number, rowSpan: number) => void;
+  onRemoveWidget: (pluginId: string, widgetId: string) => void;
+  onMoveWidgetUp?: (pluginId: string, widgetId: string) => void;
+  onMoveWidgetDown?: (pluginId: string, widgetId: string) => void;
+  isAdmin?: boolean;
+  dashboardLayoutSource?: string;
+  dashboardSaveStatus?: string;
+  selectedAdminRoleTarget?: string;
+  onSelectAdminRoleTarget?: (roleId: string) => void;
+  onSaveRoleDefaultLayout?: (roleId: string) => void;
+  onAppendWidgetToRoleDefault?: (roleId: string, widget: PluginWidgetDescriptor) => void;
   onRegisterWidgetIframeRef: (widgetId: string, pluginId: string, el: HTMLIFrameElement | null) => void;
 }
+
+const ADMIN_ROLE_TARGETS = ['TEACHER', 'HOD', 'DSL', 'ADMIN', 'SENCO', 'SUPPORT'];
 
 export const DashboardWidgetGridPanel: React.FC<DashboardWidgetGridPanelProps> = ({
   isEditMode,
@@ -18,8 +33,16 @@ export const DashboardWidgetGridPanel: React.FC<DashboardWidgetGridPanelProps> =
   placedWidgets,
   onToggleEditMode,
   onPlaceWidget,
-  onResizeWidget,
   onRemoveWidget,
+  onMoveWidgetUp,
+  onMoveWidgetDown,
+  isAdmin = false,
+  dashboardLayoutSource = 'SYSTEM_FALLBACK',
+  dashboardSaveStatus = '',
+  selectedAdminRoleTarget = 'TEACHER',
+  onSelectAdminRoleTarget,
+  onSaveRoleDefaultLayout,
+  onAppendWidgetToRoleDefault,
   onRegisterWidgetIframeRef,
 }) => {
   return (
@@ -45,7 +68,7 @@ export const DashboardWidgetGridPanel: React.FC<DashboardWidgetGridPanelProps> =
           flexWrap: 'wrap',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <h2 style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>
             Home Dashboard Mini-Iframe Widgets (N×M Grid)
           </h2>
@@ -62,6 +85,35 @@ export const DashboardWidgetGridPanel: React.FC<DashboardWidgetGridPanelProps> =
           >
             {isEditMode ? 'EDIT_MODE' : 'VIEW_MODE'}
           </span>
+          <span
+            data-testid="dashboard-layout-source"
+            style={{
+              padding: '2px 8px',
+              borderRadius: 'var(--mis-radius-sm, 4px)',
+              backgroundColor: 'var(--mis-bg-elevated)',
+              border: '1px solid var(--mis-border-subtle)',
+              fontSize: '11px',
+              fontWeight: 600,
+              color: 'var(--mis-text-muted)',
+            }}
+          >
+            {dashboardLayoutSource}
+          </span>
+          {dashboardSaveStatus && (
+            <span
+              data-testid="dashboard-layout-save-status"
+              style={{
+                padding: '2px 8px',
+                borderRadius: 'var(--mis-radius-sm, 4px)',
+                backgroundColor: 'var(--mis-bg-elevated)',
+                border: '1px solid var(--mis-border-subtle)',
+                fontSize: '11px',
+                fontWeight: 700,
+              }}
+            >
+              {dashboardSaveStatus}
+            </span>
+          )}
         </div>
 
         <button
@@ -83,6 +135,78 @@ export const DashboardWidgetGridPanel: React.FC<DashboardWidgetGridPanelProps> =
         </button>
       </div>
 
+      {isAdmin && (
+        <div
+          data-testid="admin-role-dashboard-controls"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            flexWrap: 'wrap',
+            padding: '10px 12px',
+            backgroundColor: 'var(--mis-bg-elevated)',
+            border: '1px solid var(--mis-border-subtle)',
+            borderRadius: 'var(--mis-radius-sm, 4px)',
+          }}
+        >
+          <span style={{ fontSize: '12px', fontWeight: 700 }}>Admin Role Defaults (core.db):</span>
+          <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            Target Role:
+            <select
+              data-testid="admin-role-default-select"
+              value={selectedAdminRoleTarget}
+              onChange={(e) => onSelectAdminRoleTarget?.(e.target.value)}
+              style={{ fontSize: '12px', padding: '2px 6px' }}
+            >
+              {ADMIN_ROLE_TARGETS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            data-testid="admin-save-role-default-btn"
+            onClick={() => onSaveRoleDefaultLayout?.(selectedAdminRoleTarget)}
+            style={{
+              padding: '4px 10px',
+              backgroundColor: 'var(--mis-brand-primary)',
+              color: 'var(--mis-brand-primary-fg)',
+              border: '1px solid var(--mis-border-subtle)',
+              borderRadius: 'var(--mis-radius-sm, 4px)',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Save Current Grid as {selectedAdminRoleTarget} Default
+          </button>
+          {availableWidgets.map((w) => (
+            <button
+              key={`append:${getWidgetCompositeKey(w.plugin_id, w.id)}`}
+              type="button"
+              data-testid={`admin-append-to-role-btn-${w.id}`}
+              data-plug-id={w.plugin_id}
+              data-widget-key={getWidgetCompositeKey(w.plugin_id, w.id)}
+              onClick={() => onAppendWidgetToRoleDefault?.(selectedAdminRoleTarget, w)}
+              style={{
+                padding: '4px 8px',
+                backgroundColor: 'var(--mis-bg-surface)',
+                color: 'var(--mis-text-primary)',
+                border: '1px solid var(--mis-border-subtle)',
+                borderRadius: 'var(--mis-radius-sm, 4px)',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              + Append {w.title} to {selectedAdminRoleTarget}
+            </button>
+          ))}
+        </div>
+      )}
+
       {isEditMode && (
         <div
           data-testid="dashboard-widget-catalog"
@@ -99,12 +223,17 @@ export const DashboardWidgetGridPanel: React.FC<DashboardWidgetGridPanelProps> =
         >
           <span style={{ fontSize: '12px', fontWeight: 600 }}>Available Manifest Widgets:</span>
           {availableWidgets.map((w) => {
-            const alreadyPlaced = placedWidgets.some((pw) => pw.id === w.id);
+            const compositeKey = getWidgetCompositeKey(w.plugin_id, w.id);
+            const alreadyPlaced = placedWidgets.some(
+              (pw) => pw.plugin_id === w.plugin_id && pw.id === w.id
+            );
             return (
               <button
-                key={`${w.plugin_id}:${w.id}`}
+                key={compositeKey}
                 type="button"
                 data-testid={`place-widget-btn-${w.id}`}
+                data-plug-id={w.plugin_id}
+                data-widget-key={compositeKey}
                 onClick={() => onPlaceWidget(w)}
                 disabled={alreadyPlaced}
                 style={{
@@ -131,106 +260,168 @@ export const DashboardWidgetGridPanel: React.FC<DashboardWidgetGridPanelProps> =
           display: 'grid',
           gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
           gridAutoRows: 'minmax(150px, auto)',
+          gridAutoFlow: 'row',
           gap: '12px',
         }}
       >
-        {placedWidgets.map((w) => (
-          <div
-            key={w.id}
-            data-testid={`placed-widget-card-${w.id}`}
-            data-col-span={String(w.colSpan)}
-            data-row-span={String(w.rowSpan)}
-            style={{
-              gridColumn: `span ${w.colSpan}`,
-              gridRow: `span ${w.rowSpan}`,
-              backgroundColor: 'var(--mis-bg-elevated)',
-              border: '1px solid var(--mis-border-subtle)',
-              borderRadius: 'var(--mis-radius-md, 8px)',
-              padding: '10px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-            }}
-          >
+        {placedWidgets.map((w, idx) => {
+          const compositeKey = getWidgetCompositeKey(w.plugin_id, w.id);
+          const isPermitted = w.permitted !== false;
+          const presetWidth = w.width === 1 || w.width === 2 ? w.width : w.colSpan;
+          const presetHeight = w.height === 1 || w.height === 2 ? w.height : w.rowSpan;
+          return (
             <div
+              key={compositeKey}
+              data-testid={`placed-widget-card-${w.id}`}
+              data-order-index={String(idx)}
+              data-plug-id={w.plugin_id}
+              data-widget-id={w.id}
+              data-widget-key={compositeKey}
+              data-width={String(presetWidth)}
+              data-height={String(presetHeight)}
+              data-col-span={String(presetWidth)}
+              data-row-span={String(presetHeight)}
               style={{
+                gridColumn: `span ${presetWidth}`,
+                gridRow: `span ${presetHeight}`,
+                backgroundColor: 'var(--mis-bg-elevated)',
+                border: '1px solid var(--mis-border-subtle)',
+                borderRadius: 'var(--mis-radius-md, 8px)',
+                padding: '10px',
                 display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
+                flexDirection: 'column',
                 gap: '8px',
-                flexWrap: 'wrap',
               }}
             >
-              <span style={{ fontSize: '12px', fontWeight: 700 }}>
-                {w.title} ({w.colSpan}×{w.rowSpan})
-              </span>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span style={{ fontSize: '12px', fontWeight: 700 }}>
+                  {w.title} ({presetWidth}×{presetHeight})
+                </span>
 
-              {isEditMode && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
-                  <label>
-                    Cols:{' '}
-                    <select
-                      data-testid={`resize-widget-col-select-${w.id}`}
-                      value={String(w.colSpan)}
-                      onChange={(e) => onResizeWidget(w.id, Number(e.target.value), w.rowSpan)}
+                {isEditMode && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      data-testid={`move-widget-up-btn-${w.id}`}
+                      data-plug-id={w.plugin_id}
+                      data-widget-key={compositeKey}
+                      disabled={idx === 0}
+                      onClick={() => onMoveWidgetUp?.(w.plugin_id, w.id)}
+                      style={{
+                        padding: '2px 6px',
+                        backgroundColor: 'var(--mis-bg-surface)',
+                        color: 'var(--mis-text-primary)',
+                        border: '1px solid var(--mis-border-subtle)',
+                        borderRadius: 'var(--mis-radius-sm, 4px)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: idx === 0 ? 'default' : 'pointer',
+                      }}
                     >
-                      <option value="1">1</option>
-                      <option value="2">2</option>
-                      <option value="3">3</option>
-                      <option value="4">4</option>
-                    </select>
-                  </label>
-                  <label>
-                    Rows:{' '}
-                    <select
-                      data-testid={`resize-widget-row-select-${w.id}`}
-                      value={String(w.rowSpan)}
-                      onChange={(e) => onResizeWidget(w.id, w.colSpan, Number(e.target.value))}
+                      Move Up
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`move-widget-down-btn-${w.id}`}
+                      data-plug-id={w.plugin_id}
+                      data-widget-key={compositeKey}
+                      disabled={idx === placedWidgets.length - 1}
+                      onClick={() => onMoveWidgetDown?.(w.plugin_id, w.id)}
+                      style={{
+                        padding: '2px 6px',
+                        backgroundColor: 'var(--mis-bg-surface)',
+                        color: 'var(--mis-text-primary)',
+                        border: '1px solid var(--mis-border-subtle)',
+                        borderRadius: 'var(--mis-radius-sm, 4px)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: idx === placedWidgets.length - 1 ? 'default' : 'pointer',
+                      }}
                     >
-                      <option value="1">1</option>
-                      <option value="2">2</option>
-                      <option value="3">3</option>
-                      <option value="4">4</option>
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    data-testid={`remove-widget-btn-${w.id}`}
-                    onClick={() => onRemoveWidget(w.id)}
-                    style={{
-                      padding: '2px 6px',
-                      backgroundColor: 'var(--mis-status-danger-bg)',
-                      color: 'var(--mis-status-danger)',
-                      border: '1px solid var(--mis-border-subtle)',
-                      borderRadius: 'var(--mis-radius-sm, 4px)',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Remove
-                  </button>
+                      Move Down
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`remove-widget-btn-${w.id}`}
+                      data-plug-id={w.plugin_id}
+                      data-widget-key={compositeKey}
+                      onClick={() => onRemoveWidget(w.plugin_id, w.id)}
+                      style={{
+                        padding: '2px 6px',
+                        backgroundColor: 'var(--mis-status-danger-bg)',
+                        color: 'var(--mis-status-danger)',
+                        border: '1px solid var(--mis-border-subtle)',
+                        borderRadius: 'var(--mis-radius-sm, 4px)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {isPermitted ? (
+                <iframe
+                  ref={(el) => onRegisterWidgetIframeRef(w.id, w.plugin_id, el)}
+                  data-testid={`widget-iframe-${w.id}`}
+                  data-plug-id={w.plugin_id}
+                  data-widget-key={compositeKey}
+                  sandbox="allow-scripts"
+                  src={w.entry_url}
+                  title={`Widget: ${w.title}`}
+                  style={{
+                    width: '100%',
+                    flex: 1,
+                    minHeight: `${w.rowSpan * 110}px`,
+                    border: '1px solid var(--mis-border-subtle)',
+                    borderRadius: 'var(--mis-radius-sm, 4px)',
+                    backgroundColor: 'var(--mis-bg-surface)',
+                  }}
+                />
+              ) : (
+                <div
+                  data-testid={`widget-permission-error-card-${w.id}`}
+                  data-plug-id={w.plugin_id}
+                  data-widget-id={w.id}
+                  data-error-code={w.error_code || 'WIDGET_PERMISSION_DENIED'}
+                  style={{
+                    width: '100%',
+                    flex: 1,
+                    minHeight: `${w.rowSpan * 110}px`,
+                    border: '1px solid var(--mis-status-danger, #b31412)',
+                    borderRadius: 'var(--mis-radius-sm, 4px)',
+                    backgroundColor: 'var(--mis-status-danger-bg, #fce8e6)',
+                    color: 'var(--mis-status-danger, #a50e0e)',
+                    padding: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    fontSize: '12px',
+                  }}
+                >
+                  <div style={{ fontWeight: 700 }}>
+                    {w.error_title || 'Widget Access Restricted or Revoked'}
+                  </div>
+                  <div style={{ fontSize: '11px' }}>
+                    Widget <code>{w.id}</code> (Plugin <code>{w.plugin_id}</code>) is not permitted for your active role/scopes or has been revoked ({w.error_code || 'WIDGET_PERMISSION_DENIED'}).
+                  </div>
                 </div>
               )}
             </div>
-
-            <iframe
-              ref={(el) => onRegisterWidgetIframeRef(w.id, w.plugin_id, el)}
-              data-testid={`widget-iframe-${w.id}`}
-              sandbox="allow-scripts"
-              src={w.entry_url}
-              title={`Widget: ${w.title}`}
-              style={{
-                width: '100%',
-                flex: 1,
-                minHeight: `${w.rowSpan * 110}px`,
-                border: '1px solid var(--mis-border-subtle)',
-                borderRadius: 'var(--mis-radius-sm, 4px)',
-                backgroundColor: 'var(--mis-bg-surface)',
-              }}
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

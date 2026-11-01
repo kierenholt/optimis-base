@@ -280,7 +280,8 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     await page.goto(`/?${query.toString()}`);
 
     await expect(page.getByTestId('host-shell')).toBeVisible();
-    const markbookNavBtn = page.getByTestId('nav-item-plugin-uk.org.optimis.assessment.markbook');
+    await page.getByTestId('nav-rail-search').click();
+    const markbookNavBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Markbook' }).first();
     await expect(markbookNavBtn).toBeVisible();
     await markbookNavBtn.click();
 

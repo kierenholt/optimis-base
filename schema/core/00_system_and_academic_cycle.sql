@@ -108,3 +108,18 @@ CREATE TABLE IF NOT EXISTS data_retention_policies (
     retention_years INTEGER NOT NULL,
     statutory_basis TEXT NOT NULL                      -- e.g. 'KCSIE', 'DfE School Attendance Regulations', 'SEND_CODE_OF_PRACTICE'
 );
+
+-- @domain: system
+-- @dal_scope: host.internal
+-- @description: Ordered 1D JSON array of { plug_id, widget_id } dashboard widgets per role default or staff override (GEMINI.md §9.5 / 9B).
+CREATE TABLE IF NOT EXISTS dashboard_layouts (
+    id TEXT PRIMARY KEY,                               -- e.g. 'role:TEACHER' or 'staff:stf_tch_7a'
+    scope_type TEXT NOT NULL CHECK (scope_type IN ('ROLE_DEFAULT', 'STAFF')),
+    scope_target TEXT NOT NULL,                        -- role_id (e.g. 'TEACHER', 'ADMIN') or staff_id (e.g. 'stf_tch_7a')
+    widgets_json TEXT NOT NULL DEFAULT '[]',           -- Ordered 1D JSON array: [{"plug_id":"...","widget_id":"..."}]
+    updated_by_staff_id TEXT,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    UNIQUE (scope_type, scope_target)
+);
+CREATE INDEX IF NOT EXISTS idx_dashboard_layouts_scope ON dashboard_layouts(scope_type, scope_target);
+

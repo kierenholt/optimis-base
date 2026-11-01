@@ -285,7 +285,8 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     await page.goto(`/?${params.toString()}`);
     await expect(page.getByTestId('host-shell')).toBeVisible();
 
-    const lmsNavBtn = page.getByTestId(`nav-item-plugin-${PLUGIN_ID}`);
+    await page.getByTestId('nav-rail-search').click();
+    const lmsNavBtn = page.getByTestId(`command-palette-result-view-${lmsPluginNav.id}-home`);
     await expect(lmsNavBtn).toBeVisible();
     await lmsNavBtn.click();
 

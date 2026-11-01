@@ -61,6 +61,13 @@
       "path": "/",
       "title": "Sparx Maths Partner Sync",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "sparx",
+        "maths",
+        "homework",
+        "completion",
+        "partner sync"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -76,6 +83,11 @@
       "path": "/group/:group_id",
       "title": "Group Homework Sync",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "sparx homework",
+        "maths scores",
+        "sync group homework"
+      ],
       "query_params": [
         "tab",
         "pupil_id",

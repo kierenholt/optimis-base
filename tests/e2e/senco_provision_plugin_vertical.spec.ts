@@ -303,8 +303,9 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
       widgetFrame.getByTestId(`widget-sen-badge-${m1Seed.second_active_pupil_id}`)
     ).toContainText('K (SPLD)');
 
-    // 3. SENCO navigates to the SEN Provision workspace tab and logs an IEP classroom adjustment & TA allocation for the E (EHCP) pupil (`active_pupil_id`, Ada Lovelace)
-    const senNavBtn = page.getByTestId(`nav-item-plugin-${senPlugId}`);
+    // 3. SENCO navigates to the SEN Provision workspace tab via Global Search in the Narrow Icon Rail and logs an IEP classroom adjustment & TA allocation for the E (EHCP) pupil (`active_pupil_id`, Ada Lovelace)
+    await page.getByTestId('nav-rail-search').click();
+    const senNavBtn = page.getByTestId(`command-palette-result-view-${senPlugId}-home`);
     await expect(senNavBtn).toBeVisible();
     await senNavBtn.click();
 

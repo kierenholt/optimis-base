@@ -296,8 +296,9 @@ test.describe('Strict Opaque URL Routing (/p/<plugid>), Manifest Views Contract 
     expect(domHtml).not.toContain('uk.org.optimis.sen.provision');
     expect(domHtml).not.toContain('uk.org.optimis.test');
 
-    // 4. Click the SEN Provision plugin in the sidebar using opaque senPlugId
-    const senNavBtn = page.getByTestId(`nav-item-plugin-${senPlugId}`);
+    // 4. Open Global Search from the Narrow Icon Rail and select the SEN Provision plugin view using opaque senPlugId
+    await page.getByTestId('nav-rail-search').click();
+    const senNavBtn = page.getByTestId(`command-palette-result-view-${senPlugId}-home`);
     await expect(senNavBtn).toBeVisible();
     await senNavBtn.click();
 

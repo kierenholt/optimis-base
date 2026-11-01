@@ -39,6 +39,15 @@
       "path": "/",
       "title": "Timetable & Statutory Attendance",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "register",
+        "roll call",
+        "mark attendance",
+        "schedule",
+        "lessons",
+        "am pm session",
+        "lateness"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -55,6 +64,12 @@
       "path": "/group/:group_id",
       "title": "Class Session Register",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "take register",
+        "session attendance",
+        "class roll call",
+        "mark present"
+      ],
       "query_params": [
         "tab",
         "pupil_id",

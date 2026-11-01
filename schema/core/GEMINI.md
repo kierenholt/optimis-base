@@ -10,8 +10,8 @@ This directory defines the 45-table modular SQLite schema for `core.db`, execute
 
 ## Key Files
 
-* [`SCHEMA_MAP.md`](file:///home/kieren/Documents/code/optimis/schema/core/SCHEMA_MAP.md): Master agent navigation map indexing all 45 tables and 75 foreign keys across domains `00`–`06`.
-* [`00_system_and_academic_cycle.sql`](file:///home/kieren/Documents/code/optimis/schema/core/00_system_and_academic_cycle.sql): `__system_config`, `academic_years`, `academic_terms`, `days_of_week`, `academic_special_days`, `alert_levels`, `data_retention_policies`.
+* [`SCHEMA_MAP.md`](file:///home/kieren/Documents/code/optimis/schema/core/SCHEMA_MAP.md): Master agent navigation map indexing all 46 tables and 75 foreign keys across domains `00`–`06`.
+* [`00_system_and_academic_cycle.sql`](file:///home/kieren/Documents/code/optimis/schema/core/00_system_and_academic_cycle.sql): `__system_config`, `academic_years`, `academic_terms`, `days_of_week`, `academic_special_days`, `alert_levels`, `data_retention_policies`, `dashboard_layouts`.
 * [`01_identity_pupils_and_staff.sql`](file:///home/kieren/Documents/code/optimis/schema/core/01_identity_pupils_and_staff.sql): `roles`, `persons`, `person_roles`, `pupils` (DfE CBDS), `pupil_year_enrolments`, `staff` (SWC/SCR), `staff_contracts`, `staff_absences`, `staff_cover_assignments`.
 * [`02_households_and_guardians.sql`](file:///home/kieren/Documents/code/optimis/schema/core/02_households_and_guardians.sql): `households` (BS7666 / `is_confidential_address`), `household_memberships`, `guardian_relationships` (`has_parental_responsibility` & `court_order_restricted` lockdown `CHECK`).
 * [`03_groups_and_timetable.sql`](file:///home/kieren/Documents/code/optimis/schema/core/03_groups_and_timetable.sql): `year_groups`, `houses`, `departments`, `rooms`, `courses`, `groups`, `group_pupil_memberships`, `group_staff_assignments`, `timetable_periods`, `timetable_slots`.

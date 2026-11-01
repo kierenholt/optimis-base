@@ -34,6 +34,16 @@
       "path": "/",
       "title": "SEN Register Overview",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "sen",
+        "send",
+        "senco",
+        "ehcp",
+        "iep",
+        "differentiation",
+        "special educational needs",
+        "ta support"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -49,6 +59,14 @@
       "path": "/student/:pupil_id",
       "title": "Pupil SEN & IEP Profile",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "iep",
+        "ehcp",
+        "sen passport",
+        "adjustments",
+        "teaching assistant",
+        "send profile"
+      ],
       "query_params": [
         "tab",
         "second_pupil_id",
@@ -63,6 +81,12 @@
       "path": "/group/:group_id",
       "title": "Classroom SEN Differentiation",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "differentiation",
+        "classroom adjustments",
+        "sen strategies",
+        "group send"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -77,7 +101,18 @@
     {
       "id": "sen_differentiation",
       "title": "Classroom SEN Differentiation",
-      "entry": "ui/dist/widget.html"
+      "entry": "ui/dist/widget.html",
+      "width": 2,
+      "height": 1,
+      "keywords": [
+        "sen",
+        "send",
+        "ehcp",
+        "iep",
+        "differentiation",
+        "strategies",
+        "adjustments"
+      ]
     }
   ]
 }

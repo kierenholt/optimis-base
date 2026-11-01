@@ -34,6 +34,16 @@
       "path": "/",
       "title": "Behaviour & Pastoral Points",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "merit",
+        "demerit",
+        "detention",
+        "sanction",
+        "reward",
+        "conduct",
+        "pastoral",
+        "incident"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -49,6 +59,14 @@
       "path": "/student/:pupil_id",
       "title": "Pupil Behaviour Profile",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "merit",
+        "demerit",
+        "detention",
+        "sanction",
+        "pupil conduct",
+        "behaviour log"
+      ],
       "query_params": [
         "tab",
         "second_pupil_id",
@@ -63,6 +81,12 @@
       "path": "/group/:group_id",
       "title": "Group Behaviour Summary",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "class behaviour",
+        "group merits",
+        "form conduct",
+        "pastoral summary"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -77,7 +101,17 @@
     {
       "id": "behaviour_summary",
       "title": "Behaviour & Merits Summary",
-      "entry": "ui/dist/widget.html"
+      "entry": "ui/dist/widget.html",
+      "width": 2,
+      "height": 1,
+      "keywords": [
+        "merit",
+        "demerit",
+        "detention",
+        "sanction",
+        "pastoral",
+        "reward points"
+      ]
     }
   ]
 }

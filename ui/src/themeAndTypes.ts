@@ -134,15 +134,55 @@ export interface PluginWidgetDescriptor {
   title: string;
   entry: string;
   entry_url: string;
+  width: 1 | 2;
+  height: 1 | 2;
+  keywords?: string[];
 }
 
 export interface PluginViewDescriptor {
   id: string;
+  plugin_id?: string;
   path: string;
   title?: string;
   entry: string;
   entry_url: string;
   query_params?: string[];
+  keywords?: string[];
+}
+
+export interface SearchPupilResult {
+  id: string;
+  upn: string;
+  first_name: string;
+  last_name: string;
+  preferred_first_name?: string;
+  preferred_last_name?: string;
+  nc_year_group?: string;
+}
+
+export interface SearchGroupResult {
+  id: string;
+  code: string;
+  name: string;
+  group_type: string;
+}
+
+export interface DashboardLayoutItem {
+  plug_id: string;
+  widget_id: string;
+}
+
+export interface ResolvedDashboardWidgetSlot {
+  plug_id: string;
+  widget_id: string;
+  permitted: boolean;
+  error_code?: string;
+  error_title?: string;
+  title?: string;
+  entry?: string;
+  entry_url?: string;
+  width?: 1 | 2;
+  height?: 1 | 2;
 }
 
 export interface PlacedDashboardWidget {
@@ -151,8 +191,17 @@ export interface PlacedDashboardWidget {
   title: string;
   entry: string;
   entry_url: string;
-  colSpan: number;
-  rowSpan: number;
+  width?: 1 | 2;
+  height?: 1 | 2;
+  colSpan: 1 | 2;
+  rowSpan: 1 | 2;
+  permitted?: boolean;
+  error_code?: string;
+  error_title?: string;
+}
+
+export function getWidgetCompositeKey(pluginId: string, widgetId: string): string {
+  return `${pluginId}:${widgetId}`;
 }
 
 export interface PluginNavEntry {
@@ -163,6 +212,13 @@ export interface PluginNavEntry {
   permitted_methods: string[];
   widgets?: PluginWidgetDescriptor[];
   views?: PluginViewDescriptor[];
+}
+
+export interface PinnedRecentEntry {
+  route: string;
+  title: string;
+  plug_id: string;
+  view_id?: string;
 }
 
 export interface StaffPersonaSummary {

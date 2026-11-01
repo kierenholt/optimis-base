@@ -187,7 +187,8 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
 
     await expect(page.getByTestId('host-shell')).toBeVisible();
 
-    const navItem = page.getByTestId(`nav-item-plugin-${PLUGIN_ID}`);
+    await page.getByTestId('nav-rail-search').click();
+    const navItem = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Timetable' }).first();
     await expect(navItem).toBeVisible();
     await navItem.click();
 
@@ -362,7 +363,8 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
     });
     await page.goto(`/?${params.toString()}`);
 
-    await page.getByTestId(`nav-item-plugin-${PLUGIN_ID}`).click();
+    await page.getByTestId('nav-rail-search').click();
+    await page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Timetable' }).first().click();
     const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${PLUGIN_ID}"]`);
 
     const unauthorizedGroupBtn = pluginFrame.getByTestId('load-other-group-roster-btn');

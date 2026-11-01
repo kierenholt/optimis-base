@@ -4,6 +4,7 @@ import { InitContextOverrides } from '../components/iframeMessageHandlers';
 import {
   ActiveCallerIdentity,
   DecryptedSafeguardingNote,
+  PinnedRecentEntry,
   PluginNavEntry,
   SafeguardingNoteEnvelope,
   SARSection,
@@ -18,6 +19,7 @@ export interface UseHostAdminAndDslStateParams {
   activeCaller: ActiveCallerIdentity | null;
   setActiveCaller: React.Dispatch<React.SetStateAction<ActiveCallerIdentity | null>>;
   initialPersonaParam: string;
+  setPinnedRecents?: React.Dispatch<React.SetStateAction<PinnedRecentEntry[]>>;
   applyInstalledPluginsState: (
     plugins: PluginNavEntry[],
     serverEntityHandlers?: Record<string, string>
@@ -38,6 +40,7 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
     activeCaller,
     setActiveCaller,
     initialPersonaParam,
+    setPinnedRecents,
     applyInstalledPluginsState,
     broadcastInitToMountedIframes,
   } = params;
@@ -215,6 +218,9 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
     const uiRes = await fetch(`/api/system/ui-config?staff_id=${encodeURIComponent(resolvedStaffId)}`);
     if (uiRes.ok) {
       const uiBody = await uiRes.json();
+      if (uiBody && uiBody.ok && Array.isArray(uiBody.pinned_recents) && setPinnedRecents) {
+        setPinnedRecents(uiBody.pinned_recents as PinnedRecentEntry[]);
+      }
       if (uiBody && uiBody.ok && Array.isArray(uiBody.plugins)) {
         const serverHandlers =
           uiBody.entity_link_handlers && typeof uiBody.entity_link_handlers === 'object'

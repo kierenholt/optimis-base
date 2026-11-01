@@ -74,6 +74,14 @@
       "path": "/",
       "title": "Educational Visits & Trip Consent",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "trip",
+        "excursion",
+        "educational visit",
+        "consent",
+        "emergency pack",
+        "outing"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -89,6 +97,11 @@
       "path": "/group/:group_id",
       "title": "Group Trip Consent & Manifest",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "trip manifest",
+        "group consent",
+        "emergency pack"
+      ],
       "query_params": [
         "tab",
         "pupil_id",

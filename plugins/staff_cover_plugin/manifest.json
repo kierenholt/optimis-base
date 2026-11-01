@@ -75,6 +75,13 @@
       "path": "/",
       "title": "Staff Absence & Cover Manager",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "cover",
+        "supply teacher",
+        "staff absence",
+        "substitute",
+        "assign cover"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -92,6 +99,11 @@
       "path": "/group/:group_id",
       "title": "Cover Class Roster",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "cover register",
+        "supply class",
+        "cover roster"
+      ],
       "query_params": [
         "tab",
         "pupil_id",

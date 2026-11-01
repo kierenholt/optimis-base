@@ -1,9 +1,17 @@
 import React from 'react';
-import { ActiveCallerIdentity, StaffPersonaSummary, ThemeMode } from '../themeAndTypes';
+import {
+  ActiveCallerIdentity,
+  PluginNavEntry,
+  StaffPersonaSummary,
+  ThemeMode,
+} from '../themeAndTypes';
 
 export interface HostTopbarProps {
   deepLinkNavigationStatus: string;
   activeRouteUrl: string;
+  activePlugin?: PluginNavEntry | null;
+  isCurrentRoutePinned?: boolean;
+  onTogglePinCurrentRoute?: () => void;
   devPersonaSwitcherEnabled: boolean;
   availablePersonas: StaffPersonaSummary[];
   activeCaller: ActiveCallerIdentity | null;
@@ -12,11 +20,15 @@ export interface HostTopbarProps {
   themeMode: ThemeMode;
   onSelectPersona: (staffId: string) => Promise<void>;
   onToggleThemeMode: () => void;
+  onOpenCommandPalette?: () => void;
 }
 
 export const HostTopbar: React.FC<HostTopbarProps> = ({
   deepLinkNavigationStatus,
   activeRouteUrl,
+  activePlugin,
+  isCurrentRoutePinned,
+  onTogglePinCurrentRoute,
   devPersonaSwitcherEnabled,
   availablePersonas,
   activeCaller,
@@ -25,6 +37,7 @@ export const HostTopbar: React.FC<HostTopbarProps> = ({
   themeMode,
   onSelectPersona,
   onToggleThemeMode,
+  onOpenCommandPalette,
 }) => {
   return (
     <header
@@ -71,9 +84,85 @@ export const HostTopbar: React.FC<HostTopbarProps> = ({
         >
           {activeRouteUrl}
         </span>
+        {activePlugin && (
+          <span
+            data-testid="topbar-active-plugin-badge"
+            data-plug-id={activePlugin.id}
+            data-permitted-count={String(activePlugin.permitted_methods.length)}
+            data-permitted-methods={activePlugin.permitted_methods.join(',')}
+            style={{
+              padding: '3px 8px',
+              borderRadius: 'var(--mis-radius-sm, 4px)',
+              backgroundColor: 'var(--mis-bg-elevated)',
+              border: '1px solid var(--mis-border-subtle)',
+              fontSize: '12px',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span>{activePlugin.title}</span>
+            <span
+              data-testid="topbar-active-plugin-methods-count"
+              style={{
+                fontSize: '11px',
+                padding: '1px 6px',
+                borderRadius: '999px',
+                backgroundColor: 'var(--mis-brand-primary)',
+                color: 'var(--mis-brand-primary-fg)',
+              }}
+            >
+              {activePlugin.permitted_methods.length}
+            </span>
+          </span>
+        )}
+        {activePlugin && onTogglePinCurrentRoute && (
+          <button
+            type="button"
+            data-testid="topbar-pin-view-btn"
+            onClick={onTogglePinCurrentRoute}
+            style={{
+              padding: '4px 10px',
+              borderRadius: 'var(--mis-radius-sm, 4px)',
+              border: '1px solid var(--mis-border-strong)',
+              backgroundColor: isCurrentRoutePinned
+                ? 'var(--mis-brand-primary)'
+                : 'var(--mis-bg-elevated)',
+              color: isCurrentRoutePinned
+                ? 'var(--mis-brand-primary-fg)'
+                : 'var(--mis-text-primary)',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {isCurrentRoutePinned ? '📌 Pinned' : '📌 Pin View'}
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        {onOpenCommandPalette && (
+          <button
+            type="button"
+            data-testid="command-palette-trigger-btn"
+            onClick={onOpenCommandPalette}
+            style={{
+              padding: '5px 10px',
+              borderRadius: 'var(--mis-radius-sm, 4px)',
+              border: '1px solid var(--mis-border-strong)',
+              backgroundColor: 'var(--mis-bg-elevated)',
+              color: 'var(--mis-text-primary)',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Search (Ctrl+K)
+          </button>
+        )}
+
         {devPersonaSwitcherEnabled && (
           <div
             data-testid="persona-switcher-container"

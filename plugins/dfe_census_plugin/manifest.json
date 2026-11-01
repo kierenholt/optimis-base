@@ -62,6 +62,16 @@
       "path": "/",
       "title": "DfE Statutory School Census",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "census",
+        "dfe",
+        "collect",
+        "statutory return",
+        "cbds",
+        "xml validation",
+        "fsm",
+        "lac"
+      ],
       "query_params": [
         "tab",
         "pupil_id",

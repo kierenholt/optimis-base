@@ -66,6 +66,13 @@
       "path": "/",
       "title": "Google Classroom LMS Sync",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "google classroom",
+        "lms",
+        "roster sync",
+        "set transfer",
+        "course membership"
+      ],
       "query_params": [
         "tab",
         "pupil_id",
@@ -81,6 +88,11 @@
       "path": "/group/:group_id",
       "title": "Course Roster Sync",
       "entry": "ui/dist/index.html",
+      "keywords": [
+        "sync course",
+        "google classroom roster",
+        "lms group"
+      ],
       "query_params": [
         "tab",
         "pupil_id",

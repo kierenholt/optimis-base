@@ -148,6 +148,38 @@ func ReadAndValidateManifest(pluginDir string) (*host.Manifest, error) {
 				return nil, fmt.Errorf("manifest.json for plugin %s declares duplicate view id %q", manifest.ID, vid)
 			}
 			seenViewIDs[vid] = struct{}{}
+			for _, kw := range v.Keywords {
+				if strings.TrimSpace(kw) == "" {
+					return nil, fmt.Errorf("manifest.json view %q for plugin %s contains an empty keyword", vid, manifest.ID)
+				}
+			}
+		}
+	}
+
+	if len(manifest.Widgets) > 0 {
+		seenWidgetIDs := make(map[string]struct{}, len(manifest.Widgets))
+		for idx, w := range manifest.Widgets {
+			wid := strings.TrimSpace(w.ID)
+			wtitle := strings.TrimSpace(w.Title)
+			wentry := strings.TrimSpace(w.Entry)
+			if wid == "" || wtitle == "" || wentry == "" {
+				return nil, fmt.Errorf("manifest.json widget[%d] for plugin %s is missing mandatory id, title, or entry", idx, manifest.ID)
+			}
+			if w.Width != 1 && w.Width != 2 {
+				return nil, fmt.Errorf("manifest.json widget %q for plugin %s has invalid preset width %d: must be 1 or 2", wid, manifest.ID, w.Width)
+			}
+			if w.Height != 1 && w.Height != 2 {
+				return nil, fmt.Errorf("manifest.json widget %q for plugin %s has invalid preset height %d: must be 1 or 2", wid, manifest.ID, w.Height)
+			}
+			if _, dup := seenWidgetIDs[wid]; dup {
+				return nil, fmt.Errorf("manifest.json for plugin %s declares duplicate widget id %q", manifest.ID, wid)
+			}
+			seenWidgetIDs[wid] = struct{}{}
+			for _, kw := range w.Keywords {
+				if strings.TrimSpace(kw) == "" {
+					return nil, fmt.Errorf("manifest.json widget %q for plugin %s contains an empty keyword", wid, manifest.ID)
+				}
+			}
 		}
 	}
 

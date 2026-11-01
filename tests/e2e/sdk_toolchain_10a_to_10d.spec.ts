@@ -129,6 +129,23 @@ test.describe('Plugin Authoring SDK & Developer Toolchain (Sections 10A–10D)',
     expect(manifestSchema.properties).toHaveProperty('version');
     expect(manifestSchema.properties).toHaveProperty('core_dal_version');
     expect(manifestSchema.properties).toHaveProperty('endpoints');
+    expect(manifestSchema.properties.widgets.items.required).toEqual([
+      'id',
+      'title',
+      'entry',
+      'width',
+      'height',
+    ]);
+    expect(manifestSchema.properties.widgets.items.properties.width).toEqual({
+      type: 'integer',
+      enum: [1, 2],
+    });
+    expect(manifestSchema.properties.widgets.items.properties.height).toEqual({
+      type: 'integer',
+      enum: [1, 2],
+    });
+    expect(manifestSchema.properties.widgets.items.properties).not.toHaveProperty('default_col_span');
+    expect(manifestSchema.properties.widgets.items.properties).not.toHaveProperty('default_row_span');
 
     // 3. Verify 10C @ukmis/bridge and @ukmis/tailwind-preset packages
     const bridgePkgPath = path.resolve(ROOT_DIR, 'sdk/packages/bridge/package.json');
@@ -166,7 +183,8 @@ test.describe('Plugin Authoring SDK & Developer Toolchain (Sections 10A–10D)',
     });
 
     await page.goto('/');
-    const navBtn = page.getByTestId('nav-item-plugin-uk.org.optimis.behaviour');
+    await page.getByTestId('nav-rail-search').click();
+    const navBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Behaviour' }).first();
     await expect(navBtn).toBeVisible();
     await navBtn.click();
 
@@ -220,6 +238,16 @@ test.describe('Plugin Authoring SDK & Developer Toolchain (Sections 10A–10D)',
     const resBrokenUi = runBinary(MIS_VERIFY_BIN, [brokenUiDir]);
     expect(resBrokenUi.exitCode).not.toBe(0);
     expect(resBrokenUi.stdout + resBrokenUi.stderr).toContain('undeclared_secret_endpoint');
+
+    // Failure A2: Widget in manifest.json declares invalid preset width/height (e.g. width: 3 or missing height)
+    const brokenWidgetSizeDir = copyBehaviourTo('broken_widget_size');
+    const brokenWidgetManifestPath = path.join(brokenWidgetSizeDir, 'manifest.json');
+    const brokenWidgetManifest = JSON.parse(fs.readFileSync(brokenWidgetManifestPath, 'utf-8'));
+    brokenWidgetManifest.widgets[0].width = 3;
+    fs.writeFileSync(brokenWidgetManifestPath, JSON.stringify(brokenWidgetManifest, null, 2));
+    const resBrokenWidgetSize = runBinary(MIS_VERIFY_BIN, [brokenWidgetSizeDir]);
+    expect(resBrokenWidgetSize.exitCode).not.toBe(0);
+    expect(resBrokenWidgetSize.stdout + resBrokenWidgetSize.stderr).toContain('width');
 
     // Failure B: UI HTML references an external https:// script violating offline CSP
     const brokenCspDir = copyBehaviourTo('broken_csp');

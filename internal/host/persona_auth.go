@@ -224,6 +224,101 @@ func (h *Host) ResolveRequestCaller(r *http.Request, explicitStaffID string) (Ca
 	}, nil
 }
 
+func (h *Host) hasValidSessionCookie(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return false
+	}
+	token := strings.TrimSpace(cookie.Value)
+	st := h.getAuthState()
+	st.mu.RLock()
+	staffID, exists := st.sessions[token]
+	st.mu.RUnlock()
+	return exists && strings.TrimSpace(staffID) != ""
+}
+
+func (h *Host) resolveCallerForStaffID(ctx context.Context, staffID string) CallerContext {
+	trimmedStaff := strings.TrimSpace(staffID)
+	if trimmedStaff == "" {
+		return CallerContext{
+			Type:        "USER",
+			StaffID:     "",
+			ActiveRoles: []string{},
+			Scopes:      []string{},
+		}
+	}
+	if persona, pErr := h.coreDAL.ResolveStaffPersonaByID(ctx, trimmedStaff); pErr == nil {
+		return CallerContext{
+			Type:        "USER",
+			UserID:      persona.UserID,
+			StaffID:     persona.StaffID,
+			ActiveRoles: persona.ActiveRoles,
+			Scopes:      persona.Scopes,
+			RequestID:   "req_" + uuid.NewString(),
+		}
+	} else if !strings.Contains(pErr.Error(), "staff persona not found:") {
+		return CallerContext{
+			Type:        "USER",
+			StaffID:     trimmedStaff,
+			ActiveRoles: []string{},
+			Scopes:      []string{},
+			RequestID:   "req_" + uuid.NewString(),
+		}
+	}
+	return CallerContext{
+		Type:        "USER",
+		UserID:      "usr_teacher_1",
+		StaffID:     trimmedStaff,
+		ActiveRoles: []string{"teacher"},
+		Scopes: []string{
+			"dal.pupils.read:all",
+			"dal.pupils.read:own_groups",
+			"dal.groups.read:own_groups",
+			"dal.attendance.read:own_groups",
+			"dal.attendance.write:own_groups",
+			"dal.sen.read:own_groups",
+			"dal.medical.read:own_groups",
+			"dal.guardians.read:own_groups",
+			"dal.safeguarding.create",
+		},
+		RequestID: "req_" + uuid.NewString(),
+	}
+}
+
+func (h *Host) ResolveAuthenticatedCallerAndTargetStaff(r *http.Request, bodyStaffID string) (CallerContext, string, int, error) {
+	trimmedBodyStaff := strings.TrimSpace(bodyStaffID)
+	var (
+		caller    CallerContext
+		callerErr error
+	)
+	if extractRequestPersonaOverride(r, "") != "" || h.hasValidSessionCookie(r) {
+		caller, callerErr = h.ResolveRequestCaller(r, "")
+	} else {
+		caller, callerErr = h.ResolveRequestCaller(r, trimmedBodyStaff)
+	}
+	if callerErr != nil {
+		return CallerContext{}, "", http.StatusUnauthorized, callerErr
+	}
+
+	targetStaffID := trimmedBodyStaff
+	if targetStaffID == "" {
+		targetStaffID = strings.TrimSpace(caller.StaffID)
+	}
+	if targetStaffID == "" {
+		return CallerContext{}, "", http.StatusBadRequest, fmt.Errorf("MISSING_MANDATORY_PARAMETER: staff_id could not be resolved")
+	}
+
+	if targetStaffID != caller.StaffID && !isCallerAdminOrDPO(caller, true) {
+		return CallerContext{}, "", http.StatusForbidden, fmt.Errorf("FORBIDDEN_STAFF_ID_MISMATCH: caller %q is not authorized to modify state for staff_id %q", caller.StaffID, targetStaffID)
+	}
+
+	return caller, targetStaffID, http.StatusOK, nil
+}
+
+
 func (h *Host) RegisterAuthAndPersonaRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/auth/personas", func(w http.ResponseWriter, r *http.Request) {
 		if !h.isDevPersonaSwitcherEnabled() {

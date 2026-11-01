@@ -11,7 +11,7 @@ This directory houses the official client-side SDK assets, Lua type stubs, JSON 
 
 ## Files & Subdirectories
 
-* [`manifest.schema.json`](file:///home/kieren/Documents/code/optimis/sdk/manifest.schema.json): JSON Schema Draft-07 specification for `manifest.json` (Section 10B), including `views[]` route pattern declarations (`^/(?!ui(?:/|$))` forbidding `/ui` prefix collisions with `/p/{plug_id}/ui/{asset_path...}`).
+* [`manifest.schema.json`](file:///home/kieren/Documents/code/optimis/sdk/manifest.schema.json): JSON Schema Draft-07 specification for `manifest.json` (Sections 9.1, 9.5 & 10B), including `views[]` route pattern declarations (`^/(?!ui(?:/|$))` forbidding `/ui` prefix collisions with `/p/{plug_id}/ui/{asset_path...}`), `widgets[]` strict preset dimensions (`required: ["id", "title", "entry", "width", "height"]` with `"width": 1 | 2` and `"height": 1 | 2`), and optional `keywords: string[]` for Global Search & Command Palette discovery.
 * [`lua/`](file:///home/kieren/Documents/code/optimis/sdk/lua/GEMINI.md):
   * [`ctx_types.lua`](file:///home/kieren/Documents/code/optimis/sdk/lua/ctx_types.lua): Authoritative EmmyLua / LuaLS static type annotations (synced with [`.mis-types/dal.d.lua`](file:///home/kieren/Documents/code/optimis/.mis-types/dal.d.lua)) for the injected `ctx` runtime (`ctx.caller`, `ctx.school`, `ctx.dal.*`, `ctx.plugin_db`, `ctx.crypto`, `ctx.clock`, `ctx.json`, `ctx.http`, `ctx.events`, and `ctx.xml`).
 * [`ui/`](file:///home/kieren/Documents/code/optimis/sdk/ui/GEMINI.md):

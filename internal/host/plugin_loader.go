@@ -81,6 +81,19 @@ func readPluginFromDisk(dirPath string, folder string) (*LoadedPlugin, error) {
 			}
 			seenViewIDs[vid] = struct{}{}
 
+			if len(v.QueryParams) == 0 && len(v.AllowedQueryParams) > 0 {
+				manifest.Views[idx].QueryParams = append([]string(nil), v.AllowedQueryParams...)
+			}
+			cleanedKeywords := make([]string, 0, len(v.Keywords))
+			for _, kw := range v.Keywords {
+				trimmedKW := strings.TrimSpace(kw)
+				if trimmedKW == "" {
+					return nil, fmt.Errorf("manifest.json view %q for plugin %s contains an empty keyword", vid, manifest.ID)
+				}
+				cleanedKeywords = append(cleanedKeywords, trimmedKW)
+			}
+			manifest.Views[idx].Keywords = cleanedKeywords
+
 			relEntry, err := normalizeWidgetEntryRelPath(ventry)
 			if err != nil {
 				return nil, fmt.Errorf("manifest.json view %q for plugin %s has invalid entry %q: %w", vid, manifest.ID, ventry, err)
@@ -104,10 +117,26 @@ func readPluginFromDisk(dirPath string, folder string) (*LoadedPlugin, error) {
 			if wid == "" || wtitle == "" || wentry == "" {
 				return nil, fmt.Errorf("manifest.json widget[%d] for plugin %s is missing mandatory id, title, or entry", idx, manifest.ID)
 			}
+			if w.Width != 1 && w.Width != 2 {
+				return nil, fmt.Errorf("manifest.json widget %q for plugin %s has invalid preset width %d: must be 1 or 2", wid, manifest.ID, w.Width)
+			}
+			if w.Height != 1 && w.Height != 2 {
+				return nil, fmt.Errorf("manifest.json widget %q for plugin %s has invalid preset height %d: must be 1 or 2", wid, manifest.ID, w.Height)
+			}
 			if _, dup := seenWidgetIDs[wid]; dup {
 				return nil, fmt.Errorf("manifest.json for plugin %s declares duplicate widget id %q", manifest.ID, wid)
 			}
 			seenWidgetIDs[wid] = struct{}{}
+
+			cleanedKeywords := make([]string, 0, len(w.Keywords))
+			for _, kw := range w.Keywords {
+				trimmedKW := strings.TrimSpace(kw)
+				if trimmedKW == "" {
+					return nil, fmt.Errorf("manifest.json widget %q for plugin %s contains an empty keyword", wid, manifest.ID)
+				}
+				cleanedKeywords = append(cleanedKeywords, trimmedKW)
+			}
+			manifest.Widgets[idx].Keywords = cleanedKeywords
 
 			relEntry, err := normalizeWidgetEntryRelPath(wentry)
 			if err != nil {
@@ -170,6 +199,7 @@ func defaultPluginViews() []ViewSpec {
 			Path:        "/",
 			Entry:       "ui/dist/index.html",
 			QueryParams: commonParams,
+			Keywords:    []string{"workspace", "overview", "home", "dashboard"},
 		},
 		{
 			ID:          "student",
@@ -177,6 +207,7 @@ func defaultPluginViews() []ViewSpec {
 			Path:        "/student/:pupil_id",
 			Entry:       "ui/dist/index.html",
 			QueryParams: commonParams,
+			Keywords:    []string{"student", "pupil", "learner", "profile"},
 		},
 		{
 			ID:          "group",
@@ -184,6 +215,7 @@ func defaultPluginViews() []ViewSpec {
 			Path:        "/group/:group_id",
 			Entry:       "ui/dist/index.html",
 			QueryParams: commonParams,
+			Keywords:    []string{"group", "class", "set", "roster"},
 		},
 		{
 			ID:          "staff",
@@ -191,6 +223,7 @@ func defaultPluginViews() []ViewSpec {
 			Path:        "/staff/:staff_id",
 			Entry:       "ui/dist/index.html",
 			QueryParams: commonParams,
+			Keywords:    []string{"staff", "teacher", "colleague"},
 		},
 	}
 }

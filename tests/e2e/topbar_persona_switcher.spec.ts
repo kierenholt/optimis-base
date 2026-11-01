@@ -18,12 +18,14 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
   let pageErrors: string[] = [];
   let logCursor: string = '';
   let seeded: SeededPersonaFixtures | null = null;
+  let testPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
     pageErrors = [];
     logCursor = '';
     seeded = null;
+    testPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -53,6 +55,7 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
     }
+    testPlugId = (await installRes.json()).plug_id;
     const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
       data: {},
     });
@@ -170,11 +173,11 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
     await expect(page.getByTestId(`persona-option-${seeded.terminated_staff_id}`)).toHaveCount(0);
 
     const activePersonaBadge = page.getByTestId('active-persona-badge');
-    const sidebarPluginBtn = page.getByTestId('nav-item-plugin-uk.org.optimis.test');
-    const sidebarPluginMethodsCount = page.getByTestId('nav-item-plugin-methods-count-uk.org.optimis.test');
+    const sidebarPluginBtn = page.getByTestId('topbar-active-plugin-badge');
+    const sidebarPluginMethodsCount = page.getByTestId('topbar-active-plugin-methods-count');
     const dslVaultPanel = page.getByTestId('dsl-safeguarding-vault-panel');
     const sarRedactionPanel = page.getByTestId('sar-redaction-panel');
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
 
     // =========================================================================
     // 1. Switch to Classroom Teacher (TEACHER)

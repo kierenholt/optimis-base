@@ -266,7 +266,8 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     await expect(widgetFrame.getByTestId('widget-behaviour-merits')).toHaveText('0');
 
     // 4. Switch to the Behaviour plugin workspace tab and log a Merit (+3) and an Incident (-2, containing a third-party pupil name in incident_notes)
-    const behaviourNavBtn = page.getByTestId('nav-item-plugin-uk.org.optimis.behaviour');
+    await page.getByTestId('nav-rail-search').click();
+    const behaviourNavBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Behaviour' }).first();
     await expect(behaviourNavBtn).toBeVisible();
     await behaviourNavBtn.click();
 
