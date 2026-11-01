@@ -110,6 +110,11 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
     if (!postboxRes.ok()) {
       throw new Error(`Failed to seed safeguarding postbox note in setup: ${postboxRes.status()}`);
     }
+
+    // Switch initial active persona to Admin so selecting Teacher in step 1 triggers a live onChange event
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.admin_staff_id },
+    });
   });
 
   test.afterEach(async ({ request }, testInfo) => {
@@ -186,12 +191,12 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
     await expect(activePersonaBadge).toContainText(seeded.teacher_staff_id);
     await expect(activePersonaBadge).toContainText('TEACHER');
 
-    // Sidebar plugin badge reflects 8 permitted methods for TEACHER (only :own_groups & dal.safeguarding.create)
+    // Topbar plugin badge reflects 9 permitted methods for TEACHER (only :own_groups & dal.safeguarding.create)
     await expect(sidebarPluginBtn).toBeVisible();
-    await expect(sidebarPluginMethodsCount).toHaveText('8');
+    await expect(sidebarPluginMethodsCount).toHaveText('9');
     await expect(sidebarPluginBtn).toHaveAttribute(
       'data-permitted-methods',
-      'get_group_roster_summary,list_worker_event_logs,mutate_then_illegal_egress,push_external_sparx_post,record_group_am_attendance,submit_safeguarding_postbox,sync_external_sparx_get,trigger_loop_relay'
+      'get_group_roster_summary,get_pupil_guardians,list_worker_event_logs,mutate_then_illegal_egress,push_external_sparx_post,record_group_am_attendance,submit_safeguarding_postbox,sync_external_sparx_get,trigger_loop_relay'
     );
 
     // Neither DSL Vault console nor Admin/DPO SAR console may be visible for Teacher
@@ -227,7 +232,7 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
         roles: ['TEACHER'],
         hasReadAllPupils: false,
         hasReadOwnGroups: true,
-        methodCount: 8,
+        methodCount: 9,
         hasGetPupilRecord: false,
       });
 
@@ -344,8 +349,8 @@ test.describe('In-UI Topbar Persona Switcher (Section 8A)', () => {
     await expect(activePersonaBadge).toContainText(seeded.admin_staff_id);
     await expect(activePersonaBadge).toContainText('ADMIN');
 
-    // Sidebar plugin badge updates live to 13 permitted methods for Admin
-    await expect(sidebarPluginMethodsCount).toHaveText('13');
+    // Topbar plugin badge updates live to 14 permitted methods for Admin
+    await expect(sidebarPluginMethodsCount).toHaveText('14');
 
     // DSL Vault Console hides immediately; Admin/DPO SAR Redaction Console appears live!
     await expect(dslVaultPanel).toHaveCount(0);

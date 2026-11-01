@@ -22,6 +22,7 @@ export const KeepAlivePluginWorkspace: React.FC<KeepAlivePluginWorkspaceProps> =
     <section
       data-testid="dashboard-workspace-panel"
       style={{
+        display: activePluginId ? 'block' : 'none',
         backgroundColor: 'var(--mis-bg-surface)',
         border: '1px solid var(--mis-border-subtle)',
         borderRadius: 'var(--mis-radius-md, 8px)',

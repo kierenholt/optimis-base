@@ -66,6 +66,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
   let logCursor: string = '';
   let personas: SeededPersonaFixtures | null = null;
   let m1Seeded: Milestone1SeedResponse | null = null;
+  let sparxPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
@@ -73,6 +74,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     logCursor = '';
     personas = null;
     m1Seeded = null;
+    sparxPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -153,6 +155,8 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     if (!installSparxRes.ok()) {
       throw new Error(`Failed to install sparx_maths_plugin: ${installSparxRes.status()} ${await installSparxRes.text()}`);
     }
+    const installSparxBody = await installSparxRes.json();
+    sparxPlugId = installSparxBody.plug_id;
     const activateSparxRes = await request.post('/api/admin/plugins/uk.co.sparx.maths/activate', {
       data: { staff_id: personas.admin_staff_id },
     });
@@ -169,14 +173,14 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     });
 
     // 2. Purge plugin data created during the test
-    if (personas && m1Seeded) {
+    if (personas && m1Seeded && sparxPlugId) {
       await request.post('/api/auth/persona', {
         data: { staff_id: personas.admin_staff_id },
       });
-      await request.post('/api/plugins/uk.co.sparx.maths/rpc/purge_pupil_data', {
+      await request.post(`/api/p/${sparxPlugId}/rpc/purge_pupil_data`, {
         data: { args: { pupil_id: m1Seeded.active_pupil_id } },
       });
-      await request.post('/api/plugins/uk.co.sparx.maths/rpc/purge_pupil_data', {
+      await request.post(`/api/p/${sparxPlugId}/rpc/purge_pupil_data`, {
         data: { args: { pupil_id: m1Seeded.other_group_pupil_id } },
       });
     }
@@ -269,7 +273,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     expect(switchTeacherFirstRes.ok()).toBe(true);
 
     const teacherUnauthCfgRes = await request.post(
-      '/api/plugins/uk.co.sparx.maths/rpc/configure_vendor_credentials',
+      `/api/p/${sparxPlugId}/rpc/configure_vendor_credentials`,
       {
         data: {
           args: {
@@ -312,11 +316,11 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     await expect(sparxNavBtn).toBeVisible();
     await sparxNavBtn.click();
 
-    const iframeEl = page.getByTestId('plugin-iframe-uk.co.sparx.maths');
+    const iframeEl = page.getByTestId(`plugin-iframe-${sparxPlugId}`);
     await expect(iframeEl).toBeVisible();
     await expect(iframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.co.sparx.maths"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${sparxPlugId}"]`);
     await expect(pluginFrame.getByTestId('sparx-maths-plugin-root')).toBeVisible();
 
     // 4. Phase 1 Setup: Configure vendor API key in plugin_sparx.db (sealed via ctx.crypto.seal_secret & committed before HTTP call)
@@ -336,7 +340,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     await expect(pluginFrame.getByTestId('sparx-key-preview')).not.toContainText(vendorApiKey);
 
     // Verify get_vendor_config confirms the key is stored sealed (enc:v1:...) and never exposes plaintext
-    const getCfgRes = await request.post('/api/plugins/uk.co.sparx.maths/rpc/get_vendor_config', {
+    const getCfgRes = await request.post(`/api/p/${sparxPlugId}/rpc/get_vendor_config`, {
       data: { args: {} },
     });
     expect(getCfgRes.ok()).toBe(true);
@@ -415,7 +419,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
 
     // 7. Verify :own_groups RBAC isolation: Teacher attempting to sync other_group_id fails fast
     const unauthGroupSyncRes = await request.post(
-      '/api/plugins/uk.co.sparx.maths/rpc/sync_group_homework',
+      `/api/p/${sparxPlugId}/rpc/sync_group_homework`,
       {
         data: {
           args: {
@@ -453,7 +457,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     expect(switchAdminCfgRes.ok()).toBe(true);
 
     const cfgRes = await request.post(
-      '/api/plugins/uk.co.sparx.maths/rpc/configure_vendor_credentials',
+      `/api/p/${sparxPlugId}/rpc/configure_vendor_credentials`,
       {
         data: {
           args: {
@@ -495,7 +499,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
       },
     });
 
-    const syncOkRes = await request.post('/api/plugins/uk.co.sparx.maths/rpc/sync_group_homework', {
+    const syncOkRes = await request.post(`/api/p/${sparxPlugId}/rpc/sync_group_homework`, {
       data: {
         args: {
           group_id: m1Seeded.own_group_id,
@@ -510,7 +514,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     // 3. Trigger simulated fault during sync_group_homework where the stored vendor API key
     //    (loaded from plugin_sparx.db, NOT passed in RPC args) and pupil ID are present in the fault message.
     //    Also verify the Host halts any open WriteDB tx if a single-phase write-before-egress violation is attempted.
-    const simFaultRes = await request.post('/api/plugins/uk.co.sparx.maths/rpc/sync_group_homework', {
+    const simFaultRes = await request.post(`/api/p/${sparxPlugId}/rpc/sync_group_homework`, {
       data: {
         args: {
           group_id: m1Seeded.own_group_id,
@@ -524,7 +528,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     expect(simFaultRes.status()).toBe(400);
 
     const writeTxFaultRes = await request.post(
-      '/api/plugins/uk.co.sparx.maths/rpc/sync_group_homework',
+      `/api/p/${sparxPlugId}/rpc/sync_group_homework`,
       {
         data: {
           args: {
@@ -599,7 +603,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     }
 
     // 6. Verify UK GDPR export_pupil_data & purge_pupil_data hooks on plugin_sparx.db
-    const exportRes = await request.post('/api/plugins/uk.co.sparx.maths/rpc/export_pupil_data', {
+    const exportRes = await request.post(`/api/p/${sparxPlugId}/rpc/export_pupil_data`, {
       data: { args: { pupil_id: m1Seeded.active_pupil_id } },
     });
     expect(exportRes.ok()).toBe(true);
@@ -610,7 +614,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     expect(exportBody.data.sections[0].records.length).toBe(1);
     expect(exportBody.data.sections[0].redactable_fields).toContain('teacher_note');
 
-    const purgeRes = await request.post('/api/plugins/uk.co.sparx.maths/rpc/purge_pupil_data', {
+    const purgeRes = await request.post(`/api/p/${sparxPlugId}/rpc/purge_pupil_data`, {
       data: { args: { pupil_id: m1Seeded.active_pupil_id } },
     });
     expect(purgeRes.ok()).toBe(true);
@@ -619,7 +623,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     expect(purgeBody.data.purged_rows).toBeGreaterThanOrEqual(1);
 
     const exportAfterPurgeRes = await request.post(
-      '/api/plugins/uk.co.sparx.maths/rpc/export_pupil_data',
+      `/api/p/${sparxPlugId}/rpc/export_pupil_data`,
       {
         data: { args: { pupil_id: m1Seeded.active_pupil_id } },
       }

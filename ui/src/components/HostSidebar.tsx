@@ -32,7 +32,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
   onOpenSettings,
   onLogout,
 }) => {
-  const isHomeActive = !activePluginId;
+  const isHomeActive = !activePluginId || activeRouteUrl === '/' || activeRouteUrl.startsWith('/?');
 
   return (
     <aside
@@ -97,6 +97,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
         <button
           type="button"
           data-testid="nav-rail-home"
+          aria-current={isHomeActive ? 'page' : undefined}
           title="Home Dashboard"
           onClick={onNavigateHome}
           style={{

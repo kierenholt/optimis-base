@@ -1,6 +1,6 @@
 # Core SQLite Schema (`schema/core`)
 
-This directory defines the 45-table modular SQLite schema for `core.db`, executed in lexical order (`00` through `06`) by [`CoreDAL.initSchema`](file:///home/kieren/Documents/code/optimis/internal/dal/dal.go#L98-L155).
+This directory defines the 46-table modular SQLite schema for `core.db`, executed in lexical order (`00` through `06`) by [`CoreDAL.initSchema`](file:///home/kieren/Documents/code/optimis/internal/dal/dal.go#L98-L155).
 
 ## Architectural Invariants
 

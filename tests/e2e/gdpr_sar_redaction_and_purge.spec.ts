@@ -21,12 +21,14 @@ test.describe('UK GDPR SAR Export, Retention Purge & Admin Redaction UI (Section
   let pageErrors: string[] = [];
   let logCursor: string = '';
   let seeded: SeededGDPRFixtures | null = null;
+  let testPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
     pageErrors = [];
     logCursor = '';
     seeded = null;
+    testPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -86,6 +88,7 @@ test.describe('UK GDPR SAR Export, Retention Purge & Admin Redaction UI (Section
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin in setup: ${installRes.status()}`);
     }
+    testPlugId = (await installRes.json()).plug_id;
 
     const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
       data: { staff_id: seeded.admin_staff_id },
@@ -95,7 +98,7 @@ test.describe('UK GDPR SAR Export, Retention Purge & Admin Redaction UI (Section
     }
 
     // Seed a plugin note containing a third-party pupil name in plugin_test.db for both pupils
-    const saveNote1 = await request.post('/api/plugins/uk.org.optimis.test/rpc/save_pupil_note', {
+    const saveNote1 = await request.post(`/api/p/${testPlugId}/rpc/save_pupil_note`, {
       data: {
         args: {
           pupil_id: seeded.pupil_id,
@@ -108,7 +111,7 @@ test.describe('UK GDPR SAR Export, Retention Purge & Admin Redaction UI (Section
       throw new Error(`Failed to seed plugin note for pupil_id: ${saveNote1.status()}`);
     }
 
-    const saveNote2 = await request.post('/api/plugins/uk.org.optimis.test/rpc/save_pupil_note', {
+    const saveNote2 = await request.post(`/api/p/${testPlugId}/rpc/save_pupil_note`, {
       data: {
         args: {
           pupil_id: seeded.protected_pupil_id,
@@ -124,17 +127,17 @@ test.describe('UK GDPR SAR Export, Retention Purge & Admin Redaction UI (Section
 
   test.afterEach(async ({ request }, testInfo) => {
     // 1. Restore plugin state to ACTIVE and clean up plugin notes & fixtures
-    if (seeded) {
+    if (seeded && testPlugId) {
       await request.post('/api/auth/persona', {
         data: { staff_id: seeded.admin_staff_id },
       });
       await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
         data: { staff_id: seeded.admin_staff_id },
       });
-      await request.post('/api/plugins/uk.org.optimis.test/rpc/purge_pupil_data', {
+      await request.post(`/api/p/${testPlugId}/rpc/purge_pupil_data`, {
         data: { args: { pupil_id: seeded.pupil_id } },
       });
-      await request.post('/api/plugins/uk.org.optimis.test/rpc/purge_pupil_data', {
+      await request.post(`/api/p/${testPlugId}/rpc/purge_pupil_data`, {
         data: { args: { pupil_id: seeded.protected_pupil_id } },
       });
     }
@@ -297,7 +300,7 @@ test.describe('UK GDPR SAR Export, Retention Purge & Admin Redaction UI (Section
     expect(dormantRes.ok()).toBe(true);
 
     // Normal interactive RPC calls to a dormant plugin MUST be blocked immediately
-    const rpcBlockedRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/list_pupil_notes', {
+    const rpcBlockedRes = await request.post(`/api/p/${testPlugId}/rpc/list_pupil_notes`, {
       data: { args: { pupil_id: seeded.pupil_id } },
     });
     expect(rpcBlockedRes.status()).toBe(400);
@@ -352,14 +355,14 @@ test.describe('UK GDPR SAR Export, Retention Purge & Admin Redaction UI (Section
       data: { state: 'ACTIVE' },
     });
 
-    const listNotesAfterPurge = await request.post('/api/plugins/uk.org.optimis.test/rpc/list_pupil_notes', {
+    const listNotesAfterPurge = await request.post(`/api/p/${testPlugId}/rpc/list_pupil_notes`, {
       data: { args: { pupil_id: seeded.pupil_id } },
     });
     expect(listNotesAfterPurge.ok()).toBe(true);
     const listNotesBody = await listNotesAfterPurge.json();
     expect(listNotesBody.data.count).toBe(0);
 
-    const getPupilAfterPurge = await request.post('/api/plugins/uk.org.optimis.test/rpc/get_pupil_record', {
+    const getPupilAfterPurge = await request.post(`/api/p/${testPlugId}/rpc/get_pupil_record`, {
       data: { args: { pupil_id: seeded.pupil_id } },
     });
     expect(getPupilAfterPurge.status()).toBe(400);

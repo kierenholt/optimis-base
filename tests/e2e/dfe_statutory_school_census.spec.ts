@@ -23,12 +23,14 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
   let pageErrors: string[] = [];
   let logCursor: string = '';
   let seeded: SeededCensusFixtures | null = null;
+  let censusPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
     pageErrors = [];
     logCursor = '';
     seeded = null;
+    censusPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -112,6 +114,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     if (!installRes.ok()) {
       throw new Error(`Failed to install dfe_census_plugin: ${installRes.status()}`);
     }
+    censusPlugId = (await installRes.json()).plug_id;
     const activateRes = await request.post('/api/admin/plugins/uk.gov.dfe.census/activate', {
       data: {
         staff_id: seeded.admin_staff_id,
@@ -130,7 +133,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     await request.delete('/api/test/census-submissions');
 
     // 2. Purge plugin census snapshots
-    if (seeded) {
+    if (seeded && censusPlugId) {
       await request.post('/api/auth/persona', {
         data: { staff_id: seeded.admin_staff_id },
       });
@@ -140,7 +143,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
         seeded.pupil_no_sen_id,
         seeded.off_roll_pupil_id,
       ]) {
-        await request.post('/api/plugins/uk.gov.dfe.census/rpc/purge_pupil_data', {
+        await request.post(`/api/p/${censusPlugId}/rpc/purge_pupil_data`, {
           data: { args: { pupil_id: pupilId } },
         });
       }
@@ -223,7 +226,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     await expect(censusNavBtn).toBeVisible();
     await censusNavBtn.click();
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.gov.dfe.census"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${censusPlugId}"]`);
     const termSelect = pluginFrame.getByTestId('census-term-select');
     const dateInput = pluginFrame.getByTestId('census-date-input');
     const generateBtn = pluginFrame.getByTestId('generate-census-btn');
@@ -281,7 +284,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     expect(xmlText).toContain('<UnauthorisedAbsenceSessions>');
 
     // Verify off-roll pupil (effective_to = 2026-09-15 < census_date 2026-10-01) is strictly excluded from the generated return
-    const listReturnsRes = await request.post('/api/plugins/uk.gov.dfe.census/rpc/list_census_returns', {
+    const listReturnsRes = await request.post(`/api/p/${censusPlugId}/rpc/list_census_returns`, {
       data: { args: { academic_year_id: seeded.academic_year_id } },
     });
     expect(listReturnsRes.ok()).toBe(true);
@@ -289,7 +292,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     expect(listReturnsBody.ok).toBe(true);
     expect(listReturnsBody.data.returns.length).toBeGreaterThanOrEqual(1);
 
-    const exportOffRollRes = await request.post('/api/plugins/uk.gov.dfe.census/rpc/export_pupil_data', {
+    const exportOffRollRes = await request.post(`/api/p/${censusPlugId}/rpc/export_pupil_data`, {
       data: { args: { pupil_id: seeded.off_roll_pupil_id } },
     });
     expect(exportOffRollRes.ok()).toBe(true);
@@ -336,7 +339,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     const adminSessionBody = await switchAdminRes.json();
 
     const genRes = await request.post(
-      '/api/plugins/uk.gov.dfe.census/rpc/generate_and_validate_census_return',
+      `/api/p/${censusPlugId}/rpc/generate_and_validate_census_return`,
       {
         data: {
           args: {
@@ -368,7 +371,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     expect(disabledListBody.error_code).toContain('MOCK_DFE_CENSUS_SERVICE_DISABLED');
 
     const disabledSubmitRes = await request.post(
-      '/api/plugins/uk.gov.dfe.census/rpc/submit_census_return',
+      `/api/p/${censusPlugId}/rpc/submit_census_return`,
       {
         data: { args: { return_id: returnId } },
       }
@@ -393,7 +396,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     await page.getByTestId('nav-rail-search').click();
     await page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Census' }).first().click();
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.gov.dfe.census"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${censusPlugId}"]`);
     await pluginFrame.getByTestId('generate-census-btn').click();
     await expect(pluginFrame.getByTestId('census-xsd-status')).toHaveText('XSD_VALID');
 
@@ -409,7 +412,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
 
     // 3. Verify XSD schema validation rejects malformed UPN in census XML
     const invalidXsdRes = await request.post(
-      '/api/plugins/uk.gov.dfe.census/rpc/generate_and_validate_census_return',
+      `/api/p/${censusPlugId}/rpc/generate_and_validate_census_return`,
       {
         data: {
           args: {
@@ -435,7 +438,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     expect(switchTeacherRes.ok()).toBe(true);
 
     const unauthorizedCensusRes = await request.post(
-      '/api/plugins/uk.gov.dfe.census/rpc/generate_and_validate_census_return',
+      `/api/p/${censusPlugId}/rpc/generate_and_validate_census_return`,
       {
         data: {
           args: {
@@ -456,7 +459,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
       data: { staff_id: seeded.admin_staff_id },
     });
 
-    const exportRes = await request.post('/api/plugins/uk.gov.dfe.census/rpc/export_pupil_data', {
+    const exportRes = await request.post(`/api/p/${censusPlugId}/rpc/export_pupil_data`, {
       data: { args: { pupil_id: seeded.pupil_sen_k_fsm_id } },
     });
     expect(exportRes.ok()).toBe(true);
@@ -467,7 +470,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     expect(exportBody.data.sections[0].records.length).toBeGreaterThanOrEqual(1);
     expect(exportBody.data.sections[0].redactable_fields).toContain('notes');
 
-    const purgeRes = await request.post('/api/plugins/uk.gov.dfe.census/rpc/purge_pupil_data', {
+    const purgeRes = await request.post(`/api/p/${censusPlugId}/rpc/purge_pupil_data`, {
       data: { args: { pupil_id: seeded.pupil_sen_k_fsm_id } },
     });
     expect(purgeRes.ok()).toBe(true);
@@ -476,7 +479,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     expect(purgeBody.data.purged_rows).toBeGreaterThanOrEqual(1);
 
     const exportAfterPurgeRes = await request.post(
-      '/api/plugins/uk.gov.dfe.census/rpc/export_pupil_data',
+      `/api/p/${censusPlugId}/rpc/export_pupil_data`,
       {
         data: { args: { pupil_id: seeded.pupil_sen_k_fsm_id } },
       }

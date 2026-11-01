@@ -14,23 +14,6 @@ type DashboardWidgetItem struct {
 	WidgetID string `json:"widget_id"`
 }
 
-func (d *CoreDAL) ensureDashboardLayoutsTable(ctx context.Context) error {
-	_, err := d.writeDB.ExecContext(
-		ctx,
-		`CREATE TABLE IF NOT EXISTS dashboard_layouts (
-			id TEXT PRIMARY KEY,
-			scope_type TEXT NOT NULL CHECK (scope_type IN ('ROLE_DEFAULT', 'STAFF')),
-			scope_target TEXT NOT NULL,
-			widgets_json TEXT NOT NULL DEFAULT '[]',
-			updated_by_staff_id TEXT,
-			updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-			UNIQUE (scope_type, scope_target)
-		);
-		CREATE INDEX IF NOT EXISTS idx_dashboard_layouts_scope ON dashboard_layouts(scope_type, scope_target);`,
-	)
-	return err
-}
-
 func ValidateAndNormalizeDashboardWidgetItems(items []DashboardWidgetItem) ([]DashboardWidgetItem, error) {
 	if items == nil {
 		return []DashboardWidgetItem{}, nil
@@ -81,7 +64,7 @@ func (d *CoreDAL) GetStaffDashboardLayout(ctx context.Context, staffID string) (
 		trimmedStaff,
 	).Scan(&rawJSON)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "no such table") {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, false, nil
 		}
 		return nil, false, fmt.Errorf("failed to query staff dashboard layout for %s: %w", trimmedStaff, err)
@@ -106,9 +89,6 @@ func (d *CoreDAL) SaveStaffDashboardLayout(
 	}
 	normalized, err := ValidateAndNormalizeDashboardWidgetItems(items)
 	if err != nil {
-		return nil, err
-	}
-	if err := d.ensureDashboardLayoutsTable(ctx); err != nil {
 		return nil, err
 	}
 
@@ -155,7 +135,7 @@ func (d *CoreDAL) GetRoleDefaultDashboardLayout(ctx context.Context, roleID stri
 		normalizedRole,
 	).Scan(&rawJSON)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "no such table") {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, false, nil
 		}
 		return nil, false, fmt.Errorf("failed to query role default dashboard layout for %s: %w", normalizedRole, err)
@@ -175,9 +155,6 @@ func (d *CoreDAL) ListAllRoleDefaultDashboardLayouts(ctx context.Context) (map[s
 		`SELECT UPPER(scope_target), widgets_json FROM dashboard_layouts WHERE scope_type = 'ROLE_DEFAULT' ORDER BY scope_target ASC`,
 	)
 	if err != nil {
-		if strings.Contains(err.Error(), "no such table") {
-			return result, nil
-		}
 		return nil, fmt.Errorf("failed to list role default dashboard layouts: %w", err)
 	}
 	defer rows.Close()
@@ -209,9 +186,6 @@ func (d *CoreDAL) SaveRoleDefaultDashboardLayout(
 	}
 	normalizedItems, err := ValidateAndNormalizeDashboardWidgetItems(items)
 	if err != nil {
-		return nil, 0, err
-	}
-	if err := d.ensureDashboardLayoutsTable(ctx); err != nil {
 		return nil, 0, err
 	}
 
@@ -253,25 +227,13 @@ func (d *CoreDAL) SaveRoleDefaultDashboardLayout(
 			`SELECT dl.scope_target, dl.widgets_json
 			 FROM dashboard_layouts dl
 			 WHERE dl.scope_type = 'STAFF'
-			   AND (
-			       EXISTS (
-			           SELECT 1
-			           FROM staff s
-			           JOIN person_roles pr ON pr.person_id = s.person_id
-			           WHERE s.id = dl.scope_target
-			             AND UPPER(pr.role_id) = ?
-			       )
-			       OR (
-			           ? = 'TEACHER'
-			           AND NOT EXISTS (
-			               SELECT 1
-			               FROM staff s2
-			               JOIN person_roles pr2 ON pr2.person_id = s2.person_id
-			               WHERE s2.id = dl.scope_target
-			           )
-			       )
+			   AND EXISTS (
+			       SELECT 1
+			       FROM staff s
+			       JOIN person_roles pr ON pr.person_id = s.person_id
+			       WHERE s.id = dl.scope_target
+			         AND UPPER(pr.role_id) = ?
 			   )`,
-			normalizedRole,
 			normalizedRole,
 		)
 		if qErr != nil {
@@ -422,9 +384,6 @@ func (d *CoreDAL) ResolveEffectiveDashboardLayout(
 }
 
 func (d *CoreDAL) ResetAllDashboardLayoutsForTest(ctx context.Context) error {
-	if err := d.ensureDashboardLayoutsTable(ctx); err != nil {
-		return err
-	}
 	_, err := d.writeDB.ExecContext(ctx, `DELETE FROM dashboard_layouts`)
 	return err
 }

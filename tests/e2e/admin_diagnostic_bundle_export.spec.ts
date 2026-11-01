@@ -47,12 +47,14 @@ test.describe('Admin-Exported PII-Scrubbed Diagnostic Bundle (Section 8 Gap 1, S
   let pageErrors: string[] = [];
   let logCursor: string = '';
   let seeded: SeededGDPRFixtures | null = null;
+  let testPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
     pageErrors = [];
     logCursor = '';
     seeded = null;
+    testPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -114,6 +116,7 @@ test.describe('Admin-Exported PII-Scrubbed Diagnostic Bundle (Section 8 Gap 1, S
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin in setup: ${installRes.status()}`);
     }
+    testPlugId = (await installRes.json()).plug_id;
     const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
       data: { staff_id: seeded.admin_staff_id },
     });
@@ -128,14 +131,14 @@ test.describe('Admin-Exported PII-Scrubbed Diagnostic Bundle (Section 8 Gap 1, S
       data: { capacity: 100 },
     });
 
-    if (seeded) {
+    if (seeded && testPlugId) {
       await request.post('/api/auth/persona', {
         data: { staff_id: seeded.admin_staff_id },
       });
       await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
         data: { staff_id: seeded.admin_staff_id },
       });
-      await request.post('/api/plugins/uk.org.optimis.test/rpc/purge_pupil_data', {
+      await request.post(`/api/p/${testPlugId}/rpc/purge_pupil_data`, {
         data: { args: { pupil_id: seeded.pupil_id } },
       });
     }
@@ -188,7 +191,7 @@ test.describe('Admin-Exported PII-Scrubbed Diagnostic Bundle (Section 8 Gap 1, S
     const leakedUln = '9876543210';
     const leakedLocalSecret = 'Confidential local variable for Oliver Twist';
 
-    const rpcErr1 = await request.post('/api/plugins/uk.org.optimis.test/rpc/get_pupil_record', {
+    const rpcErr1 = await request.post(`/api/p/${testPlugId}/rpc/get_pupil_record`, {
       data: {
         args: {
           pupil_id: leakedPupilId,
@@ -204,7 +207,7 @@ test.describe('Admin-Exported PII-Scrubbed Diagnostic Bundle (Section 8 Gap 1, S
     //    This acquires the SQLite write lock (recording lock wait & hold durations) and halts at src/init.lua:365
     const secretNoteId = `pnote_${seeded.fixture_id}_diag_secret`;
     const secretNoteText = 'Confidential safeguarding disclosure involving Harry Potter UPN B987654321012';
-    const rpcErr2 = await request.post('/api/plugins/uk.org.optimis.test/rpc/mutate_then_illegal_egress', {
+    const rpcErr2 = await request.post(`/api/p/${testPlugId}/rpc/mutate_then_illegal_egress`, {
       data: {
         args: {
           pupil_id: seeded.pupil_id,
@@ -355,7 +358,7 @@ test.describe('Admin-Exported PII-Scrubbed Diagnostic Bundle (Section 8 Gap 1, S
 
     // 3. Trigger 5 sequential undeclared endpoint faults
     for (let i = 1; i <= 5; i++) {
-      const res = await request.post(`/api/plugins/uk.org.optimis.test/rpc/undeclared_fault_${i}`, {
+      const res = await request.post(`/api/p/${testPlugId}/rpc/undeclared_fault_${i}`, {
         data: { args: { pupil_id: seeded.pupil_id } },
       });
       expect(res.status()).toBe(400);

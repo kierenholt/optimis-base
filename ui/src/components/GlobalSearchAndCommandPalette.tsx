@@ -78,6 +78,53 @@ function matchesWidgetItem(widget: PluginWidgetDescriptor, pluginTitle: string, 
   return false;
 }
 
+function isParameterizedViewResolvable(
+  path: string | undefined,
+  activePupilId: string,
+  activeGroupId: string,
+  activeStaffId: string
+): boolean {
+  const p = path || '/';
+  if (p.includes(':pupil_id') && !activePupilId) {
+    return false;
+  }
+  if (p.includes(':group_id') && !activeGroupId) {
+    return false;
+  }
+  if (p.includes(':staff_id') && !activeStaffId) {
+    return false;
+  }
+  return true;
+}
+
+function resolveParameterizedViewSubpath(
+  path: string | undefined,
+  activePupilId: string,
+  activeGroupId: string,
+  activeStaffId: string
+): string {
+  let resolved = path || '/';
+  if (resolved.includes(':pupil_id')) {
+    if (!activePupilId) {
+      throw new Error('Missing mandatory activePupilId for :pupil_id view route');
+    }
+    resolved = resolved.replace(':pupil_id', activePupilId);
+  }
+  if (resolved.includes(':group_id')) {
+    if (!activeGroupId) {
+      throw new Error('Missing mandatory activeGroupId for :group_id view route');
+    }
+    resolved = resolved.replace(':group_id', activeGroupId);
+  }
+  if (resolved.includes(':staff_id')) {
+    if (!activeStaffId) {
+      throw new Error('Missing mandatory activeStaffId for :staff_id view route');
+    }
+    resolved = resolved.replace(':staff_id', activeStaffId);
+  }
+  return resolved;
+}
+
 function useScopedEntitySearch(
   query: string,
   activeStaffId: string,
@@ -96,7 +143,7 @@ function useScopedEntitySearch(
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     const fetchEntities = async () => {
       try {
         const qs = new URLSearchParams();
@@ -110,18 +157,20 @@ function useScopedEntitySearch(
         if (academicYearId) {
           qs.set('academic_year_id', academicYearId);
         }
-        const res = await fetch(`/api/system/search?${qs.toString()}`);
-        if (!res.ok || cancelled) {
+        const res = await fetch(`/api/system/search?${qs.toString()}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok || controller.signal.aborted) {
           return;
         }
         const body = await res.json();
-        if (cancelled || !body || !body.ok) {
+        if (controller.signal.aborted || !body || !body.ok) {
           return;
         }
         setPupils(Array.isArray(body.pupils) ? body.pupils : []);
         setGroups(Array.isArray(body.groups) ? body.groups : []);
       } catch {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setPupils([]);
           setGroups([]);
         }
@@ -130,7 +179,7 @@ function useScopedEntitySearch(
 
     void fetchEntities();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [query, activeStaffId, referenceDate, academicYearId, enabled]);
 
@@ -144,6 +193,8 @@ export interface LandingPageTopHalfSearchProps extends GlobalSearchSharedProps {
 export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> = ({
   installedPlugins,
   placedWidgets,
+  activePupilId,
+  activeGroupId,
   activeStaffId,
   referenceDate,
   academicYearId,
@@ -173,6 +224,9 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
       const views = Array.isArray(p.views) ? p.views : [];
       const permittedMethods = Array.isArray(p.permitted_methods) ? p.permitted_methods : [];
       for (const v of views) {
+        if (!isParameterizedViewResolvable(v.path, activePupilId, activeGroupId, activeStaffId)) {
+          continue;
+        }
         const candidate: IndexedViewResult = {
           pluginId: p.id,
           pluginTitle: p.title,
@@ -185,7 +239,7 @@ export const LandingPageTopHalfSearch: React.FC<LandingPageTopHalfSearchProps> =
       }
     }
     return results;
-  }, [installedPlugins, qLower]);
+  }, [installedPlugins, qLower, activePupilId, activeGroupId, activeStaffId]);
 
   const matchedWidgets = useMemo<Array<{ widget: PluginWidgetDescriptor; pluginTitle: string }>>(() => {
     if (!qLower) {
@@ -527,6 +581,9 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
       const views = Array.isArray(p.views) ? p.views : [];
       const permittedMethods = Array.isArray(p.permitted_methods) ? p.permitted_methods : [];
       for (const v of views) {
+        if (!isParameterizedViewResolvable(v.path, activePupilId, activeGroupId, activeStaffId)) {
+          continue;
+        }
         const candidate: IndexedViewResult = {
           pluginId: p.id,
           pluginTitle: p.title,
@@ -539,7 +596,7 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
       }
     }
     return results;
-  }, [installedPlugins, qLower]);
+  }, [installedPlugins, qLower, activePupilId, activeGroupId, activeStaffId]);
 
   const matchedWidgets = useMemo<Array<{ widget: PluginWidgetDescriptor; pluginTitle: string }>>(() => {
     const results: Array<{ widget: PluginWidgetDescriptor; pluginTitle: string }> = [];
@@ -654,14 +711,12 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
                 Views ({matchedViews.length})
               </div>
               {matchedViews.map(({ pluginId, pluginTitle, view, permittedMethods }) => {
-                let candidateSubpath = view.path || '/';
-                if (candidateSubpath.includes(':pupil_id')) {
-                  candidateSubpath = activePupilId ? candidateSubpath.replace(':pupil_id', activePupilId) : '/';
-                } else if (candidateSubpath.includes(':group_id')) {
-                  candidateSubpath = activeGroupId ? candidateSubpath.replace(':group_id', activeGroupId) : '/';
-                } else if (candidateSubpath.includes(':staff_id')) {
-                  candidateSubpath = activeStaffId ? candidateSubpath.replace(':staff_id', activeStaffId) : '/';
-                }
+                const candidateSubpath = resolveParameterizedViewSubpath(
+                  view.path,
+                  activePupilId,
+                  activeGroupId,
+                  activeStaffId
+                );
                 const candidateRoute = `/p/${pluginId}${candidateSubpath === '/' ? '' : candidateSubpath}`;
                 const isPinned = pinnedRoutesSet.has(candidateRoute);
 

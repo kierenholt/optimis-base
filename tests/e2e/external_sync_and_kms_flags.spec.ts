@@ -129,7 +129,8 @@ test.describe('External Dependencies Feature Flags: Cloud KMS, Parent DMZ Contai
       console.log('--- TAPPED PAGE ERRORS ---\n' + pageErrors.join('\n'));
     }
 
-    // 4. Clean up seeded fixtures in core.db
+    // 4. Clean up runtime-installed test_plugin and seeded fixtures in core.db
+    await request.delete('/api/admin/plugins/uk.org.optimis.test');
     if (m1Seeded?.fixture_id) {
       const delM1 = await request.delete(
         `/api/test/seed-milestone1-fixtures/${encodeURIComponent(m1Seeded.fixture_id)}`
@@ -265,8 +266,18 @@ test.describe('External Dependencies Feature Flags: Cloud KMS, Parent DMZ Contai
     });
     expect(switchAdminRes.ok()).toBe(true);
 
+    const installTestRes = await request.post('/api/admin/plugins/install', {
+      data: { folder: 'test_plugin', staff_id: personas.admin_staff_id },
+    });
+    expect(installTestRes.ok()).toBe(true);
+    const testPlugId = (await installTestRes.json()).plug_id;
+    const activateTestRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
+      data: { staff_id: personas.admin_staff_id },
+    });
+    expect(activateTestRes.ok()).toBe(true);
+
     // Record a statutory AM attendance mark for active_pupil_id so the read-projection includes attendance summary counts
-    const rpcAttRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/record_group_am_attendance', {
+    const rpcAttRes = await request.post(`/api/p/${testPlugId}/rpc/record_group_am_attendance`, {
       data: {
         args: {
           group_id: m1Seeded.own_group_id,

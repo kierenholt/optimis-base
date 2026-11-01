@@ -39,6 +39,7 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
   let logCursor: string = '';
   let personas: SeededPersonaFixtures | null = null;
   let m1Seeded: Milestone1SeedResponse | null = null;
+  let faPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
@@ -46,6 +47,7 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
     logCursor = '';
     personas = null;
     m1Seeded = null;
+    faPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -105,6 +107,7 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
         `Failed to install first_aid_medical_plugin: ${installFaRes.status()} ${await installFaRes.text()}`
       );
     }
+    faPlugId = (await installFaRes.json()).plug_id;
 
     const activateFaRes = await request.post(
       '/api/admin/plugins/uk.org.optimis.medical.firstaid/activate',
@@ -119,11 +122,11 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
 
   test.afterEach(async ({ request }, testInfo) => {
     // 1. Purge plugin data created during the test
-    if (personas && m1Seeded) {
+    if (personas && m1Seeded && faPlugId) {
       await request.post('/api/auth/persona', {
         data: { staff_id: personas.admin_staff_id },
       });
-      await request.post('/api/plugins/uk.org.optimis.medical.firstaid/rpc/purge_pupil_data', {
+      await request.post(`/api/p/${faPlugId}/rpc/purge_pupil_data`, {
         data: { args: { pupil_id: m1Seeded.active_pupil_id } },
       });
     }
@@ -218,11 +221,11 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
     await expect(navBtn).toBeVisible();
     await navBtn.click();
 
-    const iframeEl = page.getByTestId('plugin-iframe-uk.org.optimis.medical.firstaid');
+    const iframeEl = page.getByTestId(`plugin-iframe-${faPlugId}`);
     await expect(iframeEl).toBeVisible();
     await expect(iframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const frame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.medical.firstaid"]');
+    const frame = page.frameLocator(`[data-testid="plugin-iframe-${faPlugId}"]`);
     await expect(frame.getByTestId('first-aid-plugin-root')).toBeVisible();
 
     // 3. Step 1 of Journey: First Aider selects injured pupil in UI
@@ -317,7 +320,7 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
     expect(switchTeacherRes.ok()).toBe(true);
 
     const forbiddenProfileRes = await request.post(
-      '/api/plugins/uk.org.optimis.medical.firstaid/rpc/get_pupil_first_aid_profile',
+      `/api/p/${faPlugId}/rpc/get_pupil_first_aid_profile`,
       {
         data: {
           args: {
@@ -334,7 +337,7 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
     expect(forbiddenProfileBody.error_code).toContain('caller lacks required DAL scopes');
 
     const forbiddenLogRes = await request.post(
-      '/api/plugins/uk.org.optimis.medical.firstaid/rpc/log_first_aid_treatment',
+      `/api/p/${faPlugId}/rpc/log_first_aid_treatment`,
       {
         data: {
           args: {
@@ -361,7 +364,7 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
     expect(switchFirstAiderRes.ok()).toBe(true);
 
     const missingTreatmentRes = await request.post(
-      '/api/plugins/uk.org.optimis.medical.firstaid/rpc/log_first_aid_treatment',
+      `/api/p/${faPlugId}/rpc/log_first_aid_treatment`,
       {
         data: {
           args: {
@@ -383,7 +386,7 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
 
     // 3. Log a valid treatment and verify UK GDPR `export_pupil_data` & `purge_pupil_data` hooks on `plugin_first_aid.db`
     const validLogRes = await request.post(
-      '/api/plugins/uk.org.optimis.medical.firstaid/rpc/log_first_aid_treatment',
+      `/api/p/${faPlugId}/rpc/log_first_aid_treatment`,
       {
         data: {
           args: {
@@ -409,7 +412,7 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
     expect(switchAdminRes.ok()).toBe(true);
 
     const exportRes = await request.post(
-      '/api/plugins/uk.org.optimis.medical.firstaid/rpc/export_pupil_data',
+      `/api/p/${faPlugId}/rpc/export_pupil_data`,
       {
         data: { args: { pupil_id: m1Seeded.active_pupil_id } },
       }
@@ -426,7 +429,7 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
     expect(exportBody.data.sections[1].records.length).toBeGreaterThanOrEqual(1);
 
     const purgeRes = await request.post(
-      '/api/plugins/uk.org.optimis.medical.firstaid/rpc/purge_pupil_data',
+      `/api/p/${faPlugId}/rpc/purge_pupil_data`,
       {
         data: { args: { pupil_id: m1Seeded.active_pupil_id } },
       }
@@ -437,7 +440,7 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
     expect(purgeBody.data.purged_rows).toBeGreaterThanOrEqual(2);
 
     const exportAfterPurgeRes = await request.post(
-      '/api/plugins/uk.org.optimis.medical.firstaid/rpc/export_pupil_data',
+      `/api/p/${faPlugId}/rpc/export_pupil_data`,
       {
         data: { args: { pupil_id: m1Seeded.active_pupil_id } },
       }

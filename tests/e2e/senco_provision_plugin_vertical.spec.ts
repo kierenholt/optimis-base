@@ -375,6 +375,12 @@ test.describe('SENCO & Classroom Differentiation Plugin Vertical Slice (uk.org.o
     await expect(personaSelect).toBeVisible();
     await personaSelect.selectOption(m1Seed.teacher_staff_id);
 
+    // Place the `sen_differentiation` Mini-Iframe Widget onto the Classroom Teacher's Home Dashboard Grid
+    await editModeToggleBtn.click();
+    await expect(placeSenWidgetBtn).toBeVisible();
+    await placeSenWidgetBtn.click();
+    await editModeToggleBtn.click();
+
     // Verify the SEN Differentiation Mini-Widget on the Home Dashboard displays both K & E pupils' adjustments and TA allocations
     await expect(
       widgetFrame.getByTestId(`widget-sen-adjustment-${m1Seed.active_pupil_id}`)

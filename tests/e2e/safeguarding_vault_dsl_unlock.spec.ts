@@ -17,12 +17,14 @@ test.describe('Safeguarding Vault Envelope Encryption & DSL Cloud Key Unlock (Se
   let pageErrors: string[] = [];
   let logCursor: string = '';
   let seeded: SeededPersonaFixtures | null = null;
+  let testPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
     pageErrors = [];
     logCursor = '';
     seeded = null;
+    testPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -49,6 +51,7 @@ test.describe('Safeguarding Vault Envelope Encryption & DSL Cloud Key Unlock (Se
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
     }
+    testPlugId = (await installRes.json()).plug_id;
     const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
       data: {},
     });
@@ -251,7 +254,7 @@ test.describe('Safeguarding Vault Envelope Encryption & DSL Cloud Key Unlock (Se
     });
     expect(switchDslRes.ok()).toBe(true);
 
-    const rpcRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/submit_safeguarding_postbox', {
+    const rpcRes = await request.post(`/api/p/${testPlugId}/rpc/submit_safeguarding_postbox`, {
       data: {
         args: {
           pupil_id: seeded.pupil_id,

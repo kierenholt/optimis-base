@@ -37,6 +37,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
   let logCursor: string = '';
   let m1Seeded: Milestone1SeedResponse | null = null;
   let personaSeeded: PersonaSeedResponse | null = null;
+  let lmsPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
@@ -44,6 +45,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     logCursor = '';
     m1Seeded = null;
     personaSeeded = null;
+    lmsPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -142,6 +144,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
         `Failed to install ${PLUGIN_FOLDER}: ${installRes.status()} ${await installRes.text()}`
       );
     }
+    lmsPlugId = (await installRes.json()).plug_id;
 
     const activateRes = await request.post(
       `/api/admin/plugins/${encodeURIComponent(PLUGIN_ID)}/activate`,
@@ -160,13 +163,13 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
 
   test.afterEach(async ({ request }, testInfo) => {
     // 1. Purge any plugin sync logs created for seeded pupils before removing the plugin
-    if (m1Seeded && personaSeeded) {
+    if (m1Seeded && personaSeeded && lmsPlugId) {
       for (const pupilId of [
         m1Seeded.active_pupil_id,
         m1Seeded.transferred_pupil_id,
         m1Seeded.other_group_pupil_id,
       ]) {
-        await request.post(`/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/purge_pupil_data`, {
+        await request.post(`/api/p/${lmsPlugId}/rpc/purge_pupil_data`, {
           data: {
             args: {
               pupil_id: pupilId,
@@ -265,7 +268,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     );
     expect(uiConfigRes.ok()).toBe(true);
     const uiConfigBody = await uiConfigRes.json();
-    const lmsPluginNav = uiConfigBody.plugins.find((p: { id: string }) => p.id === PLUGIN_ID);
+    const lmsPluginNav = uiConfigBody.plugins.find((p: { id: string }) => p.id === lmsPlugId);
     expect(lmsPluginNav).toBeDefined();
     expect(lmsPluginNav.permitted_methods).toEqual(
       expect.arrayContaining(['upsert_pupil_membership', 'get_group_roster', 'list_sync_logs'])
@@ -290,7 +293,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     await expect(lmsNavBtn).toBeVisible();
     await lmsNavBtn.click();
 
-    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${PLUGIN_ID}"]`);
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${lmsPlugId}"]`);
     await expect(pluginFrame.getByTestId('lms-sync-plugin-root')).toBeVisible();
 
     // 4. HoD transfers active_pupil_id from Set 1 (own_group_id) into Set 2 (other_group_id) via upsert_pupil_membership
@@ -349,7 +352,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
 
     // 1. RBAC: Classroom Teacher (who lacks dal.groups.write:all) is rejected when calling upsert_pupil_membership
     const unauthTransferRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/upsert_pupil_membership`,
+      `/api/p/${lmsPlugId}/rpc/upsert_pupil_membership`,
       {
         data: {
           args: {
@@ -383,7 +386,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     });
 
     const adminTransferRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/upsert_pupil_membership`,
+      `/api/p/${lmsPlugId}/rpc/upsert_pupil_membership`,
       {
         data: {
           args: {
@@ -401,7 +404,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     // Poll list_sync_logs until the failed sync attempt is recorded in plugin_lms_sync.db
     await expect(async () => {
       const logsRes = await request.post(
-        `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/list_sync_logs`,
+        `/api/p/${lmsPlugId}/rpc/list_sync_logs`,
         {
           data: {
             args: {
@@ -421,7 +424,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
 
     // 3. Verify UK GDPR export_pupil_data & purge_pupil_data hooks on plugin_lms_sync.db
     const exportRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/export_pupil_data`,
+      `/api/p/${lmsPlugId}/rpc/export_pupil_data`,
       {
         data: {
           args: {
@@ -440,7 +443,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     expect(exportBody.data.sections[0].redactable_fields).toContain('sync_notes');
 
     const purgeRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/purge_pupil_data`,
+      `/api/p/${lmsPlugId}/rpc/purge_pupil_data`,
       {
         data: {
           args: {
@@ -456,7 +459,7 @@ test.describe('Google Classroom LMS Sync Plugin Vertical Slice: Group Membership
     expect(purgeBody.data.purged_rows).toBeGreaterThanOrEqual(1);
 
     const exportAfterPurgeRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/export_pupil_data`,
+      `/api/p/${lmsPlugId}/rpc/export_pupil_data`,
       {
         data: {
           args: {

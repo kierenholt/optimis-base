@@ -175,9 +175,11 @@ test.describe('Plugin Authoring SDK & Developer Toolchain (Sections 10A–10D)',
     });
     expect(switchAdminRes.ok()).toBe(true);
 
-    await request.post('/api/admin/plugins/install', {
+    const installBehRes = await request.post('/api/admin/plugins/install', {
       data: { folder: 'behaviour_plugin', staff_id: adminStaffId },
     });
+    expect(installBehRes.ok()).toBe(true);
+    const behPlugId = (await installBehRes.json()).plug_id;
     await request.post('/api/admin/plugins/uk.org.optimis.behaviour/activate', {
       data: { staff_id: adminStaffId },
     });
@@ -188,9 +190,9 @@ test.describe('Plugin Authoring SDK & Developer Toolchain (Sections 10A–10D)',
     await expect(navBtn).toBeVisible();
     await navBtn.click();
 
-    const iframeEl = page.locator('[data-testid="plugin-iframe-uk.org.optimis.behaviour"]');
+    const iframeEl = page.locator(`[data-testid="plugin-iframe-${behPlugId}"]`);
     await expect(iframeEl).toBeAttached();
-    const frame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.behaviour"]');
+    const frame = page.frameLocator(`[data-testid="plugin-iframe-${behPlugId}"]`);
     await expect(frame.locator('body')).toBeVisible();
 
     const bridgeCapabilities = await frame.locator('body').evaluate(() => {

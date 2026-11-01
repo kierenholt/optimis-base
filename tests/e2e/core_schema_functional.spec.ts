@@ -8,12 +8,14 @@ test.describe('Optimis Core Schema (45 Tables) End-to-End Functional Invariants'
   let pageErrors: string[] = [];
   let logCursor: string = '';
   let seededPupilId: string = '';
+  let testPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
     pageErrors = [];
     logCursor = '';
     seededPupilId = '';
+    testPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -40,6 +42,7 @@ test.describe('Optimis Core Schema (45 Tables) End-to-End Functional Invariants'
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
     }
+    testPlugId = (await installRes.json()).plug_id;
     const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
       data: {},
     });
@@ -110,11 +113,11 @@ test.describe('Optimis Core Schema (45 Tables) End-to-End Functional Invariants'
     const hostShell = page.getByTestId('host-shell');
     await expect(hostShell).toBeVisible();
 
-    const iframeEl = page.getByTestId('plugin-iframe-uk.org.optimis.test');
+    const iframeEl = page.getByTestId(`plugin-iframe-${testPlugId}`);
     await expect(iframeEl).toBeVisible();
     await expect(iframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const printBtn = pluginFrame.getByTestId('print-record-btn');
     await expect(printBtn).toBeVisible();
     await expect(printBtn).toHaveAttribute('data-mis-rpc', 'get_pupil_record');

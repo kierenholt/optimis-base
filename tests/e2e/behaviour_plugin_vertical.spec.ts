@@ -33,6 +33,8 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
   let logCursor: string = '';
   let m1Seed: Milestone1SeedResponse | null = null;
   let personaSeed: PersonaSeedResponse | null = null;
+  let testPlugId: string = '';
+  let behaviourPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
@@ -40,6 +42,8 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     logCursor = '';
     m1Seed = null;
     personaSeed = null;
+    testPlugId = '';
+    behaviourPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -114,6 +118,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     if (!installTestRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installTestRes.status()}`);
     }
+    testPlugId = (await installTestRes.json()).plug_id;
     const activateTestRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
       data: { staff_id: personaSeed.admin_staff_id },
     });
@@ -129,6 +134,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
         `Failed to install behaviour_plugin: ${installBehaviourRes.status()} ${await installBehaviourRes.text()}`
       );
     }
+    behaviourPlugId = (await installBehaviourRes.json()).plug_id;
     const activateBehaviourRes = await request.post(
       '/api/admin/plugins/uk.org.optimis.behaviour/activate',
       {
@@ -142,7 +148,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
 
   test.afterEach(async ({ request }, testInfo) => {
     // 1. Clean up behaviour_events in plugin_behaviour.db
-    if (personaSeed && m1Seed) {
+    if (personaSeed && m1Seed && behaviourPlugId) {
       await request.post('/api/auth/persona', {
         data: { staff_id: personaSeed.admin_staff_id },
       });
@@ -154,7 +160,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
         m1Seed.transferred_pupil_id,
         m1Seed.other_group_pupil_id,
       ]) {
-        await request.post('/api/plugins/uk.org.optimis.behaviour/rpc/purge_pupil_data', {
+        await request.post(`/api/p/${behaviourPlugId}/rpc/purge_pupil_data`, {
           data: { args: { pupil_id: pid } },
         });
       }
@@ -222,15 +228,15 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     expect(uiConfigBody.ok).toBe(true);
 
     const behaviourPlugin = uiConfigBody.plugins.find(
-      (p: { id: string }) => p.id === 'uk.org.optimis.behaviour'
+      (p: { id: string }) => p.id === behaviourPlugId
     );
     expect(behaviourPlugin).toBeDefined();
     expect(behaviourPlugin.widgets).toEqual([
       expect.objectContaining({
         id: 'behaviour_summary',
-        plugin_id: 'uk.org.optimis.behaviour',
+        plugin_id: behaviourPlugId,
         entry: 'ui/dist/widget.html',
-        entry_url: '/plugins/uk.org.optimis.behaviour/ui/widget.html',
+        entry_url: `/p/${behaviourPlugId}/ui/widget.html`,
       }),
     ]);
 
@@ -271,11 +277,11 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     await expect(behaviourNavBtn).toBeVisible();
     await behaviourNavBtn.click();
 
-    const behaviourIframeEl = page.getByTestId('plugin-iframe-uk.org.optimis.behaviour');
+    const behaviourIframeEl = page.getByTestId(`plugin-iframe-${behaviourPlugId}`);
     await expect(behaviourIframeEl).toBeVisible();
     await expect(behaviourIframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const behaviourFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.behaviour"]');
+    const behaviourFrame = page.frameLocator(`[data-testid="plugin-iframe-${behaviourPlugId}"]`);
 
     // Log a Merit (+3)
     const eventTypeSelect = behaviourFrame.getByTestId('behaviour-event-type-select');
@@ -332,13 +338,13 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
 
     await widgetStudentLink.click();
 
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.test')).toBeVisible();
-    await expect(page.getByTestId('plugin-iframe-uk.org.optimis.behaviour')).toBeHidden();
+    await expect(page.getByTestId(`plugin-iframe-${testPlugId}`)).toBeVisible();
+    await expect(page.getByTestId(`plugin-iframe-${behaviourPlugId}`)).toBeHidden();
     await expect(page.getByTestId('active-entity-context-pill')).toContainText(
       `student:${m1Seed.active_pupil_id}`
     );
     await expect(page.getByTestId('deep-link-navigation-status')).toContainText(
-      `student:${m1Seed.active_pupil_id} -> uk.org.optimis.test`
+      `student:${m1Seed.active_pupil_id} -> ${testPlugId}`
     );
 
     // 6. Switch to System Admin / DPO persona, run UK GDPR SAR Export, and redact third-party pupil name ("Draco Malfoy") in `incident_notes`
@@ -374,16 +380,25 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     );
     await expect(behaviourSarSection).toBeVisible();
 
+    const incidentNotesInput0 = page.getByTestId(
+      'sar-redact-input-uk.org.optimis.behaviour-Plugin Behaviour & Incident Records-0-incident_notes'
+    );
     const incidentNotesInput1 = page.getByTestId(
       'sar-redact-input-uk.org.optimis.behaviour-Plugin Behaviour & Incident Records-1-incident_notes'
     );
+    await expect(incidentNotesInput0).toBeVisible();
     await expect(incidentNotesInput1).toBeVisible();
-    await expect(incidentNotesInput1).toHaveValue(
+
+    const val0 = await incidentNotesInput0.inputValue();
+    const targetIncidentInput = val0.includes('Draco Malfoy')
+      ? incidentNotesInput0
+      : incidentNotesInput1;
+    await expect(targetIncidentInput).toHaveValue(
       'Argued loudly with third-party pupil Draco Malfoy over calculator sharing during starter activity.'
     );
 
     // Redact the third-party pupil name in `incident_notes`
-    await incidentNotesInput1.fill(
+    await targetIncidentInput.fill(
       'Argued loudly with third-party pupil [REDACTED THIRD PARTY] over calculator sharing during starter activity.'
     );
 
@@ -407,7 +422,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
 
     // 1. Verify strict `:own_groups` scoping (`strict_own_groups: true`): Teacher (`m1Seed.teacher_staff_id`) attempting to log behaviour for a pupil in another teacher's group (`m1Seed.other_group_pupil_id`) under strict_own_groups MUST fail fast
     const unauthorizedLogRes = await request.post(
-      `/api/plugins/uk.org.optimis.behaviour/rpc/log_behaviour_event?staff_id=${encodeURIComponent(
+      `/api/p/${behaviourPlugId}/rpc/log_behaviour_event?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
       )}`,
       {
@@ -432,7 +447,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
 
     // 1B: Verify Hierarchical Scope Subsumption: HoD (`personaSeed.hod_staff_id`, who holds `dal.pupils.read:all`) calling the `:own_groups` endpoint WITH `strict_own_groups: true` succeeds because `:all` subsumes `:own_groups`
     const hodLogRes = await request.post(
-      `/api/plugins/uk.org.optimis.behaviour/rpc/log_behaviour_event?staff_id=${encodeURIComponent(
+      `/api/p/${behaviourPlugId}/rpc/log_behaviour_event?staff_id=${encodeURIComponent(
         personaSeed.hod_staff_id
       )}`,
       {
@@ -458,7 +473,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
 
     // Also verify group-transferred pupil (group_pupil_memberships.effective_to < reference_date) is blocked under `strict_own_groups: true`
     const transferredSummaryRes = await request.post(
-      `/api/plugins/uk.org.optimis.behaviour/rpc/get_pupil_behaviour_summary?staff_id=${encodeURIComponent(
+      `/api/p/${behaviourPlugId}/rpc/get_pupil_behaviour_summary?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
       )}`,
       {
@@ -479,7 +494,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
 
     // 2. Teacher logs a valid event for own-group `active_pupil_id`, verifies batch rollup (`1E` `get_by_ids_batch`), then Admin executes auto-bound `export_pupil_data` & `purge_pupil_data` (`1G`) and verifies 0 orphaned records remain
     const logValidRes = await request.post(
-      `/api/plugins/uk.org.optimis.behaviour/rpc/log_behaviour_event?staff_id=${encodeURIComponent(
+      `/api/p/${behaviourPlugId}/rpc/log_behaviour_event?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
       )}`,
       {
@@ -500,7 +515,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
 
     // 1E: Verify batch pupil behaviour lookup using `ctx.dal.pupils.get_by_ids_batch`
     const batchSummaryRes = await request.post(
-      `/api/plugins/uk.org.optimis.behaviour/rpc/get_pupil_behaviour_summary?staff_id=${encodeURIComponent(
+      `/api/p/${behaviourPlugId}/rpc/get_pupil_behaviour_summary?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
       )}`,
       {
@@ -520,7 +535,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     expect(batchSummaryBody.data.pupils.length).toBe(2);
 
     const exportBeforePurgeRes = await request.post(
-      `/api/plugins/uk.org.optimis.behaviour/rpc/export_pupil_data?staff_id=${encodeURIComponent(
+      `/api/p/${behaviourPlugId}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
         personaSeed.admin_staff_id
       )}`,
       {
@@ -534,7 +549,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     expect(exportBeforeBody.data[0].redactable_fields).toEqual(['incident_notes']);
 
     const purgeRes = await request.post(
-      `/api/plugins/uk.org.optimis.behaviour/rpc/purge_pupil_data?staff_id=${encodeURIComponent(
+      `/api/p/${behaviourPlugId}/rpc/purge_pupil_data?staff_id=${encodeURIComponent(
         personaSeed.admin_staff_id
       )}`,
       {
@@ -547,7 +562,7 @@ test.describe('Behaviour & Pastoral Points Plugin Vertical Slice (uk.org.optimis
     expect(purgeBody.data.purged_rows).toBe(1);
 
     const exportAfterPurgeRes = await request.post(
-      `/api/plugins/uk.org.optimis.behaviour/rpc/export_pupil_data?staff_id=${encodeURIComponent(
+      `/api/p/${behaviourPlugId}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
         personaSeed.admin_staff_id
       )}`,
       {

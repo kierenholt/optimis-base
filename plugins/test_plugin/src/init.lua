@@ -303,6 +303,9 @@ function sync_external_sparx_get(ctx, args)
     ["X-School-URN"] = "100001",
     ["X-Pupil-Ref"] = args.pupil_id
   })
+  if res.ok == false then
+    error(res.error or res.error_code or "EGRESS_REQUEST_FAILED")
+  end
 
   return {
     ok = true,
@@ -331,6 +334,9 @@ function push_external_sparx_post(ctx, args)
     { ["Content-Type"] = "application/json" },
     args.payload
   )
+  if res.ok == false then
+    error(res.error or res.error_code or "EGRESS_REQUEST_FAILED")
+  end
 
   return {
     ok = true,

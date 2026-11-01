@@ -40,6 +40,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
   let logCursor: string = '';
   let personas: SeededPersonaFixtures | null = null;
   let seeded: Milestone1CoverSeedResponse | null = null;
+  let coverPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
@@ -47,6 +48,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     logCursor = '';
     personas = null;
     seeded = null;
+    coverPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -129,8 +131,9 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     }
     const installBody = await installRes.json();
     expect(installBody.ok).toBe(true);
-    expect(installBody.plugin_id).toBe(PLUGIN_ID);
+    expect(installBody.plug_id).toMatch(/^[a-z0-9]{8}$/);
     expect(installBody.database_alias).toBe(PLUGIN_DB_ALIAS);
+    coverPlugId = installBody.plug_id;
 
     const activateRes = await request.post(
       `/api/admin/plugins/${encodeURIComponent(PLUGIN_ID)}/activate`,
@@ -147,7 +150,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
 
   test.afterEach(async ({ request }, testInfo) => {
     // 1. Purge plugin pupil data created during the test
-    if (personas && seeded) {
+    if (personas && seeded && coverPlugId) {
       await request.post('/api/auth/persona', {
         data: { staff_id: personas.admin_staff_id },
       });
@@ -156,7 +159,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
         seeded.second_active_pupil_id,
         seeded.transferred_pupil_id,
       ]) {
-        await request.post(`/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/purge_pupil_data`, {
+        await request.post(`/api/p/${coverPlugId}/rpc/purge_pupil_data`, {
           data: { args: { pupil_id: pupilId } },
         });
       }
@@ -252,11 +255,11 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     await expect(navItem).toBeVisible();
     await navItem.click();
 
-    const iframeEl = page.getByTestId(`plugin-iframe-${PLUGIN_ID}`);
+    const iframeEl = page.getByTestId(`plugin-iframe-${coverPlugId}`);
     await expect(iframeEl).toBeVisible();
     await expect(iframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${PLUGIN_ID}"]`);
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${coverPlugId}"]`);
     await expect(pluginFrame.getByTestId('staff-cover-root')).toBeVisible();
 
     const loadCoverRosterBtn = pluginFrame.getByTestId('load-cover-roster-btn');
@@ -270,7 +273,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
 
     // Also verify via direct RPC that submitting attendance for own_group_id as Cover Teacher fails before cover assignment
     const preCoverSubmitRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/submit_cover_attendance_batch`,
+      `/api/p/${coverPlugId}/rpc/submit_cover_attendance_batch`,
       {
         data: {
           args: {
@@ -395,7 +398,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     expect(switchTeacherRes.ok()).toBe(true);
 
     const unauthAssignRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/record_absence_and_assign_cover`,
+      `/api/p/${coverPlugId}/rpc/record_absence_and_assign_cover`,
       {
         data: {
           args: {
@@ -423,7 +426,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     expect(switchAdminRes.ok()).toBe(true);
 
     const assignRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/record_absence_and_assign_cover`,
+      `/api/p/${coverPlugId}/rpc/record_absence_and_assign_cover`,
       {
         data: {
           args: {
@@ -450,7 +453,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     expect(switchCoverRes.ok()).toBe(true);
 
     const submitAttRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/submit_cover_attendance_batch`,
+      `/api/p/${coverPlugId}/rpc/submit_cover_attendance_batch`,
       {
         data: {
           args: {
@@ -480,7 +483,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     });
 
     const exportRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/export_pupil_data`,
+      `/api/p/${coverPlugId}/rpc/export_pupil_data`,
       {
         data: {
           args: {
@@ -502,7 +505,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
 
     // 5. Verify UK GDPR purge_pupil_data deletes the pupil's rows and subsequent export_pupil_data returns 0 records
     const purgeRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/purge_pupil_data`,
+      `/api/p/${coverPlugId}/rpc/purge_pupil_data`,
       {
         data: {
           args: {
@@ -517,7 +520,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     expect(purgeBody.data.purged_rows).toBeGreaterThanOrEqual(1);
 
     const exportAfterPurgeRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/export_pupil_data`,
+      `/api/p/${coverPlugId}/rpc/export_pupil_data`,
       {
         data: {
           args: {
@@ -533,7 +536,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
 
     // 6. Verify revoke_cover_assignment (ctx.dal.groups.revoke_staff_assignment) strips dynamic :own_groups access
     const revokeRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/revoke_cover_assignment`,
+      `/api/p/${coverPlugId}/rpc/revoke_cover_assignment`,
       {
         data: {
           args: {
@@ -555,7 +558,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
       data: { staff_id: seeded.other_teacher_staff_id },
     });
     const postRevokeRosterRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/load_cover_class_roster`,
+      `/api/p/${coverPlugId}/rpc/load_cover_class_roster`,
       {
         data: {
           args: {

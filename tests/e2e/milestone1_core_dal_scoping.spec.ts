@@ -25,12 +25,14 @@ test.describe('Milestone 1: Coarse-Grained Core DAL Domain Methods & Dynamic :ow
   let pageErrors: string[] = [];
   let logCursor: string = '';
   let seeded: Milestone1SeedResponse | null = null;
+  let testPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
     pageErrors = [];
     logCursor = '';
     seeded = null;
+    testPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -57,6 +59,7 @@ test.describe('Milestone 1: Coarse-Grained Core DAL Domain Methods & Dynamic :ow
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
     }
+    testPlugId = (await installRes.json()).plug_id;
     const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
       data: {},
     });
@@ -150,11 +153,11 @@ test.describe('Milestone 1: Coarse-Grained Core DAL Domain Methods & Dynamic :ow
     const hostShell = page.getByTestId('host-shell');
     await expect(hostShell).toBeVisible();
 
-    const iframeEl = page.getByTestId('plugin-iframe-uk.org.optimis.test');
+    const iframeEl = page.getByTestId(`plugin-iframe-${testPlugId}`);
     await expect(iframeEl).toBeVisible();
     await expect(iframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const loadRosterBtn = pluginFrame.getByTestId('load-own-group-roster-btn');
     await expect(loadRosterBtn).toBeVisible();
     await expect(loadRosterBtn).toHaveAttribute('data-mis-rpc', 'get_group_roster_summary');
@@ -183,7 +186,7 @@ test.describe('Milestone 1: Coarse-Grained Core DAL Domain Methods & Dynamic :ow
 
     await page.goto(buildWorkspaceUrl(seeded));
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const loadOtherGroupBtn = pluginFrame.getByTestId('load-other-group-roster-btn');
     await expect(loadOtherGroupBtn).toBeVisible();
     await expect(loadOtherGroupBtn).toHaveAttribute('data-mis-rpc', 'get_group_roster_summary');
@@ -207,7 +210,7 @@ test.describe('Milestone 1: Coarse-Grained Core DAL Domain Methods & Dynamic :ow
 
     await page.goto(buildWorkspaceUrl(seeded));
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const loadGuardiansBtn = pluginFrame.getByTestId('load-pupil-guardians-btn');
     await expect(loadGuardiansBtn).toBeVisible();
     await expect(loadGuardiansBtn).toHaveAttribute('data-mis-rpc', 'get_pupil_guardians');
@@ -238,7 +241,7 @@ test.describe('Milestone 1: Coarse-Grained Core DAL Domain Methods & Dynamic :ow
 
     await page.goto(buildWorkspaceUrl(seeded));
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const recordAttendanceBtn = pluginFrame.getByTestId('record-am-attendance-btn');
     await expect(recordAttendanceBtn).toBeVisible();
     await expect(recordAttendanceBtn).toHaveAttribute('data-mis-rpc', 'record_group_am_attendance');
@@ -261,7 +264,7 @@ test.describe('Milestone 1: Coarse-Grained Core DAL Domain Methods & Dynamic :ow
 
     await page.goto(buildWorkspaceUrl(seeded));
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const submitSafeguardingBtn = pluginFrame.getByTestId('submit-safeguarding-postbox-btn');
     await expect(submitSafeguardingBtn).toBeVisible();
     await expect(submitSafeguardingBtn).toHaveAttribute('data-mis-rpc', 'submit_safeguarding_postbox');

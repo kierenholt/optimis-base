@@ -20,12 +20,14 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
   let pageErrors: string[] = [];
   let logCursor: string = '';
   let seeded: SeededMilestone1 | null = null;
+  let testPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
     pageErrors = [];
     logCursor = '';
     seeded = null;
+    testPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -52,6 +54,7 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
     }
+    testPlugId = (await installRes.json()).plug_id;
     const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
       data: {},
     });
@@ -89,8 +92,8 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
       data: { enable_real_http_egress: false },
     });
     await request.delete('/api/test/egress-mock');
-    if (seeded?.active_pupil_id) {
-      await request.post('/api/plugins/uk.org.optimis.test/rpc/purge_pupil_data', {
+    if (seeded?.active_pupil_id && testPlugId) {
+      await request.post(`/api/p/${testPlugId}/rpc/purge_pupil_data`, {
         data: { args: { pupil_id: seeded.active_pupil_id } },
       });
     }
@@ -187,7 +190,7 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
     const hostShell = page.getByTestId('host-shell');
     await expect(hostShell).toBeVisible();
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const syncGetBtn = pluginFrame.getByTestId('egress-sync-get-btn');
     await expect(syncGetBtn).toBeVisible();
     await syncGetBtn.click();
@@ -234,7 +237,7 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
     });
     await page.goto(`/?${query.toString()}`);
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const syncGetBtn = pluginFrame.getByTestId('egress-sync-get-btn');
     await expect(syncGetBtn).toBeVisible();
     await syncGetBtn.click();
@@ -252,7 +255,7 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
     }
 
     // 1. Calling ctx.http.post to an undeclared domain must fail fast
-    const unapprovedRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/push_external_sparx_post', {
+    const unapprovedRes = await request.post(`/api/p/${testPlugId}/rpc/push_external_sparx_post`, {
       data: {
         args: {
           pupil_id: seeded.active_pupil_id,
@@ -268,7 +271,7 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
     expect(unapprovedBody.error_code).toContain('egress domain not permitted by manifest.json');
 
     // 2. Prefix-spoofed domain (https://sync.sparxmaths.uk.attacker.com) must also fail fast
-    const spoofedRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/push_external_sparx_post', {
+    const spoofedRes = await request.post(`/api/p/${testPlugId}/rpc/push_external_sparx_post`, {
       data: {
         args: {
           pupil_id: seeded.active_pupil_id,
@@ -284,7 +287,7 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
     expect(spoofedBody.error_code).toContain('egress domain not permitted by manifest.json');
 
     // 3. Invoking ctx.http inside an open plugin_db write transaction must halt/rollback the write transaction and fail fast
-    const writeTxRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/mutate_then_illegal_egress', {
+    const writeTxRes = await request.post(`/api/p/${testPlugId}/rpc/mutate_then_illegal_egress`, {
       data: {
         args: {
           pupil_id: seeded.active_pupil_id,
@@ -301,11 +304,11 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
     expect(writeTxBody.error_code).toContain('disallowed inside an open SQLite write transaction');
 
     // 4. Verify the uncommitted note was rolled back in plugin_test.db
-    const listRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/list_pupil_notes', {
+    const listRes = await request.post(`/api/p/${testPlugId}/rpc/list_pupil_notes`, {
       data: {
         args: {
           pupil_id: seeded.active_pupil_id,
-          staff_id: seeded.teacher_staff_id,
+          staff_id: seeded.dsl_staff_id,
         },
       },
     });
@@ -334,7 +337,7 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
     });
     expect(mockSlowRes.ok()).toBe(true);
 
-    const slowRpcRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/sync_external_sparx_get', {
+    const slowRpcRes = await request.post(`/api/p/${testPlugId}/rpc/sync_external_sparx_get`, {
       data: {
         args: {
           pupil_id: seeded.active_pupil_id,

@@ -17,12 +17,14 @@ test.describe('Backend Session & Persona Resolution (Section 8A & Auth Flag)', (
   let pageErrors: string[] = [];
   let logCursor: string = '';
   let seeded: SeededPersonaFixtures | null = null;
+  let testPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
     pageErrors = [];
     logCursor = '';
     seeded = null;
+    testPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -49,6 +51,7 @@ test.describe('Backend Session & Persona Resolution (Section 8A & Auth Flag)', (
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
     }
+    testPlugId = (await installRes.json()).plug_id;
     const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
       data: {},
     });
@@ -174,7 +177,7 @@ test.describe('Backend Session & Persona Resolution (Section 8A & Auth Flag)', (
     const hostShell = page.getByTestId('host-shell');
     await expect(hostShell).toBeVisible();
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const printBtn = pluginFrame.getByTestId('print-record-btn');
     await expect(printBtn).toBeVisible();
     await printBtn.click();
@@ -213,7 +216,7 @@ test.describe('Backend Session & Persona Resolution (Section 8A & Auth Flag)', (
     expect(teacherBody.caller.scopes).not.toContain('dal.pupils.read:all');
 
     // 3. Calling get_pupil_record (which requires dal.pupils.read:all in manifest.json) as this Teacher MUST fail fast
-    const rpcRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/get_pupil_record', {
+    const rpcRes = await request.post(`/api/p/${testPlugId}/rpc/get_pupil_record`, {
       data: {
         args: { pupil_id: seeded.pupil_id },
       },

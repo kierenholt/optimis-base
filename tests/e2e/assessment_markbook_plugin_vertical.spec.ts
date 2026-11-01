@@ -35,6 +35,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
   let logCursor: string = '';
   let personas: SeededPersonaFixtures | null = null;
   let m1Seeded: Milestone1SeedResponse | null = null;
+  let markbookPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
@@ -42,6 +43,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     logCursor = '';
     personas = null;
     m1Seeded = null;
+    markbookPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -133,6 +135,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
         `Failed to install assessment_markbook_plugin: ${installMarkbookRes.status()} ${await installMarkbookRes.text()}`
       );
     }
+    markbookPlugId = (await installMarkbookRes.json()).plug_id;
 
     const activateMarkbookRes = await request.post(
       '/api/admin/plugins/uk.org.optimis.assessment.markbook/activate',
@@ -149,7 +152,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
 
   test.afterEach(async ({ request }, testInfo) => {
     // 1. Purge plugin data created during the test
-    if (personas && m1Seeded) {
+    if (personas && m1Seeded && markbookPlugId) {
       await request.post('/api/auth/persona', {
         data: { staff_id: personas.admin_staff_id },
       });
@@ -160,7 +163,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
         m1Seeded.other_group_pupil_id,
       ]) {
         if (pid) {
-          await request.post('/api/plugins/uk.org.optimis.assessment.markbook/rpc/purge_pupil_data', {
+          await request.post(`/api/p/${markbookPlugId}/rpc/purge_pupil_data`, {
             data: { args: { pupil_id: pid } },
           });
         }
@@ -285,12 +288,12 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     await expect(markbookNavBtn).toBeVisible();
     await markbookNavBtn.click();
 
-    const iframeEl = page.getByTestId('plugin-iframe-uk.org.optimis.assessment.markbook');
+    const iframeEl = page.getByTestId(`plugin-iframe-${markbookPlugId}`);
     await expect(iframeEl).toBeVisible();
     await expect(iframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
     const pluginFrame = page.frameLocator(
-      '[data-testid="plugin-iframe-uk.org.optimis.assessment.markbook"]'
+      `[data-testid="plugin-iframe-${markbookPlugId}"]`
     );
     await expect(pluginFrame.getByTestId('markbook-plugin-root')).toBeVisible();
 
@@ -439,7 +442,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
 
     // 1. Before pulling MAT policies into `__system_config`, markbook operations fail fast with MAT_GRADING_SCHEMA_NOT_SYNCED
     const unsyncedRes = await request.post(
-      `/api/plugins/uk.org.optimis.assessment.markbook/rpc/create_markbook_column?staff_id=${encodeURIComponent(
+      `/api/p/${markbookPlugId}/rpc/create_markbook_column?staff_id=${encodeURIComponent(
         m1Seeded.teacher_staff_id
       )}`,
       {
@@ -475,7 +478,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
 
     // 3. Classroom Teacher (`:own_groups`) is rejected with 403 when calling HoD-only `get_department_attainment_rollup` (`:all`)
     const teacherRollupRes = await request.post(
-      `/api/plugins/uk.org.optimis.assessment.markbook/rpc/get_department_attainment_rollup?staff_id=${encodeURIComponent(
+      `/api/p/${markbookPlugId}/rpc/get_department_attainment_rollup?staff_id=${encodeURIComponent(
         m1Seeded.teacher_staff_id
       )}`,
       {
@@ -494,7 +497,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
 
     // 4. Classroom Teacher (`:own_groups`) creates a Primary `WT,EXS,GDS` markbook column for `own_group_id`
     const createColRes = await request.post(
-      `/api/plugins/uk.org.optimis.assessment.markbook/rpc/create_markbook_column?staff_id=${encodeURIComponent(
+      `/api/p/${markbookPlugId}/rpc/create_markbook_column?staff_id=${encodeURIComponent(
         m1Seeded.teacher_staff_id
       )}`,
       {
@@ -517,7 +520,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
 
     // 5. Invalid grade outside `WT,EXS,GDS` scale fails fast with INVALID_MAT_GRADE
     const invalidGradeRes = await request.post(
-      `/api/plugins/uk.org.optimis.assessment.markbook/rpc/save_pupil_grades?staff_id=${encodeURIComponent(
+      `/api/p/${markbookPlugId}/rpc/save_pupil_grades?staff_id=${encodeURIComponent(
         m1Seeded.teacher_staff_id
       )}`,
       {
@@ -543,7 +546,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
 
     // 6. Teacher attempting to save a grade for a transferred pupil (`transferred_pupil_id`) or another set's pupil (`other_group_pupil_id`) fails fast
     const transferredGradeRes = await request.post(
-      `/api/plugins/uk.org.optimis.assessment.markbook/rpc/save_pupil_grades?staff_id=${encodeURIComponent(
+      `/api/p/${markbookPlugId}/rpc/save_pupil_grades?staff_id=${encodeURIComponent(
         m1Seeded.teacher_staff_id
       )}`,
       {
@@ -571,7 +574,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
 
     // 7. Teacher saves valid `GDS` grade for `active_pupil_id`, then Admin verifies `export_pupil_data` and `purge_pupil_data` leave zero orphaned records
     const validSaveRes = await request.post(
-      `/api/plugins/uk.org.optimis.assessment.markbook/rpc/save_pupil_grades?staff_id=${encodeURIComponent(
+      `/api/p/${markbookPlugId}/rpc/save_pupil_grades?staff_id=${encodeURIComponent(
         m1Seeded.teacher_staff_id
       )}`,
       {
@@ -595,7 +598,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     expect(validSaveRes.ok()).toBe(true);
 
     const exportBeforeRes = await request.post(
-      `/api/plugins/uk.org.optimis.assessment.markbook/rpc/export_pupil_data?staff_id=${encodeURIComponent(
+      `/api/p/${markbookPlugId}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
         personas.admin_staff_id
       )}`,
       {
@@ -610,7 +613,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     expect(exportBeforeBody.data[0].redactable_fields).toEqual(['teacher_comment']);
 
     const purgeRes = await request.post(
-      `/api/plugins/uk.org.optimis.assessment.markbook/rpc/purge_pupil_data?staff_id=${encodeURIComponent(
+      `/api/p/${markbookPlugId}/rpc/purge_pupil_data?staff_id=${encodeURIComponent(
         personas.admin_staff_id
       )}`,
       {
@@ -623,7 +626,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
     expect(purgeBody.data.purged_rows).toBe(1);
 
     const exportAfterRes = await request.post(
-      `/api/plugins/uk.org.optimis.assessment.markbook/rpc/export_pupil_data?staff_id=${encodeURIComponent(
+      `/api/p/${markbookPlugId}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
         personas.admin_staff_id
       )}`,
       {

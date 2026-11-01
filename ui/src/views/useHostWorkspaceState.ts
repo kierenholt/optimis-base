@@ -277,29 +277,6 @@ export function useHostWorkspaceState() {
         }
         return filtered.length > 0 ? filtered : [defaultId];
       });
-
-      if (isInitialLoad && !hasLoadedServerLayoutRef.current) {
-        const declaredWidgets: PluginWidgetDescriptor[] = [];
-        for (const p of plugins) {
-          if (Array.isArray(p.widgets)) {
-            for (const w of p.widgets) {
-              declaredWidgets.push(w);
-            }
-          }
-        }
-        setPlacedWidgets((prev) => {
-          if (prev.length > 0) {
-            return prev;
-          }
-          if (declaredWidgets.length === 0) {
-            return [];
-          }
-          const first = declaredWidgets[0];
-          const w = normalizePresetDim(first.width, 2);
-          const h = normalizePresetDim(first.height, 1);
-          return [{ ...first, width: w, height: h, colSpan: w, rowSpan: h, permitted: true }];
-        });
-      }
     },
     [initialBrowserRoute.plugId]
   );
@@ -331,10 +308,43 @@ export function useHostWorkspaceState() {
     [activeViewPath, activeRouteQuery, syncBrowserRouteUrl]
   );
 
-  useEffect(() => {
-    const loadUIConfig = async () => {
+  const lastFetchedStaffIdRef = useRef<string | null>(null);
+
+  const refreshDashboardLayoutForStaff = useCallback(
+    async (targetStaffId: string) => {
       try {
-        const query = activeStaffId ? `?staff_id=${encodeURIComponent(activeStaffId)}` : '';
+        const query = targetStaffId ? `?staff_id=${encodeURIComponent(targetStaffId)}` : '';
+        const layoutRes = await fetch(`/api/dashboard/layout${query}`);
+        if (!layoutRes.ok) {
+          return;
+        }
+        const layoutBody = await layoutRes.json().catch(() => null);
+        if (layoutBody && layoutBody.ok && Array.isArray(layoutBody.resolved_widgets)) {
+          hasLoadedServerLayoutRef.current = true;
+          const slots = layoutBody.resolved_widgets as ResolvedDashboardWidgetSlot[];
+          setPlacedWidgets((prev) => mapResolvedSlotsToPlacedWidgets(slots, prev));
+          if (typeof layoutBody.layout_source === 'string') {
+            setDashboardLayoutSource(layoutBody.layout_source);
+          }
+          if (layoutBody.role_defaults && typeof layoutBody.role_defaults === 'object') {
+            setRoleDefaultLayouts(
+              layoutBody.role_defaults as Record<string, DashboardLayoutItem[]>
+            );
+          }
+        }
+      } catch {
+        // Ignore network errors during dashboard layout refresh
+      }
+    },
+    [mapResolvedSlotsToPlacedWidgets]
+  );
+
+  const refreshWorkspaceForStaff = useCallback(
+    async (staffIdOverride?: string): Promise<PluginNavEntry[] | undefined> => {
+      const targetStaffId = staffIdOverride !== undefined ? staffIdOverride : activeStaffId;
+      lastFetchedStaffIdRef.current = targetStaffId;
+      try {
+        const query = targetStaffId ? `?staff_id=${encodeURIComponent(targetStaffId)}` : '';
         const [res, layoutRes] = await Promise.all([
           fetch(`/api/system/ui-config${query}`),
           fetch(`/api/dashboard/layout${query}`).catch(() => null),
@@ -358,11 +368,11 @@ export function useHostWorkspaceState() {
         }
 
         if (!res.ok) {
-          return;
+          return undefined;
         }
         const body = await res.json();
         if (!body || !body.ok) {
-          return;
+          return undefined;
         }
         if (body.school_name) {
           setSchoolName(body.school_name);
@@ -387,18 +397,27 @@ export function useHostWorkspaceState() {
         if (serverEntityHandlers) {
           setEntityLinkHandlers((prev) => ({ ...prev, ...serverEntityHandlers }));
         }
-        if (Array.isArray(body.plugins)) {
-          applyInstalledPluginsState(body.plugins, serverEntityHandlers);
-        }
         if (Array.isArray(body.pinned_recents)) {
           setPinnedRecents(body.pinned_recents as PinnedRecentEntry[]);
         }
+        if (Array.isArray(body.plugins)) {
+          applyInstalledPluginsState(body.plugins, serverEntityHandlers);
+          return body.plugins as PluginNavEntry[];
+        }
+        return undefined;
       } catch {
-        // Keep default tokens if ui-config endpoint is unreachable
+        return undefined;
       }
-    };
-    void loadUIConfig();
-  }, [initialAcademicYearId, activeStaffId, applyInstalledPluginsState, mapResolvedSlotsToPlacedWidgets]);
+    },
+    [activeStaffId, initialAcademicYearId, applyInstalledPluginsState, mapResolvedSlotsToPlacedWidgets]
+  );
+
+  useEffect(() => {
+    if (lastFetchedStaffIdRef.current === activeStaffId && hasInitializedPluginsRef.current) {
+      return;
+    }
+    void refreshWorkspaceForStaff(activeStaffId);
+  }, [activeStaffId, refreshWorkspaceForStaff]);
 
   useEffect(() => {
     applyHostThemeToRoot(themeMode, themeCatalog);
@@ -558,27 +577,6 @@ export function useHostWorkspaceState() {
     void persistStaffDashboardLayout(nextWidgets);
   };
 
-  const handleResizeWidget = (
-    pluginId: string,
-    widgetId: string,
-    colSpan: number,
-    rowSpan: number
-  ) => {
-    const safeCols: 1 | 2 = colSpan === 1 ? 1 : 2;
-    const safeRows: 1 | 2 = rowSpan === 2 ? 2 : 1;
-    setPlacedWidgets((prev) =>
-      prev.map((w) =>
-        w.plugin_id === pluginId && w.id === widgetId
-          ? {
-              ...w,
-              colSpan: w.width === 1 || w.width === 2 ? w.width : safeCols,
-              rowSpan: w.height === 1 || w.height === 2 ? w.height : safeRows,
-            }
-          : w
-      )
-    );
-  };
-
   const handleRemoveWidget = (pluginId: string, widgetId: string) => {
     const nextWidgets = placedWidgets.filter(
       (w) => !(w.plugin_id === pluginId && w.id === widgetId)
@@ -642,6 +640,7 @@ export function useHostWorkspaceState() {
       setRoleDefaultLayouts(body.role_defaults as Record<string, DashboardLayoutItem[]>);
     }
     setDashboardSaveStatus(`ROLE_DEFAULT_SAVED:${normalizedRole}`);
+    await refreshDashboardLayoutForStaff(activeStaffId);
   };
 
   const handleAppendWidgetToRoleDefault = async (roleId: string, widget: PluginWidgetDescriptor) => {
@@ -668,6 +667,7 @@ export function useHostWorkspaceState() {
       setRoleDefaultLayouts(body.role_defaults as Record<string, DashboardLayoutItem[]>);
     }
     setDashboardSaveStatus(`ROLE_WIDGET_APPENDED:${normalizedRole}:${widget.id}`);
+    await refreshDashboardLayoutForStaff(activeStaffId);
   };
 
   return {
@@ -726,13 +726,13 @@ export function useHostWorkspaceState() {
     setDeepLinkNavigationStatus,
     syncBrowserRouteUrl,
     applyInstalledPluginsState,
+    refreshWorkspaceForStaff,
     activatePluginInKeepAlivePool,
     handleNavigateHome,
     handlePinOrUnpinRoute,
     handleUnpinRoute,
     handleSelectPinnedRoute,
     handlePlaceWidget,
-    handleResizeWidget,
     handleRemoveWidget,
     handleMoveWidgetUp,
     handleMoveWidgetDown,

@@ -38,6 +38,8 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
   let logCursor: string = '';
   let personas: SeededPersonaFixtures | null = null;
   let m1Seeded: Milestone1SeedResponse | null = null;
+  let testPlugId: string = '';
+  let dmzPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
@@ -45,6 +47,8 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     logCursor = '';
     personas = null;
     m1Seeded = null;
+    testPlugId = '';
+    dmzPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -129,6 +133,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     if (!installTestRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installTestRes.status()}`);
     }
+    testPlugId = (await installTestRes.json()).plug_id;
     const activateTestRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
       data: { staff_id: personas.admin_staff_id },
     });
@@ -145,6 +150,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     if (!installDmzRes.ok()) {
       throw new Error(`Failed to install parent_dmz_plugin: ${installDmzRes.status()} ${await installDmzRes.text()}`);
     }
+    dmzPlugId = (await installDmzRes.json()).plug_id;
     const activateDmzRes = await request.post('/api/admin/plugins/uk.org.optimis.parent.dmz/activate', {
       data: { staff_id: personas.admin_staff_id },
     });
@@ -164,11 +170,11 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     });
 
     // 2. Purge plugin data created during the test
-    if (personas && m1Seeded) {
+    if (personas && m1Seeded && dmzPlugId) {
       await request.post('/api/auth/persona', {
         data: { staff_id: personas.admin_staff_id },
       });
-      await request.post('/api/plugins/uk.org.optimis.parent.dmz/rpc/purge_pupil_data', {
+      await request.post(`/api/p/${dmzPlugId}/rpc/purge_pupil_data`, {
         data: { args: { pupil_id: m1Seeded.active_pupil_id } },
       });
     }
@@ -227,7 +233,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     }
 
     // 1. Record a statutory AM attendance session mark for Ada Lovelace so attendance sessions are populated
-    const rpcAttRes = await request.post('/api/plugins/uk.org.optimis.test/rpc/record_group_am_attendance', {
+    const rpcAttRes = await request.post(`/api/p/${testPlugId}/rpc/record_group_am_attendance`, {
       data: {
         args: {
           group_id: m1Seeded.own_group_id,
@@ -302,11 +308,11 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     await expect(dmzNavBtn).toBeVisible();
     await dmzNavBtn.click();
 
-    const iframeEl = page.getByTestId('plugin-iframe-uk.org.optimis.parent.dmz');
+    const iframeEl = page.getByTestId(`plugin-iframe-${dmzPlugId}`);
     await expect(iframeEl).toBeVisible();
     await expect(iframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.parent.dmz"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${dmzPlugId}"]`);
     await expect(pluginFrame.getByTestId('parent-dmz-plugin-root')).toBeVisible();
 
     // 5. Attendance Officer clicks "Pull Queued DMZ Write-Inbox" inside the sandboxed plugin UI
@@ -397,7 +403,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     });
     expect(switchTeacherRes.ok()).toBe(true);
 
-    const unauthPullRes = await request.post('/api/plugins/uk.org.optimis.parent.dmz/rpc/pull_dmz_inbox', {
+    const unauthPullRes = await request.post(`/api/p/${dmzPlugId}/rpc/pull_dmz_inbox`, {
       data: {
         args: {
           academic_year_id: m1Seeded.academic_year_id,
@@ -411,7 +417,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     expect(unauthPullBody.error_code).toContain('caller lacks required DAL scopes');
 
     const unauthPushRes = await request.post(
-      '/api/plugins/uk.org.optimis.parent.dmz/rpc/push_sanitized_projection',
+      `/api/p/${dmzPlugId}/rpc/push_sanitized_projection`,
       {
         data: {
           args: {
@@ -455,7 +461,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     await page.getByTestId('nav-rail-search').click();
     await page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Parent' }).first().click();
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.parent.dmz"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${dmzPlugId}"]`);
     await pluginFrame.getByTestId('push-dmz-projection-btn').click();
 
     const errorBanner = pluginFrame.getByTestId('dmz-error-banner');
@@ -479,7 +485,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
       },
     });
 
-    const pullOkRes = await request.post('/api/plugins/uk.org.optimis.parent.dmz/rpc/pull_dmz_inbox', {
+    const pullOkRes = await request.post(`/api/p/${dmzPlugId}/rpc/pull_dmz_inbox`, {
       data: {
         args: {
           academic_year_id: m1Seeded.academic_year_id,
@@ -490,7 +496,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     expect(pullOkRes.ok()).toBe(true);
 
     const pushOkRes = await request.post(
-      '/api/plugins/uk.org.optimis.parent.dmz/rpc/push_sanitized_projection',
+      `/api/p/${dmzPlugId}/rpc/push_sanitized_projection`,
       {
         data: {
           args: {
@@ -504,7 +510,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     expect(pushOkRes.ok()).toBe(true);
 
     // 4. Verify UK GDPR export_pupil_data and purge_pupil_data hooks on plugin_parent_dmz.db
-    const exportRes = await request.post('/api/plugins/uk.org.optimis.parent.dmz/rpc/export_pupil_data', {
+    const exportRes = await request.post(`/api/p/${dmzPlugId}/rpc/export_pupil_data`, {
       data: { args: { pupil_id: m1Seeded.active_pupil_id } },
     });
     expect(exportRes.ok()).toBe(true);
@@ -518,7 +524,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     expect(exportBody.data.sections[1].records.length).toBeGreaterThanOrEqual(1);
     expect(exportBody.data.sections[1].redactable_fields).toContain('notes');
 
-    const purgeRes = await request.post('/api/plugins/uk.org.optimis.parent.dmz/rpc/purge_pupil_data', {
+    const purgeRes = await request.post(`/api/p/${dmzPlugId}/rpc/purge_pupil_data`, {
       data: { args: { pupil_id: m1Seeded.active_pupil_id } },
     });
     expect(purgeRes.ok()).toBe(true);
@@ -527,7 +533,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     expect(purgeBody.data.purged_rows).toBeGreaterThanOrEqual(2);
 
     const exportAfterPurgeRes = await request.post(
-      '/api/plugins/uk.org.optimis.parent.dmz/rpc/export_pupil_data',
+      `/api/p/${dmzPlugId}/rpc/export_pupil_data`,
       {
         data: { args: { pupil_id: m1Seeded.active_pupil_id } },
       }

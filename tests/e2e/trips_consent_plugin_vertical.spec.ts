@@ -41,6 +41,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
   let logCursor: string = '';
   let m1Seed: Milestone1SeedResponse | null = null;
   let personaSeed: PersonaSeedResponse | null = null;
+  let tripsPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
@@ -48,6 +49,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
     logCursor = '';
     m1Seed = null;
     personaSeed = null;
+    tripsPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -131,9 +133,10 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
       );
     }
     const installBody = await installTripsRes.json();
-    if (!installBody.ok || installBody.plugin_id !== PLUGIN_ID || installBody.database_alias !== 'plugin_trips') {
+    if (!installBody.ok || !installBody.plug_id || installBody.database_alias !== 'plugin_trips') {
       throw new Error(`Unexpected install response for ${PLUGIN_ID}: ${JSON.stringify(installBody)}`);
     }
+    tripsPlugId = installBody.plug_id;
 
     const activateTripsRes = await request.post(
       `/api/admin/plugins/${encodeURIComponent(PLUGIN_ID)}/activate`,
@@ -148,7 +151,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
 
   test.afterEach(async ({ request }, testInfo) => {
     // 1. Clean up trip consent records in plugin_trips.db
-    if (personaSeed && m1Seed) {
+    if (personaSeed && m1Seed && tripsPlugId) {
       await request.post('/api/auth/persona', {
         data: { staff_id: personaSeed.admin_staff_id },
       });
@@ -160,7 +163,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
         m1Seed.transferred_pupil_id,
         m1Seed.other_group_pupil_id,
       ]) {
-        await request.post(`/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/purge_pupil_data`, {
+        await request.post(`/api/p/${tripsPlugId}/rpc/purge_pupil_data`, {
           data: { args: { pupil_id: pid } },
         });
       }
@@ -237,11 +240,11 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
     await expect(tripsNavBtn).toBeVisible();
     await tripsNavBtn.click();
 
-    const tripsIframeEl = page.getByTestId(`plugin-iframe-${PLUGIN_ID}`);
+    const tripsIframeEl = page.getByTestId(`plugin-iframe-${tripsPlugId}`);
     await expect(tripsIframeEl).toBeVisible();
     await expect(tripsIframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${PLUGIN_ID}"]`);
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${tripsPlugId}"]`);
     await expect(pluginFrame.getByTestId('trips-consent-plugin-root')).toBeVisible();
 
     // =========================================================================
@@ -364,7 +367,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
 
     // 1. Verify :own_groups isolation: Teacher 1 attempting to create a trip for Teacher 2's group (other_group_id) MUST fail fast
     const crossGroupTripRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/create_trip?staff_id=${encodeURIComponent(
+      `/api/p/${tripsPlugId}/rpc/create_trip?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
       )}`,
       {
@@ -387,7 +390,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
 
     // 2. Teacher 1 creates a valid trip for own_group_id and records valid PR consent from Anne Byron
     const createOkRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/create_trip?staff_id=${encodeURIComponent(
+      `/api/p/${tripsPlugId}/rpc/create_trip?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
       )}`,
       {
@@ -411,9 +414,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
 
     // Verify Teacher 2 (other_teacher_staff_id) is blocked under :own_groups from generating the emergency pack for Teacher 1's trip
     const otherTeacherPackRes = await request.post(
-      `/api/plugins/${encodeURIComponent(
-        PLUGIN_ID
-      )}/rpc/generate_trip_emergency_pack?staff_id=${encodeURIComponent(m1Seed.other_teacher_staff_id)}`,
+      `/api/p/${tripsPlugId}/rpc/generate_trip_emergency_pack?staff_id=${encodeURIComponent(m1Seed.other_teacher_staff_id)}`,
       {
         data: {
           args: {
@@ -431,7 +432,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
 
     // Record valid PR consent for active_pupil_id containing a third-party name in medical_notes for SAR redaction verification
     const consentOkRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/record_trip_consent?staff_id=${encodeURIComponent(
+      `/api/p/${tripsPlugId}/rpc/record_trip_consent?staff_id=${encodeURIComponent(
         m1Seed.teacher_staff_id
       )}`,
       {
@@ -510,7 +511,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
 
     // 4. Verify UK GDPR purge_pupil_data removes all rows for active_pupil_id in plugin_trips.db
     const purgeRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/purge_pupil_data?staff_id=${encodeURIComponent(
+      `/api/p/${tripsPlugId}/rpc/purge_pupil_data?staff_id=${encodeURIComponent(
         personaSeed.admin_staff_id
       )}`,
       {
@@ -523,7 +524,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
     expect(purgeBody.data.purged_rows).toBe(1);
 
     const exportAfterPurgeRes = await request.post(
-      `/api/plugins/${encodeURIComponent(PLUGIN_ID)}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
+      `/api/p/${tripsPlugId}/rpc/export_pupil_data?staff_id=${encodeURIComponent(
         personaSeed.admin_staff_id
       )}`,
       {

@@ -11,7 +11,6 @@ export interface DashboardWidgetGridPanelProps {
   placedWidgets: PlacedDashboardWidget[];
   onToggleEditMode: () => void;
   onPlaceWidget: (widget: PluginWidgetDescriptor) => void;
-  onResizeWidget?: (pluginId: string, widgetId: string, colSpan: number, rowSpan: number) => void;
   onRemoveWidget: (pluginId: string, widgetId: string) => void;
   onMoveWidgetUp?: (pluginId: string, widgetId: string) => void;
   onMoveWidgetDown?: (pluginId: string, widgetId: string) => void;

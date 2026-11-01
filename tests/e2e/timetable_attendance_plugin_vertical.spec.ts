@@ -28,12 +28,14 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
   let pageErrors: string[] = [];
   let logCursor: string = '';
   let seeded: Milestone1TimetableSeedResponse | null = null;
+  let timetablePlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
     pageErrors = [];
     logCursor = '';
     seeded = null;
+    timetablePlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -69,9 +71,10 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
       );
     }
     const installBody = await installRes.json();
-    if (!installBody.ok || installBody.plugin_id !== PLUGIN_ID) {
+    if (!installBody.ok || !installBody.plug_id) {
       throw new Error(`Unexpected install response for ${PLUGIN_ID}: ${JSON.stringify(installBody)}`);
     }
+    timetablePlugId = installBody.plug_id;
     if (installBody.database_alias) {
       throw new Error(`Expected pure Core DAL plugin with empty database_alias, got ${installBody.database_alias}`);
     }
@@ -192,11 +195,11 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
     await expect(navItem).toBeVisible();
     await navItem.click();
 
-    const iframeEl = page.getByTestId(`plugin-iframe-${PLUGIN_ID}`);
+    const iframeEl = page.getByTestId(`plugin-iframe-${timetablePlugId}`);
     await expect(iframeEl).toBeVisible();
     await expect(iframeEl).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${PLUGIN_ID}"]`);
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${timetablePlugId}"]`);
     await expect(pluginFrame.getByTestId('timetable-attendance-root')).toBeVisible();
 
     // =========================================================================
@@ -310,7 +313,7 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
     const sessionBody = await switchRes.json();
 
     // 1. Teacher 1 attempting to load Teacher 2's timetable under :own_groups MUST fail fast
-    const crossTimetableRes = await request.post(`/api/plugins/${PLUGIN_ID}/rpc/load_staff_timetable`, {
+    const crossTimetableRes = await request.post(`/api/p/${timetablePlugId}/rpc/load_staff_timetable`, {
       data: {
         args: {
           target_staff_id: seeded.other_teacher_staff_id,
@@ -327,7 +330,7 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
     expect(crossTimetableBody.error_code).toContain('access denied under own_groups scope');
 
     // 2. Teacher 1 attempting to submit attendance for an invalid non-AM/PM session ('BREAK') MUST fail fast
-    const invalidSessionRes = await request.post(`/api/plugins/${PLUGIN_ID}/rpc/submit_session_attendance_batch`, {
+    const invalidSessionRes = await request.post(`/api/p/${timetablePlugId}/rpc/submit_session_attendance_batch`, {
       data: {
         args: {
           group_id: seeded.own_group_id,
@@ -365,7 +368,7 @@ test.describe('Vertical 1: Timetable & Statutory Session Attendance Plugin (uk.o
 
     await page.getByTestId('nav-rail-search').click();
     await page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Timetable' }).first().click();
-    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${PLUGIN_ID}"]`);
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${timetablePlugId}"]`);
 
     const unauthorizedGroupBtn = pluginFrame.getByTestId('load-other-group-roster-btn');
     await expect(unauthorizedGroupBtn).toBeVisible();

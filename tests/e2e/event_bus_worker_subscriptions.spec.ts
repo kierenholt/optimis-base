@@ -21,12 +21,14 @@ test.describe('Native In-Memory Event Bus Router, Manifest Worker Subscriptions 
   let pageErrors: string[] = [];
   let logCursor: string = '';
   let seeded: Milestone1SeedResponse | null = null;
+  let testPlugId: string = '';
 
   test.beforeEach(async ({ page, request }) => {
     browserLogs = [];
     pageErrors = [];
     logCursor = '';
     seeded = null;
+    testPlugId = '';
 
     // 1. Tap Browser Console & Uncaught Page Errors
     page.on('console', (msg) => {
@@ -53,6 +55,7 @@ test.describe('Native In-Memory Event Bus Router, Manifest Worker Subscriptions 
     if (!installRes.ok()) {
       throw new Error(`Failed to install test_plugin: ${installRes.status()}`);
     }
+    testPlugId = (await installRes.json()).plug_id;
     const activateRes = await request.post('/api/admin/plugins/uk.org.optimis.test/activate', {
       data: {},
     });
@@ -84,8 +87,8 @@ test.describe('Native In-Memory Event Bus Router, Manifest Worker Subscriptions 
 
   test.afterEach(async ({ request }, testInfo) => {
     // 1. Purge any plugin notes / worker event logs created for active_pupil_id
-    if (seeded?.active_pupil_id) {
-      await request.post('/api/plugins/uk.org.optimis.test/rpc/purge_pupil_data', {
+    if (seeded?.active_pupil_id && testPlugId) {
+      await request.post(`/api/p/${testPlugId}/rpc/purge_pupil_data`, {
         data: {
           args: {
             pupil_id: seeded.active_pupil_id,
@@ -170,7 +173,7 @@ test.describe('Native In-Memory Event Bus Router, Manifest Worker Subscriptions 
     await page.goto(buildWorkspaceUrl(seeded));
     await expect(page.getByTestId('host-shell')).toBeVisible();
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
 
     // 3. Record statutory AM attendance -> commits CoreDAL write -> emits core.attendance.session_recorded
     const recordAttendanceBtn = pluginFrame.getByTestId('record-am-attendance-btn');
@@ -232,7 +235,7 @@ test.describe('Native In-Memory Event Bus Router, Manifest Worker Subscriptions 
     await page.goto(buildWorkspaceUrl(seeded));
     await expect(page.getByTestId('host-shell')).toBeVisible();
 
-    const pluginFrame = page.frameLocator('[data-testid="plugin-iframe-uk.org.optimis.test"]');
+    const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
 
     const triggerLoopBtn = pluginFrame.getByTestId('trigger-loop-relay-btn');
     await expect(triggerLoopBtn).toBeVisible();

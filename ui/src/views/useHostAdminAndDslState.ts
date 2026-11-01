@@ -24,6 +24,7 @@ export interface UseHostAdminAndDslStateParams {
     plugins: PluginNavEntry[],
     serverEntityHandlers?: Record<string, string>
   ) => void;
+  refreshWorkspaceForStaff: (staffIdOverride?: string) => Promise<PluginNavEntry[] | undefined>;
   broadcastInitToMountedIframes: (
     overrideContext?: Partial<InitContextOverrides>,
     overrideThemeMode?: ThemeMode,
@@ -40,8 +41,7 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
     activeCaller,
     setActiveCaller,
     initialPersonaParam,
-    setPinnedRecents,
-    applyInstalledPluginsState,
+    refreshWorkspaceForStaff,
     broadcastInitToMountedIframes,
   } = params;
 
@@ -181,6 +181,7 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
       scopes,
     };
 
+    const updatedPlugins = await refreshWorkspaceForStaff(resolvedStaffId);
     setActiveStaffId(resolvedStaffId);
     setActiveCaller(nextCaller);
 
@@ -215,29 +216,12 @@ export function useHostAdminAndDslState(params: UseHostAdminAndDslStateParams) {
       setDslVaultError('');
     }
 
-    const uiRes = await fetch(`/api/system/ui-config?staff_id=${encodeURIComponent(resolvedStaffId)}`);
-    if (uiRes.ok) {
-      const uiBody = await uiRes.json();
-      if (uiBody && uiBody.ok && Array.isArray(uiBody.pinned_recents) && setPinnedRecents) {
-        setPinnedRecents(uiBody.pinned_recents as PinnedRecentEntry[]);
-      }
-      if (uiBody && uiBody.ok && Array.isArray(uiBody.plugins)) {
-        const serverHandlers =
-          uiBody.entity_link_handlers && typeof uiBody.entity_link_handlers === 'object'
-            ? (uiBody.entity_link_handlers as Record<string, string>)
-            : undefined;
-        applyInstalledPluginsState(uiBody.plugins, serverHandlers);
-        broadcastInitToMountedIframes(
-          { staff_id: resolvedStaffId },
-          undefined,
-          uiBody.plugins,
-          nextCaller
-        );
-        return;
-      }
-    }
-
-    broadcastInitToMountedIframes({ staff_id: resolvedStaffId }, undefined, undefined, nextCaller);
+    broadcastInitToMountedIframes(
+      { staff_id: resolvedStaffId },
+      undefined,
+      updatedPlugins,
+      nextCaller
+    );
   };
 
   const handleRenewCloudKey = async () => {

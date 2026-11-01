@@ -76,13 +76,13 @@ export function App() {
     setDeepLinkNavigationStatus,
     syncBrowserRouteUrl,
     applyInstalledPluginsState,
+    refreshWorkspaceForStaff,
     activatePluginInKeepAlivePool,
     handleNavigateHome,
     handlePinOrUnpinRoute,
     handleUnpinRoute,
     handleSelectPinnedRoute,
     handlePlaceWidget,
-    handleResizeWidget,
     handleRemoveWidget,
     handleMoveWidgetUp,
     handleMoveWidgetDown,
@@ -168,6 +168,7 @@ export function App() {
     initialPersonaParam,
     setPinnedRecents,
     applyInstalledPluginsState,
+    refreshWorkspaceForStaff,
     broadcastInitToMountedIframes,
   });
 
@@ -225,19 +226,35 @@ export function App() {
     void handlePinOrUnpinRoute(canonicalActivePluginRoute, activePlugin.title);
   };
 
+  const resolveViewPathStrict = (rawPath: string | undefined): string => {
+    let resolvedPath = rawPath || '/';
+    if (resolvedPath.includes(':pupil_id')) {
+      if (!activePupilId) {
+        throw new Error('Missing mandatory activePupilId for :pupil_id view route');
+      }
+      resolvedPath = resolvedPath.replace(':pupil_id', activePupilId);
+    }
+    if (resolvedPath.includes(':group_id')) {
+      if (!activeGroupId) {
+        throw new Error('Missing mandatory activeGroupId for :group_id view route');
+      }
+      resolvedPath = resolvedPath.replace(':group_id', activeGroupId);
+    }
+    if (resolvedPath.includes(':staff_id')) {
+      if (!activeStaffId) {
+        throw new Error('Missing mandatory activeStaffId for :staff_id view route');
+      }
+      resolvedPath = resolvedPath.replace(':staff_id', activeStaffId);
+    }
+    return resolvedPath;
+  };
+
   const handleTogglePinSearchView = (
     pluginId: string,
     view: PluginViewDescriptor,
     pluginTitle: string
   ) => {
-    let resolvedPath = view.path || '/';
-    if (resolvedPath.includes(':pupil_id')) {
-      resolvedPath = activePupilId ? resolvedPath.replace(':pupil_id', activePupilId) : '/';
-    } else if (resolvedPath.includes(':group_id')) {
-      resolvedPath = activeGroupId ? resolvedPath.replace(':group_id', activeGroupId) : '/';
-    } else if (resolvedPath.includes(':staff_id')) {
-      resolvedPath = activeStaffId ? resolvedPath.replace(':staff_id', activeStaffId) : '/';
-    }
+    const resolvedPath = resolveViewPathStrict(view.path);
     const route = `/p/${pluginId}${resolvedPath === '/' ? '' : resolvedPath}`;
     void handlePinOrUnpinRoute(route, view.title || pluginTitle, view.id);
   };
@@ -251,14 +268,7 @@ export function App() {
   };
 
   const handleSelectSearchViewResult = (pluginId: string, view: PluginViewDescriptor) => {
-    let resolvedPath = view.path || '/';
-    if (resolvedPath.includes(':pupil_id')) {
-      resolvedPath = activePupilId ? resolvedPath.replace(':pupil_id', activePupilId) : '/';
-    } else if (resolvedPath.includes(':group_id')) {
-      resolvedPath = activeGroupId ? resolvedPath.replace(':group_id', activeGroupId) : '/';
-    } else if (resolvedPath.includes(':staff_id')) {
-      resolvedPath = activeStaffId ? resolvedPath.replace(':staff_id', activeStaffId) : '/';
-    }
+    const resolvedPath = resolveViewPathStrict(view.path);
     setActiveViewPath(resolvedPath);
     setActiveRouteQuery({});
     setRouteError('');
@@ -398,7 +408,6 @@ export function App() {
             placedWidgets={placedWidgets}
             onToggleEditMode={() => setIsDashboardEditMode((prev) => !prev)}
             onPlaceWidget={handlePlaceWidget}
-            onResizeWidget={handleResizeWidget}
             onRemoveWidget={handleRemoveWidget}
             onMoveWidgetUp={handleMoveWidgetUp}
             onMoveWidgetDown={handleMoveWidgetDown}
