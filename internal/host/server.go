@@ -187,6 +187,14 @@ func (h *Host) NewHTTPHandler() (http.Handler, error) {
 		handlePluginViewRoute(w, r, plugID, subpath)
 	})
 
+	mux.HandleFunc("GET /search", func(w http.ResponseWriter, r *http.Request) {
+		serveHostIndexHTMLWithStatus(w, r, http.StatusOK)
+	})
+
+	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) {
+		serveHostIndexHTMLWithStatus(w, r, http.StatusOK)
+	})
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/plugins/") || strings.HasPrefix(r.URL.Path, "/api/") {
 			http.NotFound(w, r)

@@ -162,7 +162,7 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
   test('keepAliveLruPool_visitingSixPluginsAndSwitchingTabs_preservesZeroReloadStateForLastFiveAndEvictsLeastRecentlyUsed_test', async ({
     page,
   }) => {
-    await page.goto(`/?pupil_id=${encodeURIComponent(seededPupilId)}&second_pupil_id=${encodeURIComponent(secondPupilId)}`);
+    await page.goto(`/p/${testPlugId}?pupil_id=${encodeURIComponent(seededPupilId)}&second_pupil_id=${encodeURIComponent(secondPupilId)}`);
 
     const lruPool = page.getByTestId('keep-alive-lru-pool');
     await expect(lruPool).toBeVisible();
@@ -176,6 +176,7 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
 
     // Mutate in-memory DOM state inside testPlugId via Promise RPC to prove zero-reload preservation later
     const defaultFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
+    await expect(defaultFrame.getByTestId('sdk-context-status')).toContainText(`PUPIL:${seededPupilId}`);
     await defaultFrame.getByTestId('sdk-promise-rpc-btn').click();
     await expect(defaultFrame.getByTestId('sdk-promise-rpc-result')).toHaveText(
       'PROMISE_OK:Grace Hopper:W100000000001'
@@ -183,7 +184,7 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
 
     const selectPluginViaRailSearch = async (pid: string) => {
       await page.getByTestId('nav-rail-search').click();
-      await page.getByTestId(`command-palette-result-view-${pid}-home`).click();
+      await page.getByTestId(`host-search-result-view-${pid}-home`).click();
     };
 
     // Visit lru1, lru2, lru3, lru4 -> Pool now holds 5 mounted iframes: [testPlugId, lru1, lru2, lru3, lru4]
@@ -362,13 +363,14 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
       'WIDGET_RPC_OK:Grace Hopper:W100000000001'
     );
 
-    // 5. Switch active workspace tab to lru1, then click <a data-mis-link="student"> inside the mini-iframe widget
+    // 5. Switch active workspace tab to lru1, then return to Home and click <a data-mis-link="student"> inside the mini-iframe widget
     // Verify it wakes the designated Student Handler Plugin (testPlugId) in the Keep-Alive LRU Pool with secondPupilId!
     await page.getByTestId('nav-rail-search').click();
-    await page.getByTestId(`command-palette-result-view-${lru1}-home`).click();
+    await page.getByTestId(`host-search-result-view-${lru1}-home`).click();
     await expect(page.getByTestId(`plugin-iframe-${lru1}`).first()).toBeVisible();
     await expect(page.getByTestId(`plugin-iframe-${testPlugId}`)).toBeHidden();
 
+    await page.getByTestId('nav-rail-home').click();
     await attendanceWidgetFrame.getByTestId('widget-deep-link-student').click();
 
     await expect(page.getByTestId(`plugin-iframe-${testPlugId}`)).toBeVisible();
@@ -605,10 +607,11 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     await expect(testWidgetFrame.getByTestId('widget-theme-status')).toContainText('THEME:light');
     await expect(lru1WidgetFrame.getByTestId('widget-theme-status')).toContainText('THEME:light');
 
-    // Toggle theme to high-contrast via Settings modal -> BOTH colliding widget iframes must receive mis:init
+    // Toggle theme to high-contrast via full-page Settings view -> return to Home and verify BOTH colliding widget iframes receive mis:init
     await page.getByTestId('nav-rail-settings').click();
-    await page.getByTestId('host-settings-modal').getByTestId('theme-mode-toggle-btn').click();
-    await page.getByTestId('close-settings-modal-btn').click();
+    await expect(page.getByTestId('host-settings-modal')).toHaveCount(0);
+    await page.getByTestId('host-settings-view').getByTestId('host-settings-theme-toggle-btn').click();
+    await page.getByTestId('nav-rail-home').click();
     await expect(testWidgetFrame.getByTestId('widget-theme-status')).toContainText(
       'THEME:high-contrast'
     );
@@ -623,10 +626,10 @@ test.describe('Workspace Keep-Alive LRU Pool (Section 9A) & Editable NxM Mini-If
     await expect(lru1AttendanceCard).toHaveCount(0);
     await expect(testAttendanceCard).toBeVisible();
 
-    // Toggle theme back to light via Settings modal -> remaining testPlugId:attendance_pulse iframe must still receive mis:init
+    // Toggle theme back to light via full-page Settings view -> return to Home and verify remaining testPlugId:attendance_pulse iframe still receives mis:init
     await page.getByTestId('nav-rail-settings').click();
-    await page.getByTestId('host-settings-modal').getByTestId('theme-mode-toggle-btn').click();
-    await page.getByTestId('close-settings-modal-btn').click();
+    await page.getByTestId('host-settings-view').getByTestId('host-settings-theme-toggle-btn').click();
+    await page.getByTestId('nav-rail-home').click();
     await expect(testWidgetFrame.getByTestId('widget-theme-status')).toContainText('THEME:light');
   });
 });

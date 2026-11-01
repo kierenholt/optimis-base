@@ -1,11 +1,13 @@
 import React from 'react';
 import { PinnedRecentEntry, PluginNavEntry } from '../themeAndTypes';
 import { MonochromeLucideIcon } from './MonochromeLucideIcon';
+import { HostViewMode } from './routeUtils';
 
 export interface HostSidebarProps {
   schoolURN: string;
   schoolName: string;
   configuredAcademicYear: string;
+  hostViewMode: HostViewMode;
   activePluginId: string;
   activePlugin?: PluginNavEntry | null;
   isCurrentRoutePinned?: boolean;
@@ -25,6 +27,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
   schoolURN,
   schoolName,
   configuredAcademicYear,
+  hostViewMode,
   activePluginId,
   activePlugin,
   isCurrentRoutePinned,
@@ -38,7 +41,9 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
   onOpenSettings,
   onLogout,
 }) => {
-  const isHomeActive = !activePluginId || activeRouteUrl === '/' || activeRouteUrl.startsWith('/?');
+  const isHomeActive = hostViewMode === 'home';
+  const isSearchActive = hostViewMode === 'search';
+  const isSettingsActive = hostViewMode === 'settings';
 
   return (
     <aside
@@ -136,14 +141,17 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
         <button
           type="button"
           data-testid="nav-rail-search"
-          title="Global Search & Command Palette (Ctrl+K)"
+          aria-current={isSearchActive ? 'page' : undefined}
+          title="Global Search & Discovery"
           onClick={onOpenSearch}
           style={{
             width: '100%',
             padding: '8px 4px',
             borderRadius: 'var(--mis-radius-sm, 4px)',
-            backgroundColor: 'rgba(255, 255, 255, 0.08)',
-            color: 'var(--mis-text-sidebar)',
+            backgroundColor: isSearchActive
+              ? 'var(--mis-brand-primary)'
+              : 'rgba(255, 255, 255, 0.08)',
+            color: isSearchActive ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-sidebar)',
             border: '1px solid var(--mis-border-subtle)',
             fontSize: '11px',
             fontWeight: 700,
@@ -187,7 +195,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
           Pinned
         </div>
 
-        {activePlugin && onTogglePinCurrentRoute && (
+        {hostViewMode === 'plugin' && activePlugin && onTogglePinCurrentRoute && (
           <button
             type="button"
             data-testid="topbar-pin-view-btn"
@@ -219,9 +227,10 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
 
         {pinnedRecents.map((item, idx) => {
           const isRouteActive =
-            activeRouteUrl === item.route ||
-            activeRouteUrl.startsWith(`${item.route}&`) ||
-            (item.plug_id && activePluginId === item.plug_id && activeRouteUrl.startsWith(item.route));
+            hostViewMode === 'plugin' &&
+            (activeRouteUrl === item.route ||
+              activeRouteUrl.startsWith(`${item.route}&`) ||
+              (item.plug_id && activePluginId === item.plug_id && activeRouteUrl.startsWith(item.route)));
           return (
             <div
               key={item.route}
@@ -237,6 +246,7 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
                 data-testid={`pinned-recent-item-${idx}`}
                 data-pinned-route={item.route}
                 data-plug-id={item.plug_id}
+                aria-current={isRouteActive ? 'page' : undefined}
                 title={`${item.title} (${item.route})`}
                 onClick={() => onSelectPinnedRoute(item)}
                 style={{
@@ -319,14 +329,17 @@ export const HostSidebar: React.FC<HostSidebarProps> = ({
         <button
           type="button"
           data-testid="nav-rail-settings"
+          aria-current={isSettingsActive ? 'page' : undefined}
           title="Host & Workspace Settings"
           onClick={onOpenSettings}
           style={{
             width: '100%',
             padding: '6px 4px',
             borderRadius: 'var(--mis-radius-sm, 4px)',
-            backgroundColor: 'rgba(255, 255, 255, 0.08)',
-            color: 'var(--mis-text-sidebar)',
+            backgroundColor: isSettingsActive
+              ? 'var(--mis-brand-primary)'
+              : 'rgba(255, 255, 255, 0.08)',
+            color: isSettingsActive ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-sidebar)',
             border: '1px solid var(--mis-border-subtle)',
             fontSize: '10px',
             fontWeight: 600,

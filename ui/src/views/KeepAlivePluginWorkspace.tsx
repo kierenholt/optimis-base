@@ -6,6 +6,7 @@ export interface KeepAlivePluginWorkspaceProps {
   lruPluginOrder: string[];
   installedPlugins: PluginNavEntry[];
   activePluginId: string;
+  isVisible?: boolean;
   onRegisterPluginIframeRef: (pluginId: string, el: HTMLIFrameElement | null) => void;
   onIframeLoad: (pluginId: string, win: Window | null) => void;
 }
@@ -15,14 +16,16 @@ export const KeepAlivePluginWorkspace: React.FC<KeepAlivePluginWorkspaceProps> =
   lruPluginOrder,
   installedPlugins,
   activePluginId,
+  isVisible,
   onRegisterPluginIframeRef,
   onIframeLoad,
 }) => {
+  const showWorkspace = isVisible !== undefined ? isVisible && Boolean(activePluginId) : Boolean(activePluginId);
   return (
     <section
       data-testid="dashboard-workspace-panel"
       style={{
-        display: activePluginId ? 'block' : 'none',
+        display: showWorkspace ? 'block' : 'none',
         backgroundColor: 'var(--mis-bg-surface)',
         border: '1px solid var(--mis-border-subtle)',
         borderRadius: 'var(--mis-radius-md, 8px)',
@@ -47,12 +50,12 @@ export const KeepAlivePluginWorkspace: React.FC<KeepAlivePluginWorkspaceProps> =
                 onIframeLoad(pluginId, e.currentTarget.contentWindow);
               }}
               data-testid={`plugin-iframe-${pluginId}`}
-              data-lru-active={isActive ? 'true' : 'false'}
+              data-lru-active={isActive && showWorkspace ? 'true' : 'false'}
               sandbox="allow-scripts"
               src={entryUrl}
               title={`Plugin Workspace: ${pluginId}`}
               style={{
-                display: isActive ? 'block' : 'none',
+                display: isActive && showWorkspace ? 'block' : 'none',
                 width: '100%',
                 height: '320px',
                 border: '1px solid var(--mis-border-subtle)',

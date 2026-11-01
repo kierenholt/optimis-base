@@ -1198,3 +1198,469 @@ export const GlobalCommandPaletteModal: React.FC<GlobalCommandPaletteModalProps>
     </div>
   );
 };
+
+export interface HostFullPageSearchViewProps extends GlobalSearchSharedProps {
+  pinnedRecents?: PinnedRecentEntry[];
+  onTogglePinView?: (pluginId: string, view: PluginViewDescriptor, pluginTitle: string) => void;
+}
+
+export const HostFullPageSearchView: React.FC<HostFullPageSearchViewProps> = ({
+  installedPlugins,
+  placedWidgets,
+  activePupilId,
+  activeGroupId,
+  activeStaffId,
+  referenceDate,
+  academicYearId,
+  pinnedRecents = [],
+  onPlaceWidget,
+  onSelectViewResult,
+  onSelectPupilResult,
+  onSelectGroupResult,
+  onTogglePinView,
+}) => {
+  const [query, setQuery] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<CommandPaletteTab>('all');
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const qLower = query.trim().toLowerCase();
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const { pupils, groups } = useScopedEntitySearch(
+    query,
+    activeStaffId,
+    referenceDate,
+    academicYearId,
+    true,
+    true
+  );
+
+  const matchedViews = useMemo<IndexedViewResult[]>(() => {
+    const results: IndexedViewResult[] = [];
+    for (const p of installedPlugins) {
+      const views = Array.isArray(p.views) ? p.views : [];
+      const permittedMethods = Array.isArray(p.permitted_methods) ? p.permitted_methods : [];
+      for (const v of views) {
+        if (!isParameterizedViewResolvable(v.path, activePupilId, activeGroupId, activeStaffId)) {
+          continue;
+        }
+        const candidate: IndexedViewResult = {
+          pluginId: p.id,
+          pluginTitle: p.title,
+          pluginIcon: p.icon,
+          view: v,
+          permittedMethods,
+        };
+        if (matchesViewItem(candidate, qLower)) {
+          results.push(candidate);
+        }
+      }
+    }
+    return results;
+  }, [installedPlugins, qLower, activePupilId, activeGroupId, activeStaffId]);
+
+  const matchedWidgets = useMemo<Array<{ widget: PluginWidgetDescriptor; pluginTitle: string; pluginIcon?: string }>>(() => {
+    const results: Array<{ widget: PluginWidgetDescriptor; pluginTitle: string; pluginIcon?: string }> = [];
+    for (const p of installedPlugins) {
+      const widgets = Array.isArray(p.widgets) ? p.widgets : [];
+      for (const w of widgets) {
+        if (matchesWidgetItem(w, p.title, qLower)) {
+          results.push({ widget: w, pluginTitle: p.title, pluginIcon: p.icon });
+        }
+      }
+    }
+    return results;
+  }, [installedPlugins, qLower]);
+
+  const placedWidgetKeys = useMemo(
+    () => new Set(placedWidgets.map((w) => getWidgetCompositeKey(w.plugin_id, w.id))),
+    [placedWidgets]
+  );
+  const pinnedRoutesSet = useMemo(() => new Set(pinnedRecents.map((r) => r.route)), [pinnedRecents]);
+
+  const showViews = (activeTab === 'all' || activeTab === 'plugins') && matchedViews.length > 0;
+  const showWidgets = (activeTab === 'all' || activeTab === 'widgets') && matchedWidgets.length > 0;
+  const showPupils = (activeTab === 'all' || activeTab === 'pupils') && pupils.length > 0;
+  const showGroups = (activeTab === 'all' || activeTab === 'groups') && groups.length > 0;
+
+  const tabs: Array<{ id: CommandPaletteTab; label: string; icon: string }> = [
+    {
+      id: 'all',
+      label: `All (${matchedViews.length + matchedWidgets.length + pupils.length + groups.length})`,
+      icon: 'search',
+    },
+    {
+      id: 'plugins',
+      label: `Plugins (${matchedViews.length})`,
+      icon: 'box',
+    },
+    {
+      id: 'widgets',
+      label: `Widgets (${matchedWidgets.length})`,
+      icon: 'layout-grid',
+    },
+    {
+      id: 'pupils',
+      label: `Pupils (${pupils.length})`,
+      icon: 'user',
+    },
+    {
+      id: 'groups',
+      label: `Groups (${groups.length})`,
+      icon: 'users',
+    },
+  ];
+
+  return (
+    <section
+      data-testid="host-search-view"
+      aria-label="Global Search and Discovery"
+      style={{
+        backgroundColor: 'var(--mis-bg-surface)',
+        color: 'var(--mis-text-primary)',
+        border: '1px solid var(--mis-border-strong)',
+        borderRadius: 'var(--mis-radius-md, 8px)',
+        boxShadow: 'var(--mis-shadow-card)',
+        padding: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '14px',
+      }}
+    >
+      <div>
+        <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+          <MonochromeLucideIcon name="search" size={16} />
+          <span>Global Search &amp; Discovery</span>
+        </h2>
+        <div style={{ fontSize: '12px', color: 'var(--mis-text-secondary)', marginTop: '4px' }}>
+          Search plugin views, dashboard widgets, pupils, and teaching groups across your school workspace
+        </div>
+      </div>
+
+      <input
+        ref={inputRef}
+        type="search"
+        autoFocus
+        data-testid="host-search-input"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Type a command, synonym, pupil name, or group code..."
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          padding: '10px 12px',
+          borderRadius: 'var(--mis-radius-sm, 4px)',
+          border: '1px solid var(--mis-border-strong)',
+          backgroundColor: 'var(--mis-bg-elevated)',
+          color: 'var(--mis-text-primary)',
+          fontSize: '13px',
+        }}
+      />
+
+      <div
+        role="tablist"
+        aria-label="Search category filter tabs"
+        data-testid="host-search-tabs"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          flexWrap: 'wrap',
+          borderBottom: '1px solid var(--mis-border-subtle)',
+          paddingBottom: '8px',
+        }}
+      >
+        {tabs.map((t) => {
+          const isSelected = activeTab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={isSelected}
+              data-testid={`host-search-tab-${t.id}`}
+              onClick={() => setActiveTab(t.id)}
+              style={{
+                padding: '5px 10px',
+                borderRadius: 'var(--mis-radius-sm, 4px)',
+                border: '1px solid var(--mis-border-subtle)',
+                backgroundColor: isSelected ? 'var(--mis-brand-primary)' : 'var(--mis-bg-elevated)',
+                color: isSelected ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-primary)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+              }}
+            >
+              <MonochromeLucideIcon name={t.icon} size={13} />
+              <span>{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        data-testid="host-search-results"
+        style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
+      >
+        {showViews && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+              Views ({matchedViews.length})
+            </div>
+            {matchedViews.map(({ pluginId, pluginTitle, pluginIcon, view, permittedMethods }) => {
+              const candidateSubpath = resolveParameterizedViewSubpath(
+                view.path,
+                activePupilId,
+                activeGroupId,
+                activeStaffId
+              );
+              const candidateRoute = `/p/${pluginId}${candidateSubpath === '/' ? '' : candidateSubpath}`;
+              const isPinned = pinnedRoutesSet.has(candidateRoute);
+
+              return (
+                <div
+                  key={`${pluginId}:${view.id}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'stretch',
+                    gap: '6px',
+                  }}
+                >
+                  <button
+                    type="button"
+                    data-testid={`host-search-result-view-${pluginId}-${view.id}`}
+                    data-permitted-count={String(permittedMethods.length)}
+                    data-permitted-methods={permittedMethods.join(',')}
+                    onClick={() => onSelectViewResult(pluginId, view)}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--mis-radius-sm, 4px)',
+                      border: '1px solid var(--mis-border-subtle)',
+                      backgroundColor: 'var(--mis-bg-elevated)',
+                      color: 'var(--mis-text-primary)',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <MonochromeLucideIcon name={view.icon || pluginIcon || 'box'} fallback="box" size={16} />
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 700 }}>{view.title || pluginTitle}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                          {pluginTitle} • /p/{pluginId}
+                          {view.path === '/' ? '' : view.path} ({permittedMethods.length} methods)
+                        </div>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <span>Open View</span>
+                      <MonochromeLucideIcon name="arrow-right" size={12} />
+                    </span>
+                  </button>
+                  {onTogglePinView && (
+                    <button
+                      type="button"
+                      data-testid={`host-search-pin-view-btn-${pluginId}-${view.id}`}
+                      aria-label={isPinned ? `Unpin ${view.title || pluginTitle}` : `Pin ${view.title || pluginTitle}`}
+                      onClick={() => onTogglePinView(pluginId, view, pluginTitle)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 'var(--mis-radius-sm, 4px)',
+                        border: '1px solid var(--mis-border-subtle)',
+                        backgroundColor: isPinned ? 'var(--mis-brand-primary)' : 'var(--mis-bg-elevated)',
+                        color: isPinned ? 'var(--mis-brand-primary-fg)' : 'var(--mis-text-primary)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <MonochromeLucideIcon name="pin" size={12} />
+                      <span>{isPinned ? 'Pinned' : 'Pin'}</span>
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {showWidgets && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+              Dashboard Widgets ({matchedWidgets.length})
+            </div>
+            {matchedWidgets.map(({ widget, pluginTitle, pluginIcon }) => {
+              const compositeKey = getWidgetCompositeKey(widget.plugin_id, widget.id);
+              const isPlaced = placedWidgetKeys.has(compositeKey);
+              return (
+                <div
+                  key={compositeKey}
+                  data-testid={`host-search-result-widget-${widget.id}`}
+                  data-plug-id={widget.plugin_id}
+                  data-widget-key={compositeKey}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--mis-radius-sm, 4px)',
+                    border: '1px solid var(--mis-border-subtle)',
+                    backgroundColor: 'var(--mis-bg-elevated)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <MonochromeLucideIcon name={widget.icon || pluginIcon || 'layout-grid'} fallback="layout-grid" size={16} />
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 700 }}>{widget.title}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                        Widget • {pluginTitle}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid={`host-search-add-widget-btn-${widget.id}`}
+                    data-plug-id={widget.plugin_id}
+                    data-widget-key={compositeKey}
+                    disabled={isPlaced}
+                    onClick={() => onPlaceWidget(widget)}
+                    style={{
+                      padding: '5px 10px',
+                      borderRadius: 'var(--mis-radius-sm, 4px)',
+                      border: '1px solid var(--mis-border-subtle)',
+                      backgroundColor: isPlaced ? 'var(--mis-bg-surface)' : 'var(--mis-brand-primary)',
+                      color: isPlaced ? 'var(--mis-text-muted)' : 'var(--mis-brand-primary-fg)',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: isPlaced ? 'default' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <MonochromeLucideIcon name={isPlaced ? 'check' : 'plus'} size={12} />
+                    <span>{isPlaced ? 'Added to Dashboard' : '+ Add to Dashboard'}</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {showPupils && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+              Pupils ({pupils.length})
+            </div>
+            {pupils.map((pupil) => (
+              <button
+                key={pupil.id}
+                type="button"
+                data-testid={`host-search-result-pupil-${pupil.id}`}
+                onClick={() => onSelectPupilResult(pupil.id)}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 12px',
+                  borderRadius: 'var(--mis-radius-sm, 4px)',
+                  border: '1px solid var(--mis-border-subtle)',
+                  backgroundColor: 'var(--mis-bg-elevated)',
+                  color: 'var(--mis-text-primary)',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <MonochromeLucideIcon name="user" size={16} />
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 700 }}>
+                      {pupil.first_name} {pupil.last_name}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                      UPN {pupil.upn} • Year {pupil.nc_year_group || 'N/A'}
+                    </div>
+                  </div>
+                </div>
+                <span style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <span>Open Student</span>
+                  <MonochromeLucideIcon name="arrow-right" size={12} />
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {showGroups && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--mis-text-secondary)' }}>
+              Groups ({groups.length})
+            </div>
+            {groups.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                data-testid={`host-search-result-group-${group.id}`}
+                onClick={() => onSelectGroupResult(group.id)}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 12px',
+                  borderRadius: 'var(--mis-radius-sm, 4px)',
+                  border: '1px solid var(--mis-border-subtle)',
+                  backgroundColor: 'var(--mis-bg-elevated)',
+                  color: 'var(--mis-text-primary)',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <MonochromeLucideIcon name="users" size={16} />
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 700 }}>
+                      {group.code} — {group.name}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--mis-text-secondary)' }}>
+                      {group.group_type}
+                    </div>
+                  </div>
+                </div>
+                <span style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <span>Open Group</span>
+                  <MonochromeLucideIcon name="arrow-right" size={12} />
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {!showViews && !showWidgets && !showPupils && !showGroups && (
+          <div
+            data-testid="host-search-empty-state"
+            style={{ fontSize: '12px', color: 'var(--mis-text-secondary)', padding: '6px 0' }}
+          >
+            No matching items in this category.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};

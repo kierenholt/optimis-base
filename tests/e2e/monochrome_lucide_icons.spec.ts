@@ -307,22 +307,26 @@ test.describe('Monochrome Lucide Icon Theme Contract: Host Shell, Plugin SDK [da
     await expect(unpinBtn0).toBeVisible();
     await expect(unpinBtn0.locator('svg').first()).toHaveAttribute('data-lucide-icon', 'x');
 
-    // 3. Open Global Command Palette and verify monochrome Lucide icons on view results, widget results, and pin controls
+    // 3. Open Full-Page Search View via nav-rail-search and verify monochrome Lucide icons on view results and pin controls (no modal)
     await page.getByTestId('nav-rail-search').click();
-    const searchModal = page.getByTestId('command-palette-modal');
-    await expect(searchModal).toBeVisible();
+    await expect(page.getByTestId('command-palette-modal')).toHaveCount(0);
+    const hostSearchView = page.getByTestId('host-search-view');
+    await expect(hostSearchView).toBeVisible();
 
-    const behSearchView = page.getByTestId(`command-palette-result-view-${behaviourPlugId}-home`);
+    const behSearchView = page.getByTestId(`host-search-result-view-${behaviourPlugId}-home`);
     await expect(behSearchView).toBeVisible();
     await expect(behSearchView.locator('svg').first()).toHaveAttribute('data-lucide-icon', 'award');
 
-    const searchPinBehBtn = page.getByTestId(`search-pin-view-btn-${behaviourPlugId}-home`);
+    const searchPinBehBtn = page.getByTestId(`host-search-pin-view-btn-${behaviourPlugId}-home`);
     await expect(searchPinBehBtn).toBeVisible();
     await expect(searchPinBehBtn.locator('svg').first()).toHaveAttribute('data-lucide-icon', 'pin');
     const searchPinText = await searchPinBehBtn.innerText();
     expect(searchPinText).not.toMatch(/[★☆📌]/);
 
-    // Verify conventional close button with an x icon (and no "Esc" text) on Command Palette
+    // Also open Global Command Palette via Ctrl+K to verify conventional close button with an x icon (and no "Esc" text)
+    await page.keyboard.press('Control+k');
+    const searchModal = page.getByTestId('command-palette-modal');
+    await expect(searchModal).toBeVisible();
     const closePaletteBtn = page.getByTestId('command-palette-close-btn');
     await expect(closePaletteBtn).toBeVisible();
     await expect(closePaletteBtn).toHaveAttribute('aria-label', 'Close');
@@ -330,9 +334,10 @@ test.describe('Monochrome Lucide Icon Theme Contract: Host Shell, Plugin SDK [da
     await expect(closePaletteBtn.locator('svg').first()).toHaveAttribute('data-lucide-icon', 'x');
     await expect(closePaletteBtn.locator('svg').first()).toHaveAttribute('stroke', 'currentColor');
 
-    // Close Command Palette via the conventional x close button
+    // Close Command Palette via the conventional x close button and return to Home view
     await closePaletteBtn.click();
     await expect(searchModal).toHaveCount(0);
+    await page.getByTestId('nav-rail-home').click();
 
     // 4. Verify DashboardWidgetGridPanel edit mode controls render monochrome Lucide <svg> icons
     const editToggleBtn = page.getByTestId('dashboard-edit-mode-toggle-btn');
@@ -361,7 +366,7 @@ test.describe('Monochrome Lucide Icon Theme Contract: Host Shell, Plugin SDK [da
     const hostTextContent = await hostShell.innerText();
     expect(hostTextContent).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}★☆]/u);
 
-    // 8. Verify theme inheritance: toggling Light <-> High-Contrast updates icon computed color via currentColor
+    // 8. Verify theme inheritance: toggling Light <-> High-Contrast in full-page Host Settings view updates icon computed color via currentColor
     const lightNavColor = await page
       .getByTestId('nav-rail-search')
       .locator('svg')
@@ -370,13 +375,10 @@ test.describe('Monochrome Lucide Icon Theme Contract: Host Shell, Plugin SDK [da
     expect(lightNavColor).toBe('rgb(248, 250, 252)'); // #f8fafc (--mis-text-sidebar in light theme)
 
     await page.getByTestId('nav-rail-settings').click();
-    await page.getByTestId('host-settings-modal').getByTestId('theme-mode-toggle-btn').click();
-    const closeSettingsBtn = page.getByTestId('close-settings-modal-btn');
-    await expect(closeSettingsBtn).toBeVisible();
-    await expect(closeSettingsBtn).toHaveAttribute('aria-label', 'Close');
-    await expect(closeSettingsBtn).toHaveText('');
-    await expect(closeSettingsBtn.locator('svg').first()).toHaveAttribute('data-lucide-icon', 'x');
-    await closeSettingsBtn.click();
+    await expect(page.getByTestId('host-settings-modal')).toHaveCount(0);
+    const settingsView = page.getByTestId('host-settings-view');
+    await expect(settingsView).toBeVisible();
+    await settingsView.getByTestId('host-settings-theme-toggle-btn').click();
 
     await expect(hostShell).toHaveAttribute('data-mis-theme', 'high-contrast');
     await page.getByTestId('nav-rail-home').click();

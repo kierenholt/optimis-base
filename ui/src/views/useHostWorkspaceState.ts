@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   HOST_ALLOWED_QUERY_KEYS,
+  HostViewMode,
   parseBrowserRoute,
   validatePluginViewRoute,
 } from '../components/routeUtils';
@@ -59,6 +60,9 @@ export function useHostWorkspaceState() {
   const hasInitializedPluginsRef = useRef<boolean>(false);
   const [installedPlugins, setInstalledPlugins] = useState<PluginNavEntry[]>([]);
   const [pinnedRecents, setPinnedRecents] = useState<PinnedRecentEntry[]>([]);
+
+  // Right-Hand Content Pane View Mode ('home' | 'search' | 'settings' | 'plugin')
+  const [hostViewMode, setHostViewMode] = useState<HostViewMode>(initialBrowserRoute.hostViewMode);
 
   // Cached Keep-Alive LRU Pool state (Section 9A: N=5 max mounted plugin iframes)
   const [activePluginId, setActivePluginId] = useState<string>(initialBrowserRoute.plugId);
@@ -261,6 +265,9 @@ export function useHostWorkspaceState() {
         if (urlPlugId && validIds.has(urlPlugId)) {
           return urlPlugId;
         }
+        if (urlRoute.hostViewMode === 'search' || urlRoute.hostViewMode === 'settings') {
+          return '';
+        }
         if (!isInitialLoad && !urlPlugId && prev === '') {
           return '';
         }
@@ -286,6 +293,7 @@ export function useHostWorkspaceState() {
 
   const activatePluginInKeepAlivePool = useCallback(
     (targetPluginId: string, overrideViewPath?: string, overridePluginQuery?: Record<string, string>) => {
+      setHostViewMode('plugin');
       setActivePluginId(targetPluginId);
       setLruPluginOrder((prevOrder) => {
         const nextOrder = [...prevOrder.filter((id) => id !== targetPluginId), targetPluginId];
@@ -468,6 +476,7 @@ export function useHostWorkspaceState() {
   );
 
   const handleNavigateHome = useCallback(() => {
+    setHostViewMode('home');
     setActivePluginId('');
     setActiveViewPath('/');
     setActiveRouteQuery({});
@@ -476,6 +485,30 @@ export function useHostWorkspaceState() {
       window.history.pushState(null, '', '/');
     }
     setActiveRouteUrl('/');
+  }, []);
+
+  const handleNavigateSearch = useCallback(() => {
+    setHostViewMode('search');
+    setActivePluginId('');
+    setActiveViewPath('/');
+    setActiveRouteQuery({});
+    setRouteError('');
+    if (window.location.pathname !== '/search' || window.location.search !== '') {
+      window.history.pushState(null, '', '/search');
+    }
+    setActiveRouteUrl('/search');
+  }, []);
+
+  const handleNavigateSettings = useCallback(() => {
+    setHostViewMode('settings');
+    setActivePluginId('');
+    setActiveViewPath('/');
+    setActiveRouteQuery({});
+    setRouteError('');
+    if (window.location.pathname !== '/settings' || window.location.search !== '') {
+      window.history.pushState(null, '', '/settings');
+    }
+    setActiveRouteUrl('/settings');
   }, []);
 
   const handlePinOrUnpinRoute = useCallback(
@@ -736,6 +769,8 @@ export function useHostWorkspaceState() {
     installedPlugins,
     pinnedRecents,
     setPinnedRecents,
+    hostViewMode,
+    setHostViewMode,
     activePluginId,
     setActivePluginId,
     lruPluginOrder,
@@ -776,6 +811,8 @@ export function useHostWorkspaceState() {
     refreshWorkspaceForStaff,
     activatePluginInKeepAlivePool,
     handleNavigateHome,
+    handleNavigateSearch,
+    handleNavigateSettings,
     handlePinOrUnpinRoute,
     handleUnpinRoute,
     handleSelectPinnedRoute,

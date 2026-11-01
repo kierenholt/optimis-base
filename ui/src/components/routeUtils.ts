@@ -21,7 +21,10 @@ export const HOST_ALLOWED_QUERY_KEYS = new Set([
   'staff_id',
 ]);
 
+export type HostViewMode = 'home' | 'search' | 'settings' | 'plugin';
+
 export interface ParsedBrowserRoute {
+  hostViewMode: HostViewMode;
   plugId: string;
   viewPath: string;
   pupilIdFromPath: string;
@@ -33,13 +36,21 @@ export interface ParsedBrowserRoute {
 
 export function parseBrowserRoute(pathname: string, search: string): ParsedBrowserRoute {
   const params = new URLSearchParams(search);
+  let hostViewMode: HostViewMode = 'home';
   let plugId = '';
   let viewPath = '/';
   let pupilIdFromPath = '';
   let groupIdFromPath = '';
   let staffIdFromPath = '';
 
-  if (pathname === '/p' || pathname.startsWith('/p/')) {
+  const normalizedPath = pathname.replace(/\/+$/, '') || '/';
+
+  if (normalizedPath === '/search') {
+    hostViewMode = 'search';
+  } else if (normalizedPath === '/settings') {
+    hostViewMode = 'settings';
+  } else if (pathname === '/p' || pathname.startsWith('/p/')) {
+    hostViewMode = 'plugin';
     const trimmed = pathname.replace(/^\/p\/?/, '').replace(/\/+$/, '');
     if (trimmed) {
       const segments = trimmed.split('/');
@@ -66,6 +77,7 @@ export function parseBrowserRoute(pathname: string, search: string): ParsedBrows
   });
 
   return {
+    hostViewMode,
     plugId,
     viewPath,
     pupilIdFromPath,

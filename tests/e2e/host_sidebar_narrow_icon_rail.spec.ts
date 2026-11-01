@@ -289,38 +289,50 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
       }),
     ]);
 
-    // 3. Open Global Search modal via Narrow Icon Rail Search button (🔍) and pin a second view (/p/<behaviourPlugId>)
+    // 3. Click Narrow Icon Rail Search button (🔍) -> opens full-page Search view in right-hand pane (/search), NOT a modal
     await page.getByTestId('nav-rail-search').click();
-    const searchModal = page.getByTestId('command-palette-modal');
-    await expect(searchModal).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/search');
+    await expect(page.getByTestId('nav-rail-search')).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId('command-palette-modal')).toHaveCount(0);
 
-    // Verify plugin view items in Global Search expose data-permitted-count and data-permitted-methods
-    const behSearchView = page.getByTestId(`command-palette-result-view-${behaviourPlugId}-home`);
+    const searchView = page.getByTestId('host-search-view');
+    await expect(searchView).toBeVisible();
+    await expect(page.getByTestId('landing-page-search-panel')).toHaveCount(0);
+    await expect(page.getByTestId('dashboard-widget-grid-section')).toHaveCount(0);
+    await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeAttached();
+    await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeHidden();
+
+    // Verify plugin view items in full-page Search view expose data-permitted-count and data-permitted-methods
+    const behSearchView = page.getByTestId(`host-search-result-view-${behaviourPlugId}-home`);
     await expect(behSearchView).toBeVisible();
     await expect(behSearchView).toHaveAttribute('data-permitted-count', /^[1-9]\d*$/);
 
-    const searchPinBehBtn = page.getByTestId(`search-pin-view-btn-${behaviourPlugId}-home`);
+    const searchPinBehBtn = page.getByTestId(`host-search-pin-view-btn-${behaviourPlugId}-home`);
     await expect(searchPinBehBtn).toBeVisible();
     await searchPinBehBtn.click();
-
-    // Close Global Search modal
-    await page.keyboard.press('Escape');
-    await expect(searchModal).toHaveCount(0);
 
     // Verify both pinned routes appear in the Narrow Icon Rail
     const pinnedItem1 = page.getByTestId('pinned-recent-item-1');
     await expect(pinnedItem1).toBeVisible();
     await expect(pinnedItem1).toHaveAttribute('data-pinned-route', `/p/${behaviourPlugId}`);
 
-    // 4. Click "Home" in the Narrow Icon Rail -> navigates to "/" and hides the full-page plugin iframe while keeping LRU pool mounted with display: none
+    // 4. Click "Home" in the Narrow Icon Rail -> navigates to "/" and shows Home dashboard widgets while hiding Search view and keeping LRU pool mounted with display: none
     await page.getByTestId('nav-rail-home').click();
     expect(new URL(page.url()).pathname).toBe('/');
+    await expect(page.getByTestId('nav-rail-home')).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId('host-search-view')).toHaveCount(0);
+    await expect(page.getByTestId('landing-page-search-panel')).toBeVisible();
+    await expect(page.getByTestId('dashboard-widget-grid-section')).toBeVisible();
     await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeAttached();
     await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeHidden();
 
-    // 5. Click the pinned item in the Narrow Icon Rail to restore /p/<senPlugId>/student/<second_active_pupil_id>?tab=iep
+    // 5. Click the pinned item in the Narrow Icon Rail to restore /p/<senPlugId>/student/<second_active_pupil_id>?tab=iep exclusively in the right-hand pane
     await pinnedItem0.click();
     await expect(page.getByTestId(`plugin-iframe-${senPlugId}`)).toBeVisible();
+    await expect(page.getByTestId('landing-page-search-panel')).toHaveCount(0);
+    await expect(page.getByTestId('dashboard-widget-grid-section')).toHaveCount(0);
+    await expect(page.getByTestId('host-search-view')).toHaveCount(0);
+    await expect(page.getByTestId('host-settings-view')).toHaveCount(0);
     expect(page.url()).toContain(
       `/p/${senPlugId}/student/${encodeURIComponent(m1Seed.second_active_pupil_id)}`
     );
@@ -343,7 +355,7 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
     );
   });
 
-  test('railSettingsAndLogout_clickingSettingsAndLogout_opensSettingsModalAndTriggersLogoutAndFailsFastOnInvalidPin_test', async ({
+  test('railSettingsAndLogout_clickingSettingsAndLogout_opensSettingsViewInRightPaneWithoutModalAndTriggersLogoutAndFailsFastOnInvalidPin_test', async ({
     page,
     request,
   }) => {
@@ -368,17 +380,28 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
     });
     expect(missingTitleRes.status()).toBe(400);
 
-    // 2. Open Host UI Shell and click Settings in the Narrow Icon Rail
+    // 2. Open Host UI Shell on "/" -> starts on Home view without settings view or modal
     await page.goto('/');
+    await expect(page.getByTestId('host-settings-view')).toHaveCount(0);
     await expect(page.getByTestId('host-settings-modal')).toHaveCount(0);
-    await expect(page.getByTestId('theme-mode-toggle-btn')).toHaveCount(0);
+    await expect(page.getByTestId('host-settings-theme-toggle-btn')).toHaveCount(0);
+    await expect(page.getByTestId('landing-page-search-panel')).toBeVisible();
+    await expect(page.getByTestId('dashboard-widget-grid-section')).toBeVisible();
 
+    // Click Settings in the Narrow Icon Rail -> replaces right-hand pane with full-page Settings view (/settings) and does NOT open a modal
     await page.getByTestId('nav-rail-settings').click();
-    const settingsModal = page.getByTestId('host-settings-modal');
-    await expect(settingsModal).toBeVisible();
-    await expect(settingsModal).toContainText('100001');
+    expect(new URL(page.url()).pathname).toBe('/settings');
+    await expect(page.getByTestId('nav-rail-settings')).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId('host-settings-modal')).toHaveCount(0);
+    await expect(page.getByTestId('landing-page-search-panel')).toHaveCount(0);
+    await expect(page.getByTestId('dashboard-widget-grid-section')).toHaveCount(0);
+    await expect(page.getByTestId('host-search-view')).toHaveCount(0);
 
-    const settingsThemeToggleBtn = settingsModal.getByTestId('theme-mode-toggle-btn');
+    const settingsView = page.getByTestId('host-settings-view');
+    await expect(settingsView).toBeVisible();
+    await expect(settingsView).toContainText('100001');
+
+    const settingsThemeToggleBtn = settingsView.getByTestId('host-settings-theme-toggle-btn');
     await expect(settingsThemeToggleBtn).toBeVisible();
     await expect(settingsThemeToggleBtn).toHaveAttribute('role', 'switch');
     await expect(settingsThemeToggleBtn).toHaveAttribute('aria-checked', 'false');
@@ -389,8 +412,11 @@ test.describe('Left Sidebar (HostSidebar.tsx): Narrow Icon Rail & Pinned Recents
     await expect(settingsThemeToggleBtn).toHaveAttribute('aria-checked', 'false');
     await expect(page.getByTestId('host-shell')).toHaveAttribute('data-mis-theme', 'light');
 
-    await page.getByTestId('close-settings-modal-btn').click();
-    await expect(settingsModal).toHaveCount(0);
+    // Click Home in sidebar to return to Home view
+    await page.getByTestId('nav-rail-home').click();
+    expect(new URL(page.url()).pathname).toBe('/');
+    await expect(settingsView).toHaveCount(0);
+    await expect(page.getByTestId('landing-page-search-panel')).toBeVisible();
 
     // 3. Click Logout in the Narrow Icon Rail -> triggers session sign-out state (/api/auth/logout)
     await page.getByTestId('nav-rail-logout').click();

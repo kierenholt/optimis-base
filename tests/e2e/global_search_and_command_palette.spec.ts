@@ -327,6 +327,7 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
       `/?__persona=${encodeURIComponent(m1Seed.teacher_staff_id)}&reference_date=2026-10-27&academic_year_id=ay_2026_2027`
     );
     await expect(page.getByTestId('command-palette-modal')).toHaveCount(0);
+    await expect(page.getByTestId('host-search-view')).toHaveCount(0);
 
     await page.keyboard.press('Control+k');
     const paletteModal = page.getByTestId('command-palette-modal');
@@ -334,39 +335,55 @@ test.describe('Global Search & Discovery: Landing Page Top-Half Search & Command
     const paletteInput = page.getByTestId('command-palette-input');
     await expect(paletteInput).toBeFocused();
 
-    // 4. Press Escape to close, then reopen via the Narrow Icon Rail Search button
+    // 4. Press Escape to close modal, then click the Narrow Icon Rail Search button -> opens full-page Search view in right-hand pane (/search), NOT a modal
     await page.keyboard.press('Escape');
     await expect(paletteModal).toHaveCount(0);
 
     await page.getByTestId('nav-rail-search').click();
-    await expect(paletteModal).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/search');
+    await expect(paletteModal).toHaveCount(0);
+    const searchView = page.getByTestId('host-search-view');
+    await expect(searchView).toBeVisible();
+    await expect(page.getByTestId('landing-page-search-panel')).toHaveCount(0);
+    await expect(page.getByTestId('dashboard-widget-grid-section')).toHaveCount(0);
 
-    // 5. Search for SEN widget via keyword ("differentiation") and click inline "Add to Dashboard"
-    await paletteInput.fill('differentiation');
-    const addSenWidgetBtn = page.getByTestId('command-palette-add-widget-btn-sen_differentiation');
+    const searchViewInput = page.getByTestId('host-search-input');
+    await expect(searchViewInput).toBeVisible();
+
+    // 5. Search for SEN widget via keyword ("differentiation") in full-page Search view and click inline "Add to Dashboard"
+    await searchViewInput.fill('differentiation');
+    const addSenWidgetBtn = page.getByTestId('host-search-add-widget-btn-sen_differentiation');
     await expect(addSenWidgetBtn).toBeVisible();
     await addSenWidgetBtn.click();
-    await expect(page.getByTestId('placed-widget-card-sen_differentiation')).toBeVisible();
     await expect(addSenWidgetBtn).toBeDisabled();
     await expect(addSenWidgetBtn).toContainText('Added to Dashboard');
 
-    // 6. Search for pupil "Ada" vs "Alan" in Command Palette as Classroom Teacher (:own_groups)
-    await paletteInput.fill('Alan');
-    await expect(page.getByTestId(`command-palette-result-pupil-${m1Seed.other_group_pupil_id}`)).toHaveCount(0);
+    // Switch back to Home view via sidebar Home button to verify widget is placed on Dashboard
+    await page.getByTestId('nav-rail-home').click();
+    await expect(page.getByTestId('placed-widget-card-sen_differentiation')).toBeVisible();
 
-    await paletteInput.fill('Ada');
-    const adaResult = page.getByTestId(`command-palette-result-pupil-${m1Seed.active_pupil_id}`);
+    // Return to full-page Search view via sidebar Search button
+    await page.getByTestId('nav-rail-search').click();
+    await expect(searchView).toBeVisible();
+
+    // 6. Search for pupil "Ada" vs "Alan" in full-page Search view as Classroom Teacher (:own_groups)
+    await searchViewInput.fill('Alan');
+    await expect(page.getByTestId(`host-search-result-pupil-${m1Seed.other_group_pupil_id}`)).toHaveCount(0);
+
+    await searchViewInput.fill('Ada');
+    const adaResult = page.getByTestId(`host-search-result-pupil-${m1Seed.active_pupil_id}`);
     await expect(adaResult).toBeVisible();
     await expect(adaResult).toContainText('Ada Lovelace');
 
-    // Clicking Ada Lovelace routes to entity_link_handlers.student (/p/<testPlugId>/student/<active_pupil_id>) and closes palette
+    // Clicking Ada Lovelace routes to entity_link_handlers.student (/p/<testPlugId>/student/<active_pupil_id>) and replaces right-hand pane with plugin view
     await adaResult.click();
-    await expect(paletteModal).toHaveCount(0);
+    await expect(searchView).toHaveCount(0);
     await expect
       .poll(() => new URL(page.url()).pathname)
       .toBe(`/p/${testPlugId}/student/${m1Seed.active_pupil_id}`);
+    await expect(page.getByTestId(`plugin-iframe-${testPlugId}`)).toBeVisible();
 
-    // 7. Search for group "10Ma1" via Command Palette and navigate to /p/<testPlugId>/group/<own_group_id>
+    // 7. Search for group "10Ma1" via Ctrl+K Command Palette modal and navigate to /p/<testPlugId>/group/<own_group_id>
     await page.keyboard.press('Control+k');
     await expect(paletteModal).toBeVisible();
     await paletteInput.fill('10Ma1');

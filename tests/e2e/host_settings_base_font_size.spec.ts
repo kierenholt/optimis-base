@@ -234,13 +234,8 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
     await expect(pluginFrame.locator('body')).toBeVisible();
 
     const widgetCompositeKey = `${testPlugId}:pastoral_watch`;
-    const widgetIframeEl = page.getByTestId('widget-iframe-pastoral_watch');
-    await expect(widgetIframeEl).toBeVisible();
-    await expect(widgetIframeEl).toHaveAttribute('data-widget-key', widgetCompositeKey);
-    const widgetFrame = page.frameLocator('[data-testid="widget-iframe-pastoral_watch"]');
-    await expect(widgetFrame.locator('body')).toBeVisible();
 
-    // 2. Verify initial default medium (16px) state on Host root, plugin iframe root, and widget iframe root
+    // 2. Verify initial default medium (16px) state on Host root and plugin iframe root
     const initialHostMetrics = await page.evaluate(() => {
       const root = document.documentElement;
       const cs = window.getComputedStyle(root);
@@ -275,18 +270,28 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
     expect(initialPluginMetrics.tokenScale).toBe('1');
     expect(initialPluginMetrics.computedRootFontSize).toBe('16px');
 
-    // 3. Open Host Settings Modal and verify the 4 Base Font Size preset toggle buttons
-    await page.getByTestId('nav-rail-settings').click();
-    const settingsModal = page.getByTestId('host-settings-modal');
-    await expect(settingsModal).toBeVisible();
+    // Verify Home view renders the placed widget iframe
+    await page.getByTestId('nav-rail-home').click();
+    const widgetIframeEl = page.getByTestId('widget-iframe-pastoral_watch');
+    await expect(widgetIframeEl).toBeVisible();
+    await expect(widgetIframeEl).toHaveAttribute('data-widget-key', widgetCompositeKey);
+    const widgetFrame = page.frameLocator('[data-testid="widget-iframe-pastoral_watch"]');
+    await expect(widgetFrame.locator('body')).toBeVisible();
 
-    const fontSizeControl = settingsModal.getByTestId('base-font-size-control');
+    // 3. Click Settings in the sidebar -> switches right-hand pane to Host Settings View (/settings), NOT a modal
+    await page.getByTestId('nav-rail-settings').click();
+    expect(new URL(page.url()).pathname).toBe('/settings');
+    await expect(page.getByTestId('host-settings-modal')).toHaveCount(0);
+    const settingsView = page.getByTestId('host-settings-view');
+    await expect(settingsView).toBeVisible();
+
+    const fontSizeControl = settingsView.getByTestId('host-settings-font-size-control');
     await expect(fontSizeControl).toBeVisible();
 
-    const btnSmall = settingsModal.getByTestId('font-size-btn-small');
-    const btnMedium = settingsModal.getByTestId('font-size-btn-medium');
-    const btnLarge = settingsModal.getByTestId('font-size-btn-large');
-    const btnExtraLarge = settingsModal.getByTestId('font-size-btn-extra-large');
+    const btnSmall = settingsView.getByTestId('host-settings-font-size-btn-small');
+    const btnMedium = settingsView.getByTestId('host-settings-font-size-btn-medium');
+    const btnLarge = settingsView.getByTestId('host-settings-font-size-btn-large');
+    const btnExtraLarge = settingsView.getByTestId('host-settings-font-size-btn-extra-large');
 
     await expect(btnSmall).toBeVisible();
     await expect(btnMedium).toBeVisible();
@@ -298,7 +303,7 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
     await expect(btnLarge).toHaveAttribute('aria-pressed', 'false');
     await expect(btnExtraLarge).toHaveAttribute('aria-pressed', 'false');
 
-    // 4. Click "Large" (18px) -> verify Host Shell, plugin iframe, and widget iframe update live
+    // 4. Click "Large" (18px) -> verify Host Shell and kept-alive plugin iframe update live
     await btnLarge.click();
     await expect(btnLarge).toHaveAttribute('aria-pressed', 'true');
     await expect(btnMedium).toHaveAttribute('aria-pressed', 'false');
@@ -333,6 +338,8 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
         computedRootFontSize: '18px',
       });
 
+    // Switch to Home view to verify widget iframe also reflects Large (18px)
+    await page.getByTestId('nav-rail-home').click();
     await expect
       .poll(async () => {
         return await widgetFrame.locator(':root').evaluate((root) => ({
@@ -346,6 +353,10 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
         tokenBase: '18px',
         computedRootFontSize: '18px',
       });
+
+    // Switch back to Settings view
+    await page.getByTestId('nav-rail-settings').click();
+    await expect(settingsView).toBeVisible();
 
     // 5. Click "Extra Large" (20px) -> verify 20px / 1.25 scale propagation
     await btnExtraLarge.click();
@@ -408,9 +419,10 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
         })
       );
 
-    // 8. Reload the browser and verify Teacher's "small" (14px) setting persists from staff_settings
+    // 8. Reload the browser on /settings and verify Teacher's "small" (14px) setting and Settings view route persist
     await page.reload();
     await expect(page.getByTestId('host-shell')).toHaveAttribute('data-mis-font-size', 'small');
+    await expect(page.getByTestId('host-settings-view')).toBeVisible();
     const reloadedRootFontSize = await page.evaluate(
       () => window.getComputedStyle(document.documentElement).fontSize
     );
@@ -556,13 +568,12 @@ test.describe('Host Settings Modal: Base Font Size Toggle (Small/Medium/Large/Ex
     const sidebar = page.getByTestId('host-sidebar');
     await expect(sidebar).toBeVisible();
 
+    await page.getByTestId('nav-rail-settings').click();
+    const settingsView = page.getByTestId('host-settings-view');
+    await expect(settingsView).toBeVisible();
+
     for (const preset of ['small', 'medium', 'large', 'extra-large'] as const) {
-      await page.getByTestId('nav-rail-settings').click();
-      const settingsModal = page.getByTestId('host-settings-modal');
-      await expect(settingsModal).toBeVisible();
-      await settingsModal.getByTestId(`font-size-btn-${preset}`).click();
-      await settingsModal.getByTestId('close-settings-modal-btn').click();
-      await expect(settingsModal).toBeHidden();
+      await settingsView.getByTestId(`host-settings-font-size-btn-${preset}`).click();
 
       const geometry = await page.evaluate(() => {
         const aside = document.querySelector('[data-testid="host-sidebar"]') as HTMLElement | null;

@@ -36,9 +36,15 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     }
     logCursor = (await cursorRes.json()).cursor;
 
-    // 3. Ensure dev persona switcher is enabled and install + activate plugin test_plugin
+    // 3. Ensure dev persona switcher is enabled, reset user-settings to light/medium, and install + activate plugin test_plugin
     await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
+    });
+    await request.put('/api/system/user-settings', {
+      data: {
+        base_font_size: 'medium',
+        theme_mode: 'light',
+      },
     });
     const installRes = await request.post('/api/admin/plugins/install', {
       data: { folder: 'test_plugin' },
@@ -122,6 +128,12 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     await request.post('/api/test/auth-mode', {
       data: { enable_dev_persona_switcher: true },
     });
+    await request.put('/api/system/user-settings', {
+      data: {
+        base_font_size: 'medium',
+        theme_mode: 'light',
+      },
+    });
     if (testPlugId) {
       await request.delete(`/api/admin/plugins/${encodeURIComponent(testPlugId)}`);
     }
@@ -165,7 +177,6 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
 
     const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const sdkThemeStatus = pluginFrame.getByTestId('sdk-theme-status');
-    await expect(sdkThemeStatus).toBeVisible();
     await expect(sdkThemeStatus).toContainText('THEME:light');
     await expect(sdkThemeStatus).toContainText('#1d4ed8');
 
@@ -184,14 +195,14 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
     expect(hostLightTokens.bgCanvas).toBe('#f1f5f9');
     expect(hostLightTokens.textPrimary).toBe('#0f172a');
 
-    // 2. Toggle High-Contrast Mode in Host Settings modal and verify live propagation into both Host and sandboxed iframe
+    // 2. Toggle High-Contrast Mode in full-page Host Settings view and verify live propagation into both Host and sandboxed iframe
     await page.getByTestId('nav-rail-settings').click();
-    const settingsModal = page.getByTestId('host-settings-modal');
-    await expect(settingsModal).toBeVisible();
-    const toggleThemeBtn = settingsModal.getByTestId('theme-mode-toggle-btn');
+    await expect(page.getByTestId('host-settings-modal')).toHaveCount(0);
+    const settingsView = page.getByTestId('host-settings-view');
+    await expect(settingsView).toBeVisible();
+    const toggleThemeBtn = settingsView.getByTestId('host-settings-theme-toggle-btn');
     await expect(toggleThemeBtn).toBeVisible();
     await toggleThemeBtn.click();
-    await page.getByTestId('close-settings-modal-btn').click();
 
     await expect(hostShell).toHaveAttribute('data-mis-theme', 'high-contrast');
     await expect(sdkThemeStatus).toContainText('THEME:high-contrast');
@@ -215,9 +226,10 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
   test('windowMisRpcPromiseApi_validAndInvalidCalls_resolvesDataAndRejectsFailFastWithErrorCode_test', async ({
     page,
   }) => {
-    await page.goto(`/?pupil_id=${encodeURIComponent(seededPupilId)}`);
+    await page.goto(`/p/${testPlugId}?pupil_id=${encodeURIComponent(seededPupilId)}`);
 
     const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
+    await expect(pluginFrame.getByTestId('sdk-context-status')).toContainText(`PUPIL:${seededPupilId}`);
 
     // 1. Invoke window.mis.rpc('get_pupil_record', { pupil_id }) Promise API
     const promiseRpcBtn = pluginFrame.getByTestId('sdk-promise-rpc-btn');
@@ -239,7 +251,7 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
   test('dataMisLinkDeepLink_clickingStudentAndGroupLinksInIframe_wakesDesignatedHandlerAndUpdatesContext_test', async ({
     page,
   }) => {
-    await page.goto(`/?pupil_id=${encodeURIComponent(seededPupilId)}&second_pupil_id=${encodeURIComponent(secondPupilId)}`);
+    await page.goto(`/p/${testPlugId}?pupil_id=${encodeURIComponent(seededPupilId)}&second_pupil_id=${encodeURIComponent(secondPupilId)}`);
 
     const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const contextStatus = pluginFrame.getByTestId('sdk-context-status');
@@ -268,9 +280,10 @@ test.describe('Plugin UI SDK (mis-bridge.js), Design Token Theming (--mis-*) & D
   test('connectSrcNoneCsp_sandboxedIframeAttemptsDirectExternalFetch_blocksNetworkRequest_test', async ({
     page,
   }) => {
-    await page.goto(`/?pupil_id=${encodeURIComponent(seededPupilId)}`);
+    await page.goto(`/p/${testPlugId}?pupil_id=${encodeURIComponent(seededPupilId)}`);
 
     const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
+    await expect(pluginFrame.getByTestId('sdk-context-status')).toContainText(`PUPIL:${seededPupilId}`);
     const cspTestBtn = pluginFrame.getByTestId('sdk-csp-fetch-test-btn');
     await expect(cspTestBtn).toBeVisible();
     await cspTestBtn.click();
