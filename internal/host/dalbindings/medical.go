@@ -25,6 +25,7 @@ func medicalConditionAlertToLuaTable(L *lua.LState, mc dal.PupilMedicalCondition
 	L.SetField(mTbl, "emergency_protocol", lua.LString(mc.EmergencyResponsePlan))
 	L.SetField(mTbl, "medication_name_and_dose", lua.LString(mc.MedicationNameAndDose))
 	L.SetField(mTbl, "medication_location", lua.LString(mc.MedicationLocation))
+	L.SetField(mTbl, "parental_consent_given", lua.LBool(mc.ParentalConsentGiven))
 	L.SetField(mTbl, "effective_from", lua.LString(mc.EffectiveFrom))
 	return mTbl
 }

@@ -302,6 +302,33 @@ func (h *Host) registerHostLogAndFixtureRoutes(mux *http.ServeMux) {
 		})
 	})
 
+	mux.HandleFunc("GET /api/test/installed-plugins/{manifest_id}", func(w http.ResponseWriter, r *http.Request) {
+		manifestID := strings.TrimSpace(r.PathValue("manifest_id"))
+		if manifestID == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"ok":    false,
+				"error": "missing mandatory path parameter: manifest_id",
+			})
+			return
+		}
+		rec, err := h.coreDAL.GetInstalledPlugin(r.Context(), manifestID)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if strings.Contains(err.Error(), "not found") {
+				status = http.StatusNotFound
+			}
+			writeJSON(w, status, map[string]any{
+				"ok":    false,
+				"error": err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":               true,
+			"installed_plugin": rec,
+		})
+	})
+
 	mux.HandleFunc("POST /api/test/seed-pupil", func(w http.ResponseWriter, r *http.Request) {
 		var in dal.SeedPupilInput
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {

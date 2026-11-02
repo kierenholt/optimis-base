@@ -88,12 +88,12 @@ func (d *CoreDAL) ensureDashboardLayoutsColumnCount(ctx context.Context) {
 	var count int
 	err := d.readDB.QueryRowContext(
 		ctx,
-		`SELECT COUNT(*) FROM pragma_table_info('dashboard_layouts') WHERE name = 'column_count'`,
+		`SELECT COUNT(*) FROM pragma_table_info('staff_dashboard_layouts') WHERE name = 'column_count'`,
 	).Scan(&count)
 	if err == nil && count == 0 {
 		_, _ = d.writeDB.ExecContext(
 			ctx,
-			`ALTER TABLE dashboard_layouts ADD COLUMN column_count INTEGER NOT NULL DEFAULT 4`,
+			`ALTER TABLE staff_dashboard_layouts ADD COLUMN column_count INTEGER NOT NULL DEFAULT 4`,
 		)
 	}
 }
@@ -115,7 +115,7 @@ func (d *CoreDAL) GetStaffDashboardLayoutWithColumns(ctx context.Context, staffI
 	var colCount sql.NullInt64
 	err := d.readDB.QueryRowContext(
 		ctx,
-		`SELECT widgets_json, column_count FROM dashboard_layouts WHERE scope_type = 'STAFF' AND scope_target = ?`,
+		`SELECT widgets_json, column_count FROM staff_dashboard_layouts WHERE staff_id = ?`,
 		trimmedStaff,
 	).Scan(&rawJSON, &colCount)
 	if err != nil {
@@ -185,26 +185,27 @@ func (d *CoreDAL) SaveStaffDashboardLayoutWithColumns(
 		return nil, DefaultDashboardColumnCount, fmt.Errorf("failed to marshal dashboard layout JSON: %w", err)
 	}
 
-	rowID := "staff:" + trimmedStaff
 	actor := strings.TrimSpace(updatedByStaffID)
-	if actor == "" {
-		actor = trimmedStaff
+	var actorParam any
+	if actor != "" {
+		actorParam = actor
+	} else {
+		actorParam = trimmedStaff
 	}
 
 	if _, err := d.writeDB.ExecContext(
 		ctx,
-		`INSERT INTO dashboard_layouts (id, scope_type, scope_target, widgets_json, column_count, updated_by_staff_id, updated_at)
-		 VALUES (?, 'STAFF', ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-		 ON CONFLICT(scope_type, scope_target) DO UPDATE SET
+		`INSERT INTO staff_dashboard_layouts (staff_id, widgets_json, column_count, updated_by_staff_id, updated_at)
+		 VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+		 ON CONFLICT(staff_id) DO UPDATE SET
 		     widgets_json = excluded.widgets_json,
 		     column_count = excluded.column_count,
 		     updated_by_staff_id = excluded.updated_by_staff_id,
 		     updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
-		rowID,
 		trimmedStaff,
 		string(rawBytes),
 		resolvedCols,
-		actor,
+		actorParam,
 	); err != nil {
 		return nil, DefaultDashboardColumnCount, fmt.Errorf("failed to save staff dashboard layout for %s: %w", trimmedStaff, err)
 	}
@@ -219,7 +220,7 @@ func (d *CoreDAL) DeleteStaffDashboardLayout(ctx context.Context, staffID string
 	}
 	res, err := d.writeDB.ExecContext(
 		ctx,
-		`DELETE FROM dashboard_layouts WHERE scope_type = 'STAFF' AND scope_target = ?`,
+		`DELETE FROM staff_dashboard_layouts WHERE staff_id = ?`,
 		trimmedStaff,
 	)
 	if err != nil {
@@ -238,7 +239,7 @@ func (d *CoreDAL) GetRoleDefaultDashboardLayout(ctx context.Context, roleID stri
 	var rawJSON string
 	err := d.readDB.QueryRowContext(
 		ctx,
-		`SELECT widgets_json FROM dashboard_layouts WHERE scope_type = 'ROLE_DEFAULT' AND UPPER(scope_target) = ?`,
+		`SELECT widgets_json FROM role_dashboard_layouts WHERE UPPER(role_id) = ?`,
 		normalizedRole,
 	).Scan(&rawJSON)
 	if err != nil {
@@ -259,7 +260,7 @@ func (d *CoreDAL) ListAllRoleDefaultDashboardLayouts(ctx context.Context) (map[s
 	result := make(map[string][]DashboardWidgetItem)
 	rows, err := d.readDB.QueryContext(
 		ctx,
-		`SELECT UPPER(scope_target), widgets_json FROM dashboard_layouts WHERE scope_type = 'ROLE_DEFAULT' ORDER BY scope_target ASC`,
+		`SELECT UPPER(role_id), widgets_json FROM role_dashboard_layouts ORDER BY role_id ASC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list role default dashboard layouts: %w", err)
@@ -310,19 +311,21 @@ func (d *CoreDAL) SaveRoleDefaultDashboardLayout(
 	}()
 
 	actor := strings.TrimSpace(updatedByStaffID)
-	rowID := "role:" + normalizedRole
+	var actorParam any
+	if actor != "" {
+		actorParam = actor
+	}
 	if _, err := tx.ExecContext(
 		ctx,
-		`INSERT INTO dashboard_layouts (id, scope_type, scope_target, widgets_json, updated_by_staff_id, updated_at)
-		 VALUES (?, 'ROLE_DEFAULT', ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-		 ON CONFLICT(scope_type, scope_target) DO UPDATE SET
+		`INSERT INTO role_dashboard_layouts (role_id, widgets_json, updated_by_staff_id, updated_at)
+		 VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+		 ON CONFLICT(role_id) DO UPDATE SET
 		     widgets_json = excluded.widgets_json,
 		     updated_by_staff_id = excluded.updated_by_staff_id,
 		     updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
-		rowID,
 		normalizedRole,
 		string(rawBytes),
-		actor,
+		actorParam,
 	); err != nil {
 		return nil, 0, fmt.Errorf("failed to upsert role default dashboard layout for %s: %w", normalizedRole, err)
 	}
@@ -331,14 +334,13 @@ func (d *CoreDAL) SaveRoleDefaultDashboardLayout(
 	if appendToExistingStaff && len(normalizedItems) > 0 {
 		rows, qErr := tx.QueryContext(
 			ctx,
-			`SELECT dl.scope_target, dl.widgets_json
-			 FROM dashboard_layouts dl
-			 WHERE dl.scope_type = 'STAFF'
-			   AND EXISTS (
+			`SELECT sdl.staff_id, sdl.widgets_json
+			 FROM staff_dashboard_layouts sdl
+			 WHERE EXISTS (
 			       SELECT 1
 			       FROM staff s
 			       JOIN person_roles pr ON pr.person_id = s.person_id
-			       WHERE s.id = dl.scope_target
+			       WHERE s.id = sdl.staff_id
 			         AND UPPER(pr.role_id) = ?
 			   )`,
 			normalizedRole,
@@ -394,13 +396,13 @@ func (d *CoreDAL) SaveRoleDefaultDashboardLayout(
 		for _, u := range updates {
 			if _, uErr := tx.ExecContext(
 				ctx,
-				`UPDATE dashboard_layouts
+				`UPDATE staff_dashboard_layouts
 				 SET widgets_json = ?,
 				     updated_by_staff_id = ?,
 				     updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-				 WHERE scope_type = 'STAFF' AND scope_target = ?`,
+				 WHERE staff_id = ?`,
 				u.mergedBytes,
-				actor,
+				actorParam,
 				u.staffID,
 			); uErr != nil {
 				return nil, 0, fmt.Errorf("failed to append role widgets to staff layout %s: %w", u.staffID, uErr)
@@ -501,6 +503,9 @@ func (d *CoreDAL) ResolveEffectiveDashboardLayoutWithColumns(
 }
 
 func (d *CoreDAL) ResetAllDashboardLayoutsForTest(ctx context.Context) error {
-	_, err := d.writeDB.ExecContext(ctx, `DELETE FROM dashboard_layouts`)
+	if _, err := d.writeDB.ExecContext(ctx, `DELETE FROM role_dashboard_layouts`); err != nil {
+		return err
+	}
+	_, err := d.writeDB.ExecContext(ctx, `DELETE FROM staff_dashboard_layouts`)
 	return err
 }

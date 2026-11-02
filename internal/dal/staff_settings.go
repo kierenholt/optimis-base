@@ -42,25 +42,52 @@ func (d *CoreDAL) GetStaffSettings(ctx context.Context, staffID string) (StaffSe
 		return StaffSettings{}, errors.New("MISSING_MANDATORY_PARAMETER: staff_id is required for GetStaffSettings")
 	}
 
-	var s StaffSettings
+	s := StaffSettings{
+		StaffID:           trimmedStaff,
+		BaseFontSize:      "medium",
+		ThemeMode:         "light",
+		PinnedRecentsJSON: "[]",
+	}
+
+	var prefFontSize, prefThemeMode, prefUpdated sql.NullString
 	err := d.readDB.QueryRowContext(
 		ctx,
-		`SELECT staff_id, base_font_size, theme_mode, pinned_recents_json, updated_at
-		 FROM staff_settings
+		`SELECT base_font_size, theme_mode, updated_at
+		 FROM staff_ui_preferences
 		 WHERE staff_id = ?`,
 		trimmedStaff,
-	).Scan(&s.StaffID, &s.BaseFontSize, &s.ThemeMode, &s.PinnedRecentsJSON, &s.UpdatedAt)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return StaffSettings{
-				StaffID:           trimmedStaff,
-				BaseFontSize:      "medium",
-				ThemeMode:         "light",
-				PinnedRecentsJSON: "[]",
-			}, nil
-		}
-		return StaffSettings{}, fmt.Errorf("failed to query staff_settings for %s: %w", trimmedStaff, err)
+	).Scan(&prefFontSize, &prefThemeMode, &prefUpdated)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return StaffSettings{}, fmt.Errorf("failed to query staff_ui_preferences for %s: %w", trimmedStaff, err)
 	}
+	if prefFontSize.Valid && strings.TrimSpace(prefFontSize.String) != "" {
+		s.BaseFontSize = prefFontSize.String
+	}
+	if prefThemeMode.Valid && strings.TrimSpace(prefThemeMode.String) != "" {
+		s.ThemeMode = prefThemeMode.String
+	}
+	if prefUpdated.Valid && strings.TrimSpace(prefUpdated.String) != "" {
+		s.UpdatedAt = prefUpdated.String
+	}
+
+	var pinJSON, pinUpdated sql.NullString
+	err = d.readDB.QueryRowContext(
+		ctx,
+		`SELECT pinned_recents_json, updated_at
+		 FROM staff_pinned_recents
+		 WHERE staff_id = ?`,
+		trimmedStaff,
+	).Scan(&pinJSON, &pinUpdated)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return StaffSettings{}, fmt.Errorf("failed to query staff_pinned_recents for %s: %w", trimmedStaff, err)
+	}
+	if pinJSON.Valid && strings.TrimSpace(pinJSON.String) != "" {
+		s.PinnedRecentsJSON = pinJSON.String
+	}
+	if pinUpdated.Valid && strings.TrimSpace(pinUpdated.String) != "" && (s.UpdatedAt == "" || pinUpdated.String > s.UpdatedAt) {
+		s.UpdatedAt = pinUpdated.String
+	}
+
 	return s, nil
 }
 
@@ -101,15 +128,10 @@ func (d *CoreDAL) UpsertStaffUISettings(
 		nextTheme = validatedTheme
 	}
 
-	pinnedJSON := strings.TrimSpace(existing.PinnedRecentsJSON)
-	if pinnedJSON == "" {
-		pinnedJSON = "[]"
-	}
-
 	_, err = d.writeDB.ExecContext(
 		ctx,
-		`INSERT INTO staff_settings (staff_id, base_font_size, theme_mode, pinned_recents_json, updated_at)
-		 VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+		`INSERT INTO staff_ui_preferences (staff_id, base_font_size, theme_mode, updated_at)
+		 VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 		 ON CONFLICT(staff_id) DO UPDATE SET
 		     base_font_size = excluded.base_font_size,
 		     theme_mode = excluded.theme_mode,
@@ -117,10 +139,9 @@ func (d *CoreDAL) UpsertStaffUISettings(
 		trimmedStaff,
 		nextFontSize,
 		nextTheme,
-		pinnedJSON,
 	)
 	if err != nil {
-		return StaffSettings{}, fmt.Errorf("failed to upsert staff_settings for %s: %w", trimmedStaff, err)
+		return StaffSettings{}, fmt.Errorf("failed to upsert staff_ui_preferences for %s: %w", trimmedStaff, err)
 	}
 
 	return d.GetStaffSettings(ctx, trimmedStaff)
@@ -138,8 +159,8 @@ func (d *CoreDAL) SaveStaffPinnedRecentsJSON(ctx context.Context, staffID string
 
 	_, err := d.writeDB.ExecContext(
 		ctx,
-		`INSERT INTO staff_settings (staff_id, base_font_size, theme_mode, pinned_recents_json, updated_at)
-		 VALUES (?, 'medium', 'light', ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+		`INSERT INTO staff_pinned_recents (staff_id, pinned_recents_json, updated_at)
+		 VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 		 ON CONFLICT(staff_id) DO UPDATE SET
 		     pinned_recents_json = excluded.pinned_recents_json,
 		     updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
@@ -147,7 +168,8 @@ func (d *CoreDAL) SaveStaffPinnedRecentsJSON(ctx context.Context, staffID string
 		cleanJSON,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to save pinned_recents_json in staff_settings for %s: %w", trimmedStaff, err)
+		return fmt.Errorf("failed to save pinned_recents_json in staff_pinned_recents for %s: %w", trimmedStaff, err)
 	}
 	return nil
 }
+

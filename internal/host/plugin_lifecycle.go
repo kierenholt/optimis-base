@@ -11,16 +11,23 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
+
+	"optimis/internal/dal"
 )
 
 type PluginStatusSummary struct {
-	ID            string `json:"id"`
-	PlugID        string `json:"plug_id"`
-	Folder        string `json:"folder"`
-	Title         string `json:"title"`
-	Version       string `json:"version"`
-	State         string `json:"state"`
-	DatabaseAlias string `json:"database_alias,omitempty"`
+	ID             string   `json:"id"`
+	PlugID         string   `json:"plug_id"`
+	ManifestID     string   `json:"manifest_id,omitempty"`
+	Folder         string   `json:"folder"`
+	Title          string   `json:"title"`
+	Version        string   `json:"version"`
+	State          string   `json:"state"`
+	DatabaseAlias  string   `json:"database_alias,omitempty"`
+	InstalledAt    string   `json:"installed_at,omitempty"`
+	UpdatedAt      string   `json:"updated_at,omitempty"`
+	ApprovedScopes []string `json:"approved_scopes,omitempty"`
 }
 
 func validatePluginFolderName(pluginFolder string) (string, error) {
@@ -81,6 +88,40 @@ func (h *Host) InstallPlugin(ctx context.Context, pluginFolder string) (*LoadedP
 	}
 	loaded.PlugID = plugID
 	loaded.State = PluginStateUninstalledDormant
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if existingRec, rErr := h.coreDAL.GetInstalledPlugin(ctx, loaded.Manifest.ID); rErr == nil && existingRec.InstalledAt != "" {
+		loaded.InstalledAt = existingRec.InstalledAt
+	} else {
+		loaded.InstalledAt = now
+	}
+	loaded.UpdatedAt = now
+
+	alias := ""
+	if loaded.Manifest.Database != nil {
+		alias = strings.TrimSpace(loaded.Manifest.Database.Alias)
+	}
+
+	scopes := make([]string, 0)
+	for _, ep := range loaded.Manifest.Endpoints {
+		scopes = append(scopes, ep.Scopes...)
+	}
+	sort.Strings(scopes)
+	scopesJSONBytes, _ := json.Marshal(scopes)
+
+	if uErr := h.coreDAL.UpsertInstalledPlugin(ctx, dal.InstalledPluginRecord{
+		ManifestID:         loaded.Manifest.ID,
+		PlugID:             plugID,
+		Version:            loaded.Manifest.Version,
+		State:              string(loaded.State),
+		DatabaseAlias:      alias,
+		Folder:             cleanFolder,
+		ApprovedScopesJSON: string(scopesJSONBytes),
+		InstalledAt:        loaded.InstalledAt,
+		UpdatedAt:          loaded.UpdatedAt,
+	}); uErr != nil {
+		return nil, fmt.Errorf("failed to persist installed plugin record: %w", uErr)
+	}
 
 	h.mu.Lock()
 	prevPool := h.workerPools[loaded.Manifest.ID]
@@ -166,6 +207,8 @@ func (h *Host) RemovePlugin(ctx context.Context, pluginID string) error {
 		}
 	}
 
+	_ = h.coreDAL.SetInstalledPluginState(ctx, canonicalKey, string(PluginStateUninstalledDormant))
+
 	h.logInfo(fmt.Sprintf("Removed plugin %s (%s)", canonicalKey, p.PlugID))
 	return nil
 }
@@ -192,14 +235,25 @@ func (h *Host) ListPlugins() []PluginStatusSummary {
 		if plugID == "" {
 			plugID = p.Manifest.ID
 		}
+
+		var scopes []string
+		for _, ep := range p.Manifest.Endpoints {
+			scopes = append(scopes, ep.Scopes...)
+		}
+		sort.Strings(scopes)
+
 		out = append(out, PluginStatusSummary{
-			ID:            plugID,
-			PlugID:        plugID,
-			Folder:        p.Folder,
-			Title:         title,
-			Version:       p.Manifest.Version,
-			State:         string(p.State),
-			DatabaseAlias: alias,
+			ID:             plugID,
+			PlugID:         plugID,
+			ManifestID:     p.Manifest.ID,
+			Folder:         p.Folder,
+			Title:          title,
+			Version:        p.Manifest.Version,
+			State:          string(p.State),
+			DatabaseAlias:  alias,
+			InstalledAt:    p.InstalledAt,
+			UpdatedAt:      p.UpdatedAt,
+			ApprovedScopes: scopes,
 		})
 	}
 	h.mu.RUnlock()
@@ -299,10 +353,13 @@ func (h *Host) RegisterPluginLifecycleRoutes(mux *http.ServeMux) {
 			"ok":             true,
 			"plug_id":        loaded.PlugID,
 			"plugin_id":      loaded.PlugID,
+			"manifest_id":    loaded.Manifest.ID,
 			"folder":         loaded.Folder,
 			"version":        loaded.Manifest.Version,
 			"state":          string(loaded.State),
 			"database_alias": alias,
+			"installed_at":   loaded.InstalledAt,
+			"updated_at":     loaded.UpdatedAt,
 		})
 	})
 
@@ -351,11 +408,17 @@ func (h *Host) RegisterPluginLifecycleRoutes(mux *http.ServeMux) {
 			return
 		}
 
+		updatedAt := time.Now().UTC().Format(time.RFC3339)
+		if p, ok := h.GetLoadedPlugin(pluginID); ok && p.UpdatedAt != "" {
+			updatedAt = p.UpdatedAt
+		}
+
 		writeJSON(w, http.StatusOK, map[string]any{
-			"ok":        true,
-			"plug_id":   pluginID,
-			"plugin_id": pluginID,
-			"state":     string(PluginStateActive),
+			"ok":         true,
+			"plug_id":    pluginID,
+			"plugin_id":  pluginID,
+			"state":      string(PluginStateActive),
+			"updated_at": updatedAt,
 		})
 	})
 

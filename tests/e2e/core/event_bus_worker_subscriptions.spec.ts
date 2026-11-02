@@ -83,6 +83,9 @@ test.describe('Native In-Memory Event Bus Router, Manifest Worker Subscriptions 
       throw new Error('Seeded fixture response missing mandatory identifiers');
     }
     seeded = body;
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.teacher_staff_id },
+    });
   });
 
   test.afterEach(async ({ request }, testInfo) => {
@@ -141,9 +144,8 @@ test.describe('Native In-Memory Event Bus Router, Manifest Worker Subscriptions 
       other_group_id: f.other_group_id,
       reference_date: f.reference_date,
       academic_year_id: f.academic_year_id,
-      staff_id: f.teacher_staff_id,
     });
-    return `/?${params.toString()}`;
+    return `/p/${testPlugId}?${params.toString()}`;
   }
 
   test('recordAmAttendanceAndSafeguardingPostbox_coreDalCommits_emitsCoreCatalogEventsAndExecutesSubscribedPluginWorkers_test', async ({

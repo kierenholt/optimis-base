@@ -233,6 +233,9 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
     }
 
     // 1. Record a statutory AM attendance session mark for Ada Lovelace so attendance sessions are populated
+    await request.post('/api/auth/persona', {
+      data: { staff_id: m1Seeded.teacher_staff_id },
+    });
     const rpcAttRes = await request.post(`/api/p/${testPlugId}/rpc/record_group_am_attendance`, {
       data: {
         args: {
@@ -304,7 +307,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
 
     await expect(page.getByTestId('host-shell')).toBeVisible();
     await page.getByTestId('nav-rail-search').click();
-    const dmzNavBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Parent' }).first();
+    const dmzNavBtn = page.locator('[data-testid^="host-search-result-view-"][data-testid$="-home"]').filter({ hasText: 'Parent' }).first();
     await expect(dmzNavBtn).toBeVisible();
     await dmzNavBtn.click();
 
@@ -459,7 +462,7 @@ test.describe('Parent Portal DMZ Sync Plugin Vertical: Inbox Pull Safeguarding B
       )}&academic_year_id=${encodeURIComponent(m1Seeded.academic_year_id)}`
     );
     await page.getByTestId('nav-rail-search').click();
-    await page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Parent' }).first().click();
+    await page.locator('[data-testid^="host-search-result-view-"][data-testid$="-home"]').filter({ hasText: 'Parent' }).first().click();
 
     const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${dmzPlugId}"]`);
     await pluginFrame.getByTestId('push-dmz-projection-btn').click();

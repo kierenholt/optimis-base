@@ -347,6 +347,101 @@ func (d *CoreDAL) initSchema(schoolURN string) error {
 		}
 	}
 
+	// If legacy attendance_register_submissions exists as a physical table with polymorphic session_or_slot_key,
+	// migrate existing rows to dedicated attendance_session_register_submissions and attendance_lesson_register_submissions
+	// tables and drop the old table so the view can be created cleanly.
+	var isSubmissionsTable int
+	_ = d.writeDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'attendance_register_submissions'`).Scan(&isSubmissionsTable)
+	if isSubmissionsTable > 0 {
+		migrationSQL := `
+			CREATE TABLE IF NOT EXISTS attendance_session_register_submissions (
+				id TEXT PRIMARY KEY,
+				group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE RESTRICT,
+				date TEXT NOT NULL,
+				session TEXT NOT NULL CHECK (session IN ('AM', 'PM')),
+				taken_by_staff_id TEXT NOT NULL REFERENCES staff(id) ON DELETE RESTRICT,
+				taken_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+				UNIQUE (group_id, date, session)
+			);
+			CREATE TABLE IF NOT EXISTS attendance_lesson_register_submissions (
+				id TEXT PRIMARY KEY,
+				group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE RESTRICT,
+				timetable_slot_id TEXT NOT NULL REFERENCES timetable_slots(id) ON DELETE RESTRICT,
+				date TEXT NOT NULL,
+				taken_by_staff_id TEXT NOT NULL REFERENCES staff(id) ON DELETE RESTRICT,
+				taken_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+				UNIQUE (group_id, timetable_slot_id, date)
+			);
+			INSERT OR IGNORE INTO attendance_session_register_submissions (id, group_id, date, session, taken_by_staff_id, taken_at)
+			SELECT id, group_id, date, session_or_slot_key, taken_by_staff_id, taken_at
+			FROM attendance_register_submissions
+			WHERE session_or_slot_key IN ('AM', 'PM')
+			  AND EXISTS (SELECT 1 FROM groups g WHERE g.id = attendance_register_submissions.group_id)
+			  AND EXISTS (SELECT 1 FROM staff s WHERE s.id = attendance_register_submissions.taken_by_staff_id);
+
+			INSERT OR IGNORE INTO attendance_lesson_register_submissions (id, group_id, timetable_slot_id, date, taken_by_staff_id, taken_at)
+			SELECT id, group_id, session_or_slot_key, date, taken_by_staff_id, taken_at
+			FROM attendance_register_submissions
+			WHERE session_or_slot_key NOT IN ('AM', 'PM')
+			  AND EXISTS (SELECT 1 FROM groups g WHERE g.id = attendance_register_submissions.group_id)
+			  AND EXISTS (SELECT 1 FROM timetable_slots ts WHERE ts.id = attendance_register_submissions.session_or_slot_key)
+			  AND EXISTS (SELECT 1 FROM staff s WHERE s.id = attendance_register_submissions.taken_by_staff_id);
+
+			DROP TABLE attendance_register_submissions;
+		`
+		if _, err := d.writeDB.Exec(migrationSQL); err != nil {
+			return fmt.Errorf("failed to migrate legacy attendance_register_submissions table: %w", err)
+		}
+	}
+
+	// If legacy dashboard_layouts exists as a physical table with polymorphic scope_target,
+	// migrate existing rows to dedicated role_dashboard_layouts and staff_dashboard_layouts
+	// tables and drop the old table so the view can be created cleanly.
+	var isDashboardTable int
+	_ = d.writeDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'dashboard_layouts'`).Scan(&isDashboardTable)
+	if isDashboardTable > 0 {
+		migrationSQL := `
+			CREATE TABLE IF NOT EXISTS role_dashboard_layouts (
+				role_id TEXT PRIMARY KEY REFERENCES roles(id) ON DELETE CASCADE,
+				widgets_json TEXT NOT NULL DEFAULT '[]',
+				updated_by_staff_id TEXT REFERENCES staff(id) ON DELETE SET NULL,
+				updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+			);
+			CREATE TABLE IF NOT EXISTS staff_dashboard_layouts (
+				staff_id TEXT PRIMARY KEY REFERENCES staff(id) ON DELETE CASCADE,
+				widgets_json TEXT NOT NULL DEFAULT '[]',
+				column_count INTEGER NOT NULL DEFAULT 4 CHECK (column_count BETWEEN 2 AND 8),
+				updated_by_staff_id TEXT REFERENCES staff(id) ON DELETE SET NULL,
+				updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+			);
+			INSERT OR IGNORE INTO role_dashboard_layouts (role_id, widgets_json, updated_by_staff_id, updated_at)
+			SELECT
+				scope_target,
+				widgets_json,
+				CASE WHEN EXISTS (SELECT 1 FROM staff s WHERE s.id = dashboard_layouts.updated_by_staff_id) THEN updated_by_staff_id ELSE NULL END,
+				updated_at
+			FROM dashboard_layouts
+			WHERE scope_type = 'ROLE_DEFAULT'
+			  AND EXISTS (SELECT 1 FROM roles r WHERE r.id = dashboard_layouts.scope_target);
+
+			INSERT OR IGNORE INTO staff_dashboard_layouts (staff_id, widgets_json, column_count, updated_by_staff_id, updated_at)
+			SELECT
+				scope_target,
+				widgets_json,
+				CASE WHEN column_count BETWEEN 2 AND 8 THEN column_count ELSE 4 END,
+				CASE WHEN EXISTS (SELECT 1 FROM staff s WHERE s.id = dashboard_layouts.updated_by_staff_id) THEN updated_by_staff_id ELSE NULL END,
+				updated_at
+			FROM dashboard_layouts
+			WHERE scope_type = 'STAFF'
+			  AND EXISTS (SELECT 1 FROM staff s WHERE s.id = dashboard_layouts.scope_target);
+
+			DROP TABLE dashboard_layouts;
+		`
+		if _, err := d.writeDB.Exec(migrationSQL); err != nil {
+			return fmt.Errorf("failed to migrate legacy dashboard_layouts table: %w", err)
+		}
+	}
+
 	for _, file := range sqlFiles {
 		ddlBytes, err := os.ReadFile(file)
 		if err != nil {
@@ -378,6 +473,27 @@ func (d *CoreDAL) initSchema(schoolURN string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("failed to record school_urn in __system_config: %w", err)
+	}
+
+	// Backfill legacy plugin_instance_id.* keys from __system_config into installed_plugins
+	legacyRows, lErr := d.writeDB.Query(`SELECT key, value FROM __system_config WHERE key LIKE 'plugin_instance_id.%'`)
+	if lErr == nil {
+		defer legacyRows.Close()
+		for legacyRows.Next() {
+			var k, v string
+			if scanErr := legacyRows.Scan(&k, &v); scanErr == nil {
+				manifestID := strings.TrimPrefix(k, "plugin_instance_id.")
+				plugID := strings.TrimSpace(v)
+				if manifestID != "" && len(plugID) == 8 {
+					_, _ = d.writeDB.Exec(`
+						INSERT INTO installed_plugins (
+							manifest_id, plug_id, version, state, database_alias, folder, approved_scopes_json, installed_at, updated_at
+						) VALUES (?, ?, '1.0.0', 'ACTIVE', '', ?, '[]', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+						ON CONFLICT(manifest_id) DO NOTHING
+					`, manifestID, plugID, manifestID)
+				}
+			}
+		}
 	}
 
 	return nil

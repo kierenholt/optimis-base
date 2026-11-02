@@ -28,6 +28,29 @@ CREATE TABLE IF NOT EXISTS year_groups (
 );
 CREATE INDEX IF NOT EXISTS idx_year_groups_hoy ON year_groups(head_of_year_staff_id);
 
+-- Statutory DfE National Curriculum Year Groups (E1 through 14)
+INSERT OR IGNORE INTO year_groups (id, nc_code, name, phase, key_stage, sequence_number) VALUES
+    ('yg_n1', 'N1', 'Nursery N1 (Age 3)', 'NURSERY', 'EYFS', 1),
+    ('yg_n2', 'N2', 'Nursery N2 (Age 4)', 'NURSERY', 'EYFS', 2),
+    ('yg_r', 'R', 'Reception', 'PRIMARY', 'EYFS', 3),
+    ('yg_1', '1', 'Year 1', 'PRIMARY', 'KS1', 4),
+    ('yg_2', '2', 'Year 2', 'PRIMARY', 'KS1', 5),
+    ('yg_3', '3', 'Year 3', 'PRIMARY', 'KS2', 6),
+    ('yg_4', '4', 'Year 4', 'PRIMARY', 'KS2', 7),
+    ('yg_5', '5', 'Year 5', 'PRIMARY', 'KS2', 8),
+    ('yg_6', '6', 'Year 6', 'PRIMARY', 'KS2', 9),
+    ('yg_7', '7', 'Year 7', 'SECONDARY', 'KS3', 10),
+    ('yg_8', '8', 'Year 8', 'SECONDARY', 'KS3', 11),
+    ('yg_9', '9', 'Year 9', 'SECONDARY', 'KS3', 12),
+    ('yg_10', '10', 'Year 10', 'SECONDARY', 'KS4', 13),
+    ('yg_11', '11', 'Year 11', 'SECONDARY', 'KS4', 14),
+    ('yg_12', '12', 'Year 12 (Lower Sixth)', 'SIXTH_FORM', 'KS5', 15),
+    ('yg_13', '13', 'Year 13 (Upper Sixth)', 'SIXTH_FORM', 'KS5', 16),
+    ('yg_e1', 'E1', 'Early Years 1 (Age 0-1)', 'NURSERY', 'EYFS', 17),
+    ('yg_e2', 'E2', 'Early Years 2 (Age 1-2)', 'NURSERY', 'EYFS', 18),
+    ('yg_14', '14', 'Year 14 (Extended Sixth Form)', 'SIXTH_FORM', 'KS5', 19);
+
+
 -- @domain: groups
 -- @dal_scope: dal.groups.read | dal.groups.write
 -- @gibbon_ref: gibbonHouse

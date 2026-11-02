@@ -166,9 +166,10 @@ function record_absence_and_assign_cover(ctx, args)
 
   -- If a prior cover teacher was assigned to this group/slot on cover_date, revoke their temporary cover assignment first
   local existing_rows = ctx.plugin_db.query(
-    [[SELECT id, cover_staff_id, assigned_role
-      FROM plugin_cover.cover_absences_and_assignments
-      WHERE group_id = ? AND slot_id = ? AND cover_date = ?]],
+    [[SELECT csa.id, csa.cover_staff_id, csa.assigned_role
+      FROM plugin_cover.cover_slot_assignments csa
+      INNER JOIN plugin_cover.cover_absences ca ON ca.id = csa.absence_id
+      WHERE csa.group_id = ? AND csa.slot_id = ? AND ca.cover_date = ?]],
     { group_id, slot_id, cover_date }
   )
   if type(existing_rows) == "table" and ctx.dal.groups.revoke_staff_assignment then
@@ -208,29 +209,42 @@ function record_absence_and_assign_cover(ctx, args)
     }
   )
 
+  local absence_id = "cabs_" .. ctx.crypto.uuid()
   local cover_id = "cov_" .. ctx.crypto.uuid()
   local created_at = ctx.clock.now_utc()
   local caller_staff_id = (ctx.caller and trim(ctx.caller.staff_id)) or ""
 
   ctx.plugin_db.exec(
-    [[INSERT INTO plugin_cover.cover_absences_and_assignments (
-        id, absent_staff_id, cover_staff_id, group_id, slot_id,
-        academic_year_id, cover_date, session, assigned_role,
-        staff_assignment_id, absence_reason, cover_notes,
-        assigned_by_staff_id, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
+    [[INSERT INTO plugin_cover.cover_absences (
+        id, absent_staff_id, academic_year_id, cover_date,
+        absence_reason, recorded_by_staff_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)]],
     {
-      cover_id,
+      absence_id,
       absent_staff_id,
-      cover_staff_id,
-      group_id,
-      slot_id,
       academic_year_id,
       cover_date,
+      absence_reason,
+      caller_staff_id,
+      created_at
+    }
+  )
+
+  ctx.plugin_db.exec(
+    [[INSERT INTO plugin_cover.cover_slot_assignments (
+        id, absence_id, group_id, slot_id, cover_staff_id,
+        session, assigned_role, staff_assignment_id,
+        cover_notes, assigned_by_staff_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
+    {
+      cover_id,
+      absence_id,
+      group_id,
+      slot_id,
+      cover_staff_id,
       session,
       gsa_res.role or assigned_role,
       gsa_res.assignment_id or "",
-      absence_reason,
       cover_notes,
       caller_staff_id,
       created_at
@@ -241,6 +255,7 @@ function record_absence_and_assign_cover(ctx, args)
     ok = true,
     data = {
       status = "COVER_ASSIGNED",
+      absence_id = absence_id,
       cover_id = cover_id,
       absent_staff_id = absent_staff_id,
       cover_staff_id = cover_staff_id,
@@ -314,12 +329,13 @@ function load_cover_class_roster(ctx, args)
   end
 
   local cover_rows = ctx.plugin_db.query(
-    [[SELECT id, absent_staff_id, cover_staff_id, group_id, slot_id,
-             academic_year_id, cover_date, session, assigned_role,
-             staff_assignment_id, absence_reason, cover_notes, created_at
-      FROM plugin_cover.cover_absences_and_assignments
-      WHERE group_id = ? AND cover_date = ?
-      ORDER BY created_at DESC, id DESC]],
+    [[SELECT csa.id, ca.absent_staff_id, csa.cover_staff_id, csa.group_id, csa.slot_id,
+             ca.academic_year_id, ca.cover_date, csa.session, csa.assigned_role,
+             csa.staff_assignment_id, ca.absence_reason, csa.cover_notes, csa.created_at
+      FROM plugin_cover.cover_slot_assignments csa
+      INNER JOIN plugin_cover.cover_absences ca ON ca.id = csa.absence_id
+      WHERE csa.group_id = ? AND ca.cover_date = ?
+      ORDER BY csa.created_at DESC, csa.id DESC]],
     { group_id, date }
   )
 
@@ -419,53 +435,55 @@ function submit_cover_attendance_batch(ctx, args)
     opts
   )
 
+  local created_at = ctx.clock.now_utc()
+  local caller_staff_id = (ctx.caller and trim(ctx.caller.staff_id)) or ""
+  local ay_id = opts.academic_year_id or school_defaults.academic_year_id or ""
+
   local cover_assignment_id = ""
   local cover_rows = ctx.plugin_db.query(
-    [[SELECT id FROM plugin_cover.cover_absences_and_assignments
-      WHERE group_id = ? AND cover_date = ?
-      ORDER BY created_at DESC LIMIT 1]],
+    [[SELECT csa.id
+      FROM plugin_cover.cover_slot_assignments csa
+      INNER JOIN plugin_cover.cover_absences ca ON ca.id = csa.absence_id
+      WHERE csa.group_id = ? AND ca.cover_date = ?
+      ORDER BY csa.created_at DESC LIMIT 1]],
     { group_id, date }
   )
   if type(cover_rows) == "table" and cover_rows[1] and cover_rows[1].id then
     cover_assignment_id = tostring(cover_rows[1].id)
   end
 
-  local created_at = ctx.clock.now_utc()
-  local caller_staff_id = (ctx.caller and trim(ctx.caller.staff_id)) or ""
-  local ay_id = opts.academic_year_id or school_defaults.academic_year_id or ""
-
-  local batch_rows = {}
-  for i = 1, #args.marks do
-    local m = args.marks[i]
-    if type(m) == "table" and trim(m.pupil_id) ~= "" then
-      local log_id = "cpr_" .. ctx.crypto.uuid()
-      batch_rows[#batch_rows + 1] = {
-        log_id,
-        cover_assignment_id,
-        trim(m.pupil_id),
-        group_id,
-        ay_id,
-        date,
-        session,
-        trim(m.attendance_code),
-        tonumber(m.minutes_late) or 0,
-        trim(m.comment),
-        caller_staff_id,
-        upsert_res.submission_id or "",
-        created_at
-      }
+  if cover_assignment_id ~= "" then
+    local batch_rows = {}
+    for i = 1, #args.marks do
+      local m = args.marks[i]
+      if type(m) == "table" and trim(m.pupil_id) ~= "" then
+        local log_id = "cpr_" .. ctx.crypto.uuid()
+        batch_rows[#batch_rows + 1] = {
+          log_id,
+          cover_assignment_id,
+          trim(m.pupil_id),
+          group_id,
+          ay_id,
+          date,
+          session,
+          trim(m.comment),
+          caller_staff_id,
+          upsert_res.submission_id or "",
+          created_at
+        }
+      end
     end
-  end
 
-  if #batch_rows > 0 then
-    ctx.plugin_db.exec_batch(
-      [[INSERT INTO plugin_cover.cover_pupil_register_logs (
-          id, cover_assignment_id, pupil_id, group_id, academic_year_id,
-          cover_date, session, attendance_code, minutes_late,
-          register_comment, taken_by_staff_id, submission_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
-      batch_rows
-    )
+    if #batch_rows > 0 then
+      ctx.plugin_db.exec_batch(
+        [[INSERT INTO plugin_cover.cover_handover_pupil_notes (
+            id, cover_assignment_id, pupil_id, group_id, academic_year_id,
+            cover_date, session, register_comment, taken_by_staff_id,
+            submission_id, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
+        batch_rows
+      )
+    end
   end
 
   local persisted_marks = ctx.dal.attendance.get_group_session(group_id, date, session, opts)
@@ -533,8 +551,11 @@ function revoke_cover_assignment(ctx, args)
   )
 
   local db_res = ctx.plugin_db.exec(
-    [[DELETE FROM plugin_cover.cover_absences_and_assignments
-      WHERE group_id = ? AND cover_staff_id = ? AND cover_date = ?]],
+    [[DELETE FROM plugin_cover.cover_slot_assignments
+      WHERE group_id = ? AND cover_staff_id = ?
+        AND absence_id IN (
+          SELECT id FROM plugin_cover.cover_absences WHERE cover_date = ?
+        )]],
     { group_id, cover_staff_id, cover_date }
   )
 
@@ -557,23 +578,25 @@ function list_cover_assignments(ctx, args)
   local rows
   if group_id ~= "" then
     rows = ctx.plugin_db.query(
-      [[SELECT id, absent_staff_id, cover_staff_id, group_id, slot_id,
-               academic_year_id, cover_date, session, assigned_role,
-               staff_assignment_id, absence_reason, cover_notes,
-               assigned_by_staff_id, created_at
-        FROM plugin_cover.cover_absences_and_assignments
-        WHERE group_id = ?
-        ORDER BY created_at DESC, id DESC]],
+      [[SELECT csa.id, ca.absent_staff_id, csa.cover_staff_id, csa.group_id, csa.slot_id,
+               ca.academic_year_id, ca.cover_date, csa.session, csa.assigned_role,
+               csa.staff_assignment_id, ca.absence_reason, csa.cover_notes,
+               csa.assigned_by_staff_id, csa.created_at
+        FROM plugin_cover.cover_slot_assignments csa
+        INNER JOIN plugin_cover.cover_absences ca ON ca.id = csa.absence_id
+        WHERE csa.group_id = ?
+        ORDER BY csa.created_at DESC, csa.id DESC]],
       { group_id }
     )
   else
     rows = ctx.plugin_db.query(
-      [[SELECT id, absent_staff_id, cover_staff_id, group_id, slot_id,
-               academic_year_id, cover_date, session, assigned_role,
-               staff_assignment_id, absence_reason, cover_notes,
-               assigned_by_staff_id, created_at
-        FROM plugin_cover.cover_absences_and_assignments
-        ORDER BY created_at DESC, id DESC]],
+      [[SELECT csa.id, ca.absent_staff_id, csa.cover_staff_id, csa.group_id, csa.slot_id,
+               ca.academic_year_id, ca.cover_date, csa.session, csa.assigned_role,
+               csa.staff_assignment_id, ca.absence_reason, csa.cover_notes,
+               csa.assigned_by_staff_id, csa.created_at
+        FROM plugin_cover.cover_slot_assignments csa
+        INNER JOIN plugin_cover.cover_absences ca ON ca.id = csa.absence_id
+        ORDER BY csa.created_at DESC, csa.id DESC]],
       {}
     )
   end
@@ -594,9 +617,9 @@ function export_pupil_data(ctx, args)
 
   local rows = ctx.plugin_db.query(
     [[SELECT id, cover_assignment_id, pupil_id, group_id, academic_year_id,
-             cover_date, session, attendance_code, minutes_late,
-             register_comment, taken_by_staff_id, submission_id, created_at
-      FROM plugin_cover.cover_pupil_register_logs
+             cover_date, session, register_comment, taken_by_staff_id,
+             submission_id, created_at
+      FROM plugin_cover.cover_handover_pupil_notes
       WHERE pupil_id = ?
       ORDER BY created_at ASC, id ASC]],
     { pupil_id }
@@ -623,7 +646,7 @@ function purge_pupil_data(ctx, args)
   end
 
   local res = ctx.plugin_db.exec(
-    "DELETE FROM plugin_cover.cover_pupil_register_logs WHERE pupil_id = ?",
+    "DELETE FROM plugin_cover.cover_handover_pupil_notes WHERE pupil_id = ?",
     { pupil_id }
   )
 
@@ -635,3 +658,4 @@ function purge_pupil_data(ctx, args)
     }
   }
 end
+

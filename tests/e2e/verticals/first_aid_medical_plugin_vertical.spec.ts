@@ -217,7 +217,7 @@ test.describe('Vertical 6: Medical Room & First Aid Plugin (uk.org.optimis.medic
 
     await expect(page.getByTestId('host-shell')).toBeVisible();
     await page.getByTestId('nav-rail-search').click();
-    const navBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'First Aid' }).first();
+    const navBtn = page.locator('[data-testid^="host-search-result-view-"][data-testid$="-home"]').filter({ hasText: 'First Aid' }).first();
     await expect(navBtn).toBeVisible();
     await navBtn.click();
 

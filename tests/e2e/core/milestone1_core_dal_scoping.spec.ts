@@ -140,7 +140,7 @@ test.describe('Milestone 1: Coarse-Grained Core DAL Domain Methods & Dynamic :ow
       reference_date: f.reference_date,
       academic_year_id: f.academic_year_id,
     });
-    return `/?${params.toString()}`;
+    return `/p/${testPlugId}?${params.toString()}`;
   }
 
   test('getGroupRosterSummary_teacherWithOwnGroupsScope_returnsOnlyActiveOwnGroupPupilsAndExcludesTransferred_test', async ({

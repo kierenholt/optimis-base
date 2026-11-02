@@ -41,6 +41,8 @@ func (h *Host) SetPluginState(pluginID string, state PluginState) error {
 		return fmt.Errorf("plugin not found: %s", trimmedID)
 	}
 	p.State = state
+	p.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	_ = h.coreDAL.SetInstalledPluginState(context.Background(), canonicalKey, string(state))
 	var poolToStop *pluginEventWorkerPool
 	if state == PluginStateUninstalledDormant {
 		poolToStop = h.workerPools[canonicalKey]

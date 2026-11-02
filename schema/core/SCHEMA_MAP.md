@@ -8,38 +8,44 @@
 
 | Domain File | Tables | Lines | DAL Scopes (`ctx.dal.*`) | Summary |
 | :--- | ---: | ---: | :--- | :--- |
-| [`00_system_and_academic_cycle.sql`](./00_system_and_academic_cycle.sql) | 9 | 135 | `host.internal`, `dal.academic.*`, `dal.census.read:all` | `__system_config`, Academic Years, Terms, Special Closure Days, Days of Week, Alert Levels, GDPR Retention Rules, `dashboard_layouts`, `staff_settings` |
-| [`01_identity_pupils_and_staff.sql`](./01_identity_pupils_and_staff.sql) | 9 | 216 | `dal.identity.*`, `dal.pupils.*`, `dal.staff.*`, `dal.census.read:all` | 1-row-per-person `persons`, `pupils` (DfE CBDS), & `staff` (SWC/SCR); temporal `person_roles`, `pupil_year_enrolments` (incl. EYFS hours), `staff_contracts`, `staff_absences`, `staff_cover_assignments` |
+| [`00_system_and_academic_cycle.sql`](./00_system_and_academic_cycle.sql) | 8 | 128 | `host.internal`, `dal.academic.*`, `dal.census.read:all` | `__system_config`, `installed_plugins`, Academic Years, Terms, Special Closure Days, Days of Week, Alert Levels, GDPR Retention Rules |
+| [`01_identity_pupils_and_staff.sql`](./01_identity_pupils_and_staff.sql) | 14 (12 tables + 2 views) | 290 | `dal.identity.*`, `dal.pupils.*`, `dal.staff.*`, `dal.census.read:all` | 1-row-per-person `persons`, `pupils` (DfE CBDS), & `staff` (SWC/SCR); temporal `person_roles`, `pupil_year_enrolments` (incl. EYFS hours & FKs to `year_groups`, `groups`, `houses`), `staff_contracts`, `staff_absences`, `staff_cover_assignments` (FK to `timetable_slots`), `staff_ui_preferences`, `staff_pinned_recents`, `role_dashboard_layouts`, `staff_dashboard_layouts`, and backward-compatible views `staff_settings` and `dashboard_layouts` |
 | [`02_households_and_guardians.sql`](./02_households_and_guardians.sql) | 3 | 100 | `dal.guardians.*` | BS7666 `households` (`is_confidential_address`), temporal `household_memberships`, `guardian_relationships` (`has_parental_responsibility` & full `court_order_restricted` lockdown `CHECK`) |
-| [`03_groups_and_timetable.sql`](./03_groups_and_timetable.sql) | 10 | 177 | `dal.groups.*` | `year_groups`, `houses`, `departments`, `rooms`, `courses`, unified `groups`, temporal `group_pupil_memberships` & `group_staff_assignments` (`:own_groups` RBAC), `timetable_periods` & `timetable_slots` |
-| [`04_statutory_attendance.sql`](./04_statutory_attendance.sql) | 4 | 103 | `dal.attendance.*`, `dal.census.read:all` | DfE `attendance_codes`, statutory `attendance_session_marks` (`AM`/`PM`), `attendance_lesson_marks`, `attendance_register_submissions` |
+| [`03_groups_and_timetable.sql`](./03_groups_and_timetable.sql) | 10 | 200 | `dal.groups.*` | `year_groups` (pre-seeded with DfE statutory codes `E1`–`14`), `houses`, `departments`, `rooms`, `courses`, unified `groups`, temporal `group_pupil_memberships` & `group_staff_assignments` (`:own_groups` RBAC), `timetable_periods` & `timetable_slots` |
+| [`04_statutory_attendance.sql`](./04_statutory_attendance.sql) | 5 (4 tables + 1 view) | 155 | `dal.attendance.*`, `dal.census.read:all` | DfE `attendance_codes`, statutory `attendance_session_marks` (`AM`/`PM`), `attendance_lesson_marks`, `attendance_session_register_submissions`, `attendance_lesson_register_submissions`, and unified view `attendance_register_submissions` |
 | [`05_sen_medical_and_characteristics.sql`](./05_sen_medical_and_characteristics.sql) | 10 | 228 | `dal.sen.*`, `dal.medical.*`, `dal.pupils.*`, `dal.census.read:all` | `pupil_fsm_periods`, `sen_need_types`, `pupil_sen_records` (`N`/`K`/`E`), `pupil_sen_needs` (Rank 1 & 2), `pupil_sen_assistants`, `pupil_suspensions_exclusions`, `pupil_alternative_provisions`, `pupil_post16_learning_aims`, `pupil_medical_conditions`, `pupil_pastoral_notes` |
 | [`06_safeguarding_vault.sql`](./06_safeguarding_vault.sql) | 2 | 77 | `dal.safeguarding.create` / `dal.safeguarding.read` | Envelope-encrypted `safeguarding_notes` (protected by KCSIE retention trigger) + append-only `safeguarding_audit_logs` with SQLite immutability triggers |
 
 ---
 
-## 2. Complete `core.db` Entity-Relationship Reference (47 Tables, 75 Indexed Foreign Keys)
+## 2. Complete `core.db` Entity-Relationship Reference (49 Tables, 84 Indexed Foreign Keys)
 
 | Table Name | File | Primary Key | Foreign Keys (`-> target`) | Temporal Columns | Key Invariants & DfE CBDS Alignment |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `__system_config` | `00` | `key` | `-` | `updated_at` | Self-contained runtime config (`school_urn`, OAuth settings, manifests) |
+| `installed_plugins` | `00` | `manifest_id` | `-` | `installed_at`, `updated_at` | Dedicated relational store for installed plugin manifest IDs, opaque 8-char plug IDs, versions, approved scopes, and lifecycle states |
 | `academic_years` | `00` | `id` | `-` | `first_day`, `last_day` | `status IN ('PAST','CURRENT','UPCOMING')`; `CHECK (last_day >= first_day)` |
 | `academic_terms` | `00` | `id` | `academic_year_id -> academic_years.id` | `first_day`, `last_day` | Maps to `AUTUMN`, `SPRING`, `SUMMER` Census windows |
 | `days_of_week` | `00` | `id` | `-` | `-` | ISO `1..7`; stores `am_register_time` & `pm_register_time` |
 | `academic_special_days` | `00` | `id` | `academic_term_id -> academic_terms.id` | `date` | Maps to DfE Attendance Code `#` (Planned Closure / INSET) |
 | `alert_levels` | `00` | `id` | `-` | `-` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` severity badges |
 | `data_retention_policies` | `00` | `domain_key` | `-` | `-` | Statutory retention floors (e.g., SEN = DOB+31y, Safeguarding = DOB+25y) |
-| `dashboard_layouts` | `00` | `id` | `-` | `updated_at` | **Section 9B:** Ordered 1D JSON array of `{ plug_id, widget_id }` objects per `ROLE_DEFAULT` or `STAFF` (`UNIQUE(scope_type, scope_target)`) |
-| `staff_settings` | `00` | `staff_id` | `-` | `updated_at` | Per-staff Host UI settings: `base_font_size IN ('small','medium','large','extra-large')`, `theme_mode IN ('light','high-contrast')`, and `pinned_recents_json` |
 | `roles` | `01` | `id` | `-` | `-` | `STAFF`, `PUPIL`, `GUARDIAN`, `SYSTEM` role definitions |
 | `persons` | `01` | `id` | `-` | **Non-temporal** (1 row/person) | Shared identity spine (`external_sso_sub`, legal vs preferred names, `dob`, `sex`) |
 | `person_roles` | `01` | `(person_id, role_id, effective_from)` | `person_id -> persons.id`, `role_id -> roles.id` | `effective_from`, `effective_to` | Temporal role assignment |
 | `pupils` | `01` | `id` | `person_id -> persons.id` (`NOT NULL UNIQUE`) | **Non-temporal** (1 row/pupil) | **DfE CBDS:** `upn` (`UNIQUE`), `uln`, `nhs_number`, `ethnicity_code`, `first_language_code`, `pupil_premium_flag`, `looked_after_flag` |
-| `pupil_year_enrolments` | `01` | `id` | `pupil_id -> pupils.id`, `academic_year_id -> academic_years.id` | `effective_from`, `effective_to` | Temporal admission/roll: `nc_year_group` (`E1`..`14`), `enrolment_status` (`C`/`M`/`S`/`F`/`O`), EYFS `ey_funded_hours` & `ey_thirty_hour_code` |
+| `pupil_year_enrolments` | `01` | `id` | `pupil_id -> pupils.id`, `academic_year_id -> academic_years.id`, `nc_year_group -> year_groups.nc_code`, `registration_group_id -> groups.id`, `house_id -> houses.id` | `effective_from`, `effective_to` | Temporal admission/roll: `nc_year_group` (`E1`..`14`), `enrolment_status` (`C`/`M`/`S`/`F`/`O`), EYFS `ey_funded_hours` & `ey_thirty_hour_code` |
 | `staff` | `01` | `id` | `person_id -> persons.id` (`NOT NULL UNIQUE`) | **Non-temporal** (1 row/staff) | **DfE SWC & SCR:** `trn`, `qts_flag`, `hlta_flag`, `is_dsl`, `dbs_check_date`, `hire_date`, `termination_date` |
 | `staff_contracts` | `01` | `id` | `staff_id -> staff.id` | `effective_from`, `effective_to` | **DfE SWC:** `swc_post_code`, `pay_scale`, `pay_spine_point`, `fte` |
 | `staff_absences` | `01` | `id` | `staff_id -> staff.id`, `academic_year_id -> academic_years.id`, `approved_by_staff_id -> staff.id` | `start_date`, `end_date` | **DfE SWC:** `absence_category_code`, `working_days_lost`, `cover_required` |
-| `staff_cover_assignments` | `01` | `id` | `staff_absence_id -> staff_absences.id`, `absent_staff_id -> staff.id`, `covering_staff_id -> staff.id` | `date` | Tracks daily lesson cover assignments |
+| `staff_cover_assignments` | `01` | `id` | `staff_absence_id -> staff_absences.id`, `timetable_slot_id -> timetable_slots.id`, `absent_staff_id -> staff.id`, `covering_staff_id -> staff.id` | `date` | Tracks daily lesson cover assignments with foreign key to timetable slot |
+| `staff_ui_preferences` | `01` | `staff_id` | `staff_id -> staff.id` | `updated_at` | Per-staff UI accessibility & theme settings: `base_font_size IN ('small','medium','large','extra-large')`, `theme_mode IN ('light','high-contrast')` |
+| `staff_pinned_recents` | `01` | `staff_id` | `staff_id -> staff.id` | `updated_at` | Per-staff pinned recents navigation state (`pinned_recents_json`) |
+| `staff_settings` (view) | `01` | `staff_id` | `staff_id -> staff.id` | `updated_at` | Backward-compatible unified view joining `staff_ui_preferences` and `staff_pinned_recents` |
+| `role_dashboard_layouts` | `01` | `role_id` | `role_id -> roles.id`, `updated_by_staff_id -> staff.id` | `updated_at` | **Section 9B:** 2D coordinate JSON array of `{ plug_id, widget_id, col, row }` objects per role default |
+| `staff_dashboard_layouts` | `01` | `staff_id` | `staff_id -> staff.id`, `updated_by_staff_id -> staff.id` | `updated_at` | **Section 9B:** 2D coordinate JSON array of `{ plug_id, widget_id, col, row }` objects per staff personal layout (`column_count BETWEEN 2 AND 8`) |
+| `dashboard_layouts` (view) | `01` | `id` | `-` | `updated_at` | Backward-compatible unified view joining `role_dashboard_layouts` and `staff_dashboard_layouts` |
+
 | `households` | `02` | `id` | `-` | **Non-temporal** (1 row/place) | **BS7666 / CBDS:** `uprn`, `address_line_1`, `postcode`, `is_confidential_address` |
 | `household_memberships` | `02` | `id` | `household_id -> households.id`, `person_id -> persons.id` | `effective_from`, `effective_to` | Temporal residency linking `ADULT` and `CHILD` persons to households |
 | `guardian_relationships` | `02` | `id` | `pupil_id -> pupils.id`, `guardian_person_id -> persons.id` | `effective_from`, `effective_to` | **Mandatory Invariant:** `has_parental_responsibility`, `court_order_restricted` (`CHECK` zeroes out portal, collection, emergency, reports, and all contact channels when restricted) |
@@ -55,8 +61,9 @@
 | `timetable_slots` | `03` | `id` | `timetable_period_id -> timetable_periods.id`, `group_id -> groups.id`, `staff_id -> staff.id`, `room_id -> rooms.id` | `effective_from`, `effective_to` | Temporal scheduled class lessons |
 | `attendance_codes` | `04` | `code` | `-` | `-` | Official DfE attendance codes (`/`, `\`, `L`, `I`, `M`, `N`, `O`, `U`, `#`, etc.) |
 | `attendance_session_marks` | `04` | `id` | `pupil_id -> pupils.id`, `academic_year_id -> academic_years.id`, `attendance_code -> attendance_codes.code` | `date`, `session` (`AM`/`PM`) | **Mandatory Invariant:** All phases resolve down to statutory `AM`/`PM` sessions (`ON DELETE RESTRICT`) |
-| `attendance_lesson_marks` | `04` | `id` | `pupil_id -> pupils.id`, `timetable_slot_id -> timetable_slots.id`, `group_id -> groups.id`, `attendance_code -> attendance_codes.code` | `date` | Period-by-period subject attendance marks (`ON DELETE RESTRICT`) |
-| `attendance_register_submissions` | `04` | `id` | `group_id -> groups.id`, `taken_by_staff_id -> staff.id` | `date`, `taken_at` | Audit trail of completed registers (`ON DELETE RESTRICT`) |
+| `attendance_session_register_submissions` | `04` | `id` | `group_id -> groups.id`, `taken_by_staff_id -> staff.id` | `date`, `session` (`AM`/`PM`) | Audit log of completed statutory roll-call registers (`ON DELETE RESTRICT`, `CHECK (session IN ('AM', 'PM'))`) |
+| `attendance_lesson_register_submissions` | `04` | `id` | `group_id -> groups.id`, `timetable_slot_id -> timetable_slots.id`, `taken_by_staff_id -> staff.id` | `date`, `taken_at` | Audit log of completed timetable lesson registers (`ON DELETE RESTRICT`) |
+| `attendance_register_submissions` (VIEW) | `04` | `id` | `group_id -> groups.id`, `taken_by_staff_id -> staff.id` | `date`, `taken_at` | Backwards-compatible union view combining session and lesson registers |
 | `pupil_fsm_periods` | `05` | `id` | `pupil_id -> pupils.id` | `effective_from`, `effective_to` | **DfE CBDS:** Statutory Free School Meal eligibility periods |
 | `sen_need_types` | `05` | `code` | `-` | `-` | **DfE CBDS:** Official SEN Need codes (`ASD`, `SEMH`, `SPLD`, `SLCN`, etc.) |
 | `pupil_sen_records` | `05` | `id` | `pupil_id -> pupils.id` | `effective_from`, `effective_to` | **DfE CBDS:** `provision_code IN ('N','K','E')`, EHCP dates, IEP targets (DOB+31y retention) |

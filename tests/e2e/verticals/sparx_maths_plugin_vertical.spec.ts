@@ -312,7 +312,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
 
     await expect(page.getByTestId('host-shell')).toBeVisible();
     await page.getByTestId('nav-rail-search').click();
-    const sparxNavBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Sparx' }).first();
+    const sparxNavBtn = page.locator('[data-testid^="host-search-result-view-"][data-testid$="-home"]').filter({ hasText: 'Sparx' }).first();
     await expect(sparxNavBtn).toBeVisible();
     await sparxNavBtn.click();
 
@@ -374,7 +374,7 @@ test.describe('Sparx Maths Third-Party Partner Plugin Vertical: Two-Phase Read/E
     });
     await page.goto(`/?${teacherQuery.toString()}`);
     await page.getByTestId('nav-rail-search').click();
-    await page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Sparx' }).first().click();
+    await page.locator('[data-testid^="host-search-result-view-"][data-testid$="-home"]').filter({ hasText: 'Sparx' }).first().click();
 
     // 6. Phase 2 Sync: Trigger two-phase Read/Egress -> WriteDB sync via UI button
     //    Opens sealed key via ctx.crypto.open_secret, fetches :own_groups roster (Ada Lovelace in own_group_id;

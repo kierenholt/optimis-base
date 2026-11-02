@@ -478,3 +478,169 @@ end
 	}
 }
 
+func TestProductionPluginSchemas_NormalizedTablesAndForeignKeys_OmitsDuplicatedCoreAndDenormalizedPiiColumns_test(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	pluginsDir, err := filepath.Abs(filepath.Join("..", "..", "..", "plugins"))
+	if err != nil {
+		t.Fatalf("failed to resolve plugins dir: %v", err)
+	}
+
+	h, err := host.NewHost(host.Config{
+		DataDirPath:      filepath.Join(tempDir, "data"),
+		SchoolURN:        "100001",
+		HostKMSKeyHandle: "kms-schema-audit-key-001",
+		PluginsDir:       pluginsDir,
+	})
+	if err != nil {
+		t.Fatalf("failed to create host: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = h.Close()
+	})
+
+	targetPlugins := []string{
+		"staff_cover_plugin",
+		"senco_provision_plugin",
+		"lms_sync_plugin",
+		"sparx_maths_plugin",
+		"first_aid_medical_plugin",
+		"trips_consent_plugin",
+		"dfe_census_plugin",
+	}
+	for _, folder := range targetPlugins {
+		if err := h.LoadPlugin(folder); err != nil {
+			t.Fatalf("LoadPlugin(%s) failed: %v", folder, err)
+		}
+	}
+
+	db := h.DAL().ReadDB()
+
+	hasTable := func(alias string, table string) bool {
+		var cnt int
+		q := "SELECT COUNT(*) FROM " + alias + ".sqlite_master WHERE type = 'table' AND name = ?"
+		if err := db.QueryRowContext(ctx, q, table).Scan(&cnt); err != nil {
+			t.Fatalf("failed querying %s.sqlite_master for %s: %v", alias, table, err)
+		}
+		return cnt > 0
+	}
+
+	hasColumn := func(alias string, table string, col string) bool {
+		rows, err := db.QueryContext(ctx, "PRAGMA "+alias+".table_info("+table+")")
+		if err != nil {
+			t.Fatalf("PRAGMA %s.table_info(%s) failed: %v", alias, table, err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var cid, notnull, pk int
+			var name, ctype string
+			var dflt any
+			if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+				t.Fatalf("scan table_info failed: %v", err)
+			}
+			if strings.EqualFold(name, col) {
+				return true
+			}
+		}
+		return false
+	}
+
+	hasForeignKey := func(alias string, childTable string, fromCol string, parentTable string) bool {
+		rows, err := db.QueryContext(ctx, "PRAGMA "+alias+".foreign_key_list("+childTable+")")
+		if err != nil {
+			t.Fatalf("PRAGMA %s.foreign_key_list(%s) failed: %v", alias, childTable, err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id, seq int
+			var refTable, from, to, onUpdate, onDelete, match string
+			if err := rows.Scan(&id, &seq, &refTable, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+				t.Fatalf("scan foreign_key_list failed: %v", err)
+			}
+			if strings.EqualFold(refTable, parentTable) && strings.EqualFold(from, fromCol) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// 1. staff_cover_plugin: split into cover_absences + cover_slot_assignments + cover_handover_pupil_notes
+	if hasTable("plugin_cover", "cover_absences_and_assignments") {
+		t.Errorf("expected conflated table cover_absences_and_assignments to be replaced by normalized tables")
+	}
+	if hasTable("plugin_cover", "cover_pupil_register_logs") {
+		t.Errorf("expected Core-duplicating table cover_pupil_register_logs to be replaced by cover_handover_pupil_notes")
+	}
+	if !hasTable("plugin_cover", "cover_absences") || !hasTable("plugin_cover", "cover_slot_assignments") || !hasTable("plugin_cover", "cover_handover_pupil_notes") {
+		t.Fatalf("expected normalized tables cover_absences, cover_slot_assignments, and cover_handover_pupil_notes in plugin_cover")
+	}
+	if !hasForeignKey("plugin_cover", "cover_slot_assignments", "absence_id", "cover_absences") {
+		t.Errorf("expected FK cover_slot_assignments.absence_id -> cover_absences(id)")
+	}
+	if !hasForeignKey("plugin_cover", "cover_handover_pupil_notes", "cover_assignment_id", "cover_slot_assignments") {
+		t.Errorf("expected FK cover_handover_pupil_notes.cover_assignment_id -> cover_slot_assignments(id)")
+	}
+	if hasColumn("plugin_cover", "cover_handover_pupil_notes", "attendance_code") || hasColumn("plugin_cover", "cover_handover_pupil_notes", "minutes_late") {
+		t.Errorf("cover_handover_pupil_notes must not duplicate Core statutory attendance_code or minutes_late columns")
+	}
+
+	// 2. senco_provision_plugin: sen_provisions must not duplicate Core sen_provision_code or primary_sen_need_code
+	if hasColumn("plugin_sen_provision", "sen_provisions", "sen_provision_code") || hasColumn("plugin_sen_provision", "sen_provisions", "primary_sen_need_code") {
+		t.Errorf("sen_provisions must not duplicate Core pupil_sen_records.provision_code or pupil_sen_needs.sen_need_code")
+	}
+
+	// 3. lms_sync_plugin: split into lms_sync_runs and lms_sync_pupil_entries with FK
+	if hasTable("plugin_lms_sync", "lms_sync_logs") {
+		t.Errorf("expected conflated table lms_sync_logs to be split into lms_sync_runs and lms_sync_pupil_entries")
+	}
+	if !hasTable("plugin_lms_sync", "lms_sync_runs") || !hasTable("plugin_lms_sync", "lms_sync_pupil_entries") {
+		t.Fatalf("expected normalized tables lms_sync_runs and lms_sync_pupil_entries in plugin_lms_sync")
+	}
+	if !hasForeignKey("plugin_lms_sync", "lms_sync_pupil_entries", "sync_run_id", "lms_sync_runs") {
+		t.Errorf("expected FK lms_sync_pupil_entries.sync_run_id -> lms_sync_runs(id)")
+	}
+
+	// 4. sparx_maths_plugin: no two_phase_pattern column, no denormalized pupil_name column, FK sync_run_id -> sparx_sync_runs(id)
+	if hasColumn("plugin_sparx", "sparx_sync_runs", "two_phase_pattern") {
+		t.Errorf("sparx_sync_runs must not contain test-artifact column two_phase_pattern")
+	}
+	if hasColumn("plugin_sparx", "sparx_homework_scores", "pupil_name") {
+		t.Errorf("sparx_homework_scores must not denormalize pupil_name in SQLite")
+	}
+	if !hasForeignKey("plugin_sparx", "sparx_homework_scores", "sync_run_id", "sparx_sync_runs") {
+		t.Errorf("expected FK sparx_homework_scores.sync_run_id -> sparx_sync_runs(id)")
+	}
+
+	// 5. first_aid_medical_plugin: no denormalized pupil_name/nc_year_group/notified_guardian_name, no duplicated outcome on event_logs, FK treatment_id -> first_aid_treatments(id)
+	for _, col := range []string{"pupil_name", "nc_year_group", "notified_guardian_name"} {
+		if hasColumn("plugin_first_aid", "first_aid_treatments", col) {
+			t.Errorf("first_aid_treatments must not denormalize %s in SQLite", col)
+		}
+	}
+	if hasColumn("plugin_first_aid", "first_aid_event_logs", "outcome") {
+		t.Errorf("first_aid_event_logs must not duplicate outcome column from first_aid_treatments")
+	}
+	if !hasForeignKey("plugin_first_aid", "first_aid_event_logs", "treatment_id", "first_aid_treatments") {
+		t.Errorf("expected FK first_aid_event_logs.treatment_id -> first_aid_treatments(id)")
+	}
+
+	// 6. trips_consent_plugin: no denormalized guardian_name in trip_consents, FK trip_id -> trips(id)
+	if hasColumn("plugin_trips", "trip_consents", "guardian_name") {
+		t.Errorf("trip_consents must not denormalize guardian_name in SQLite")
+	}
+	if !hasForeignKey("plugin_trips", "trip_consents", "trip_id", "trips") {
+		t.Errorf("expected FK trip_consents.trip_id -> trips(id)")
+	}
+
+	// 7. dfe_census_plugin: no redundant academic_year_id/term_code/census_date in census_pupil_snapshots, FK return_id -> census_returns(id)
+	for _, col := range []string{"academic_year_id", "term_code", "census_date"} {
+		if hasColumn("plugin_dfe_census", "census_pupil_snapshots", col) {
+			t.Errorf("census_pupil_snapshots must not redundantly duplicate %s from parent census_returns", col)
+		}
+	}
+	if !hasForeignKey("plugin_dfe_census", "census_pupil_snapshots", "return_id", "census_returns") {
+		t.Errorf("expected FK census_pupil_snapshots.return_id -> census_returns(id)")
+	}
+}
+
+

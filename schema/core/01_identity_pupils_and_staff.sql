@@ -104,12 +104,12 @@ CREATE TABLE IF NOT EXISTS pupil_year_enrolments (
     id TEXT PRIMARY KEY,
     pupil_id TEXT NOT NULL REFERENCES pupils(id) ON DELETE RESTRICT,
     academic_year_id TEXT NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
-    nc_year_group TEXT NOT NULL,                      -- DfE National Curriculum Year ('E1','E2','N1','N2','R','1'..'14')
+    nc_year_group TEXT NOT NULL REFERENCES year_groups(nc_code) ON DELETE RESTRICT, -- DfE National Curriculum Year ('E1','E2','N1','N2','R','1'..'14')
     enrolment_status TEXT NOT NULL DEFAULT 'C' CHECK (enrolment_status IN ('C', 'M', 'S', 'F', 'O')), -- Current, Main Dual, Subsidiary Dual, FE, Other
     boarder_status TEXT NOT NULL DEFAULT 'N' CHECK (boarder_status IN ('N', 'B', '6', '7')),
     part_time_flag INTEGER NOT NULL DEFAULT 0 CHECK (part_time_flag IN (0, 1)),
-    registration_group_id TEXT,                       -- Form/Tutor group
-    house_id TEXT,
+    registration_group_id TEXT REFERENCES groups(id) ON DELETE SET NULL, -- Form/Tutor group
+    house_id TEXT REFERENCES houses(id) ON DELETE SET NULL,
     roll_order INTEGER,
     -- Early Years (EYFS / Nursery) Statutory Census Fields:
     ey_funded_hours REAL NOT NULL DEFAULT 0.0 CHECK (ey_funded_hours >= 0.0 AND ey_funded_hours <= 40.0),
@@ -126,6 +126,8 @@ CREATE TABLE IF NOT EXISTS pupil_year_enrolments (
 );
 CREATE INDEX IF NOT EXISTS idx_pupil_enrolments_year ON pupil_year_enrolments(academic_year_id, nc_year_group);
 CREATE INDEX IF NOT EXISTS idx_pupil_enrolments_pupil_temporal ON pupil_year_enrolments(pupil_id, effective_from, effective_to);
+CREATE INDEX IF NOT EXISTS idx_pupil_enrolments_group ON pupil_year_enrolments(registration_group_id);
+CREATE INDEX IF NOT EXISTS idx_pupil_enrolments_house ON pupil_year_enrolments(house_id);
 
 -- @domain: staff
 -- @dal_scope: dal.staff.read | dal.staff.write
@@ -206,7 +208,7 @@ CREATE INDEX IF NOT EXISTS idx_staff_absences_approver ON staff_absences(approve
 CREATE TABLE IF NOT EXISTS staff_cover_assignments (
     id TEXT PRIMARY KEY,
     staff_absence_id TEXT REFERENCES staff_absences(id) ON DELETE RESTRICT,
-    timetable_slot_id TEXT,                           -- Lesson slot being covered
+    timetable_slot_id TEXT REFERENCES timetable_slots(id) ON DELETE SET NULL, -- Lesson slot being covered
     date TEXT NOT NULL,                               -- ISO-8601 Date (YYYY-MM-DD)
     absent_staff_id TEXT NOT NULL REFERENCES staff(id) ON DELETE RESTRICT,
     covering_staff_id TEXT REFERENCES staff(id) ON DELETE SET NULL,
@@ -217,3 +219,84 @@ CREATE TABLE IF NOT EXISTS staff_cover_assignments (
 CREATE INDEX IF NOT EXISTS idx_staff_cover_date_covering ON staff_cover_assignments(covering_staff_id, date);
 CREATE INDEX IF NOT EXISTS idx_staff_cover_absent ON staff_cover_assignments(absent_staff_id, date);
 CREATE INDEX IF NOT EXISTS idx_staff_cover_absence_id ON staff_cover_assignments(staff_absence_id);
+CREATE INDEX IF NOT EXISTS idx_staff_cover_slot ON staff_cover_assignments(timetable_slot_id);
+
+-- @domain: staff
+-- @dal_scope: host.internal
+-- @description: Per-staff UI accessibility & theme preferences (base_font_size, theme_mode)
+CREATE TABLE IF NOT EXISTS staff_ui_preferences (
+    staff_id TEXT PRIMARY KEY REFERENCES staff(id) ON DELETE CASCADE,
+    base_font_size TEXT NOT NULL DEFAULT 'medium' CHECK (base_font_size IN ('small', 'medium', 'large', 'extra-large')),
+    theme_mode TEXT NOT NULL DEFAULT 'light' CHECK (theme_mode IN ('light', 'high-contrast')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+-- @domain: staff
+-- @dal_scope: host.internal
+-- @description: Per-staff pinned recents navigation state
+CREATE TABLE IF NOT EXISTS staff_pinned_recents (
+    staff_id TEXT PRIMARY KEY REFERENCES staff(id) ON DELETE CASCADE,
+    pinned_recents_json TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+-- @domain: staff
+-- @dal_scope: host.internal
+-- @description: Backward-compatible view joining staff UI preferences and pinned recents
+CREATE VIEW IF NOT EXISTS staff_settings AS
+SELECT
+    s.id AS staff_id,
+    COALESCE(p.base_font_size, 'medium') AS base_font_size,
+    COALESCE(p.theme_mode, 'light') AS theme_mode,
+    COALESCE(r.pinned_recents_json, '[]') AS pinned_recents_json,
+    COALESCE(p.updated_at, r.updated_at, '') AS updated_at
+FROM staff s
+LEFT JOIN staff_ui_preferences p ON s.id = p.staff_id
+LEFT JOIN staff_pinned_recents r ON s.id = r.staff_id;
+
+-- @domain: system
+-- @dal_scope: host.internal
+-- @description: 2D coordinate JSON array of { plug_id, widget_id, col, row } dashboard widgets per role default (GEMINI.md §9.5 / 9B).
+CREATE TABLE IF NOT EXISTS role_dashboard_layouts (
+    role_id TEXT PRIMARY KEY REFERENCES roles(id) ON DELETE CASCADE,
+    widgets_json TEXT NOT NULL DEFAULT '[]',           -- 2D coordinate JSON array: [{"plug_id":"...","widget_id":"...","col":1,"row":1}]
+    updated_by_staff_id TEXT REFERENCES staff(id) ON DELETE SET NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+-- @domain: system
+-- @dal_scope: host.internal
+-- @description: 2D coordinate JSON array of { plug_id, widget_id, col, row } dashboard widgets per staff personal layout (GEMINI.md §9.5 / 9B).
+CREATE TABLE IF NOT EXISTS staff_dashboard_layouts (
+    staff_id TEXT PRIMARY KEY REFERENCES staff(id) ON DELETE CASCADE,
+    widgets_json TEXT NOT NULL DEFAULT '[]',           -- 2D coordinate JSON array: [{"plug_id":"...","widget_id":"...","col":1,"row":1}]
+    column_count INTEGER NOT NULL DEFAULT 4 CHECK (column_count BETWEEN 2 AND 8),
+    updated_by_staff_id TEXT REFERENCES staff(id) ON DELETE SET NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+-- @domain: system
+-- @dal_scope: host.internal
+-- @description: Backward-compatible view exposing unified dashboard_layouts interface
+CREATE VIEW IF NOT EXISTS dashboard_layouts AS
+SELECT
+    'role:' || role_id AS id,
+    'ROLE_DEFAULT' AS scope_type,
+    role_id AS scope_target,
+    widgets_json,
+    4 AS column_count,
+    updated_by_staff_id,
+    updated_at
+FROM role_dashboard_layouts
+UNION ALL
+SELECT
+    'staff:' || staff_id AS id,
+    'STAFF' AS scope_type,
+    staff_id AS scope_target,
+    widgets_json,
+    column_count,
+    updated_by_staff_id,
+    updated_at
+FROM staff_dashboard_layouts;
+
+

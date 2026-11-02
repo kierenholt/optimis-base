@@ -14,10 +14,9 @@ CREATE INDEX IF NOT EXISTS idx_trips_group_date
 
 CREATE TABLE IF NOT EXISTS trip_consents (
     id TEXT PRIMARY KEY,
-    trip_id TEXT NOT NULL,
+    trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE RESTRICT,
     pupil_id TEXT NOT NULL,
     guardian_person_id TEXT NOT NULL,
-    guardian_name TEXT NOT NULL,
     relationship_code TEXT NOT NULL,
     has_parental_responsibility INTEGER NOT NULL CHECK (has_parental_responsibility = 1),
     consent_status TEXT NOT NULL CHECK (consent_status IN ('CONSENTED', 'DECLINED')),
@@ -34,3 +33,4 @@ CREATE INDEX IF NOT EXISTS idx_trip_consents_trip_id
 
 CREATE INDEX IF NOT EXISTS idx_trip_consents_pupil_id
     ON trip_consents (pupil_id);
+

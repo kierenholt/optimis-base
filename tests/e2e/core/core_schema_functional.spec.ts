@@ -108,7 +108,7 @@ test.describe('Optimis Core Schema (45 Tables) End-to-End Functional Invariants'
   test('verifyCoreSchemaInvariants_seededPupilLoadedInHostShell_enforcesDalContractAndRendersRecord_test', async ({
     page,
   }) => {
-    await page.goto(`/?pupil_id=${encodeURIComponent(seededPupilId)}`);
+    await page.goto(`/p/${testPlugId}?pupil_id=${encodeURIComponent(seededPupilId)}`);
 
     const hostShell = page.getByTestId('host-shell');
     await expect(hostShell).toBeVisible();
@@ -136,4 +136,69 @@ test.describe('Optimis Core Schema (45 Tables) End-to-End Functional Invariants'
       )
       .toBe(true);
   });
+
+  test('verifySchemaForeignKeysAndStaffSettings_splitPreferencesAndNavigationState_persistsAcrossSplitTables_test', async ({
+    request,
+  }) => {
+    // 1. Authenticate as Teacher persona
+    const switchRes = await request.post('/api/auth/persona', {
+      data: { persona: 'teacher' },
+    });
+    expect(switchRes.status()).toBe(200);
+
+    // 2. Set accessibility preferences (base_font_size and theme_mode)
+    const updatePrefRes = await request.put('/api/system/user-settings', {
+      data: {
+        base_font_size: 'large',
+        theme_mode: 'high-contrast',
+      },
+    });
+    expect(updatePrefRes.status()).toBe(200);
+    const prefBody = await updatePrefRes.json();
+    expect(prefBody.settings.base_font_size).toBe('large');
+    expect(prefBody.settings.theme_mode).toBe('high-contrast');
+
+    // 3. Pin a valid view for the teacher
+    const pinRes = await request.post('/api/system/pinned-recents', {
+      data: {
+        action: 'pin',
+        route: `/p/${testPlugId}`,
+        title: 'Core Schema Pinned View',
+      },
+    });
+    expect(pinRes.status()).toBe(200);
+    const pinBody = await pinRes.json();
+    expect(pinBody.pinned_recents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          route: `/p/${testPlugId}`,
+          title: 'Core Schema Pinned View',
+        }),
+      ])
+    );
+
+    // 4. Update ONLY base_font_size and verify pinned_recents navigation state is preserved without clobbering
+    const updateFontOnlyRes = await request.put('/api/system/user-settings', {
+      data: {
+        base_font_size: 'extra-large',
+      },
+    });
+    expect(updateFontOnlyRes.status()).toBe(200);
+
+    // 5. Query UI config to verify both split tables are resolved into combined configuration
+    const configRes = await request.get('/api/system/ui-config');
+    expect(configRes.status()).toBe(200);
+    const config = await configRes.json();
+    expect(config.user_settings.base_font_size).toBe('extra-large');
+    expect(config.user_settings.theme_mode).toBe('high-contrast');
+    expect(config.pinned_recents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          route: `/p/${testPlugId}`,
+          title: 'Core Schema Pinned View',
+        }),
+      ])
+    );
+  });
 });
+

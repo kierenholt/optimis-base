@@ -116,6 +116,8 @@ type LoadedPlugin struct {
 	ManifestModTime  time.Time
 	LuaModTime       time.Time
 	IsSyntheticClone bool
+	InstalledAt      string
+	UpdatedAt        string
 }
 
 type CallerContext struct {

@@ -181,8 +181,8 @@ function sync_group_homework(ctx, args)
       [[INSERT INTO plugin_sparx.sparx_sync_runs (
           id, sync_batch_id, group_id, academic_year_id, reference_date, homework_week,
           roster_count, persisted_scores_count, target_url, http_status, status,
-          two_phase_pattern, synced_by_staff_id, synced_at
-        ) VALUES (?, 'illegal_tx_batch', ?, ?, ?, ?, ?, 0, ?, 0, 'PENDING_ILLEGAL_TX', 'VIOLATION', ?, ?)]],
+          synced_by_staff_id, synced_at
+        ) VALUES (?, 'illegal_tx_batch', ?, ?, ?, ?, ?, 0, ?, 0, 'PENDING_ILLEGAL_TX', ?, ?)]],
       {
         "spx_illegal_" .. ctx.crypto.uuid(),
         group_id,
@@ -237,6 +237,7 @@ function sync_group_homework(ctx, args)
   -- =========================================================================
   local synced_at = ctx.clock.now_utc()
   local staff_id = tostring(ctx.caller.staff_id or "")
+  local run_id = "spx_run_" .. ctx.crypto.uuid()
   local persisted_scores = {}
   local batch_rows = {}
 
@@ -254,10 +255,10 @@ function sync_group_homework(ctx, args)
 
       table.insert(batch_rows, {
         score_id,
+        run_id,
         sync_batch_id,
         group_id,
         pid,
-        p_name,
         academic_year_id,
         w_label,
         completion_rate,
@@ -270,6 +271,7 @@ function sync_group_homework(ctx, args)
 
       table.insert(persisted_scores, {
         id = score_id,
+        sync_run_id = run_id,
         sync_batch_id = sync_batch_id,
         group_id = group_id,
         pupil_id = pid,
@@ -286,24 +288,12 @@ function sync_group_homework(ctx, args)
     end
   end
 
-  if #batch_rows > 0 then
-    ctx.plugin_db.exec_batch(
-      [[INSERT INTO plugin_sparx.sparx_homework_scores (
-          id, sync_batch_id, group_id, pupil_id, pupil_name, academic_year_id,
-          homework_week, completion_rate, xp_earned, bookwork_accuracy,
-          teacher_note, synced_by_staff_id, synced_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
-      batch_rows
-    )
-  end
-
-  local run_id = "spx_run_" .. ctx.crypto.uuid()
   ctx.plugin_db.exec(
     [[INSERT INTO plugin_sparx.sparx_sync_runs (
         id, sync_batch_id, group_id, academic_year_id, reference_date, homework_week,
         roster_count, persisted_scores_count, target_url, http_status, status,
-        two_phase_pattern, synced_by_staff_id, synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', 'READ_EGRESS_THEN_WRITEDB_OK', ?, ?)]],
+        synced_by_staff_id, synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?)]],
     {
       run_id,
       sync_batch_id,
@@ -319,6 +309,17 @@ function sync_group_homework(ctx, args)
       synced_at
     }
   )
+
+  if #batch_rows > 0 then
+    ctx.plugin_db.exec_batch(
+      [[INSERT INTO plugin_sparx.sparx_homework_scores (
+          id, sync_run_id, sync_batch_id, group_id, pupil_id, academic_year_id,
+          homework_week, completion_rate, xp_earned, bookwork_accuracy,
+          teacher_note, synced_by_staff_id, synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
+      batch_rows
+    )
+  end
 
   return {
     ok = true,
@@ -346,7 +347,7 @@ function list_homework_scores(ctx, args)
   local rows
   if group_id ~= "" and pupil_id ~= "" then
     rows = ctx.plugin_db.query(
-      [[SELECT id, sync_batch_id, group_id, pupil_id, pupil_name, academic_year_id,
+      [[SELECT id, sync_run_id, sync_batch_id, group_id, pupil_id, academic_year_id,
                homework_week, completion_rate, xp_earned, bookwork_accuracy,
                teacher_note, synced_by_staff_id, synced_at
         FROM plugin_sparx.sparx_homework_scores
@@ -356,7 +357,7 @@ function list_homework_scores(ctx, args)
     )
   elseif group_id ~= "" then
     rows = ctx.plugin_db.query(
-      [[SELECT id, sync_batch_id, group_id, pupil_id, pupil_name, academic_year_id,
+      [[SELECT id, sync_run_id, sync_batch_id, group_id, pupil_id, academic_year_id,
                homework_week, completion_rate, xp_earned, bookwork_accuracy,
                teacher_note, synced_by_staff_id, synced_at
         FROM plugin_sparx.sparx_homework_scores
@@ -366,7 +367,7 @@ function list_homework_scores(ctx, args)
     )
   elseif pupil_id ~= "" then
     rows = ctx.plugin_db.query(
-      [[SELECT id, sync_batch_id, group_id, pupil_id, pupil_name, academic_year_id,
+      [[SELECT id, sync_run_id, sync_batch_id, group_id, pupil_id, academic_year_id,
                homework_week, completion_rate, xp_earned, bookwork_accuracy,
                teacher_note, synced_by_staff_id, synced_at
         FROM plugin_sparx.sparx_homework_scores
@@ -376,13 +377,44 @@ function list_homework_scores(ctx, args)
     )
   else
     rows = ctx.plugin_db.query(
-      [[SELECT id, sync_batch_id, group_id, pupil_id, pupil_name, academic_year_id,
+      [[SELECT id, sync_run_id, sync_batch_id, group_id, pupil_id, academic_year_id,
                homework_week, completion_rate, xp_earned, bookwork_accuracy,
                teacher_note, synced_by_staff_id, synced_at
         FROM plugin_sparx.sparx_homework_scores
         ORDER BY synced_at DESC, id DESC]],
       {}
     )
+  end
+
+  local pupil_name_map = {}
+  if #rows > 0 and ctx.dal and ctx.dal.pupils then
+    local pid_list = {}
+    local seen = {}
+    for _, r in ipairs(rows) do
+      local pid = tostring(r.pupil_id or "")
+      if pid ~= "" and not seen[pid] then
+        seen[pid] = true
+        table.insert(pid_list, pid)
+      end
+    end
+    if #pid_list > 0 then
+      local ok_p, pupils = pcall(function()
+        return ctx.dal.pupils.get_by_ids_batch(pid_list)
+      end)
+      if ok_p and type(pupils) == "table" then
+        for _, p in ipairs(pupils) do
+          local pid = tostring(p.id or "")
+          local fname = tostring(p.preferred_first_name or p.first_name or "")
+          local lname = tostring(p.preferred_last_name or p.last_name or "")
+          pupil_name_map[pid] = fname .. " " .. lname
+        end
+      end
+    end
+  end
+
+  for _, r in ipairs(rows) do
+    local pid = tostring(r.pupil_id or "")
+    r.pupil_name = pupil_name_map[pid] or pid
   end
 
   return {
@@ -400,7 +432,7 @@ function export_pupil_data(ctx, args)
   end
 
   local rows = ctx.plugin_db.query(
-    [[SELECT id, sync_batch_id, group_id, pupil_id, pupil_name, academic_year_id,
+    [[SELECT id, sync_run_id, sync_batch_id, group_id, pupil_id, academic_year_id,
              homework_week, completion_rate, xp_earned, bookwork_accuracy,
              teacher_note, synced_by_staff_id, synced_at
       FROM plugin_sparx.sparx_homework_scores

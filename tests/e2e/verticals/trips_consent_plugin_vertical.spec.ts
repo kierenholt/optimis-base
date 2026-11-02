@@ -246,7 +246,7 @@ test.describe('Vertical 7: Educational Visits, PR Consent Verification & Trip Em
     await expect(page.getByTestId('host-shell')).toBeVisible();
 
     await page.getByTestId('nav-rail-search').click();
-    const tripsNavBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Trip' }).first();
+    const tripsNavBtn = page.locator('[data-testid^="host-search-result-view-"][data-testid$="-home"]').filter({ hasText: 'Trip' }).first();
     await expect(tripsNavBtn).toBeVisible();
     await tripsNavBtn.click();
 

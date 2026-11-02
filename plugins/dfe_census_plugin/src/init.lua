@@ -182,18 +182,15 @@ function generate_and_validate_census_return(ctx, args)
     local note_text = "Statutory School Census snapshot (" .. rollup.term_code .. " " .. rollup.census_date .. ") SEN=" .. p.sen_provision_code
     ctx.plugin_db.exec(
       [[INSERT INTO plugin_dfe_census.census_pupil_snapshots (
-          id, return_id, pupil_id, academic_year_id, term_code, census_date,
+          id, return_id, pupil_id,
           upn, nc_year_group, enrolment_status, sen_provision_code, primary_sen_need_code,
           fsm_eligible, lac_episode_status, possible_sessions, present_sessions,
           authorised_absence_sessions, unauthorised_absence_sessions, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
       {
         snap_id,
         return_id,
         p.pupil_id,
-        rollup.academic_year_id,
-        rollup.term_code,
-        rollup.census_date,
         p.upn,
         p.nc_year_group,
         p.enrolment_status,
@@ -314,13 +311,17 @@ function export_pupil_data(ctx, args)
   end
 
   local rows = ctx.plugin_db.query(
-    [[SELECT id, return_id, pupil_id, academic_year_id, term_code, census_date,
-             upn, nc_year_group, enrolment_status, sen_provision_code, primary_sen_need_code,
-             fsm_eligible, lac_episode_status, possible_sessions, present_sessions,
-             authorised_absence_sessions, unauthorised_absence_sessions, notes, created_at
-      FROM plugin_dfe_census.census_pupil_snapshots
-      WHERE pupil_id = ?
-      ORDER BY created_at ASC, id ASC]],
+    [[SELECT s.id, s.return_id, s.pupil_id,
+             COALESCE(r.academic_year_id, '') AS academic_year_id,
+             COALESCE(r.term_code, '') AS term_code,
+             COALESCE(r.census_date, '') AS census_date,
+             s.upn, s.nc_year_group, s.enrolment_status, s.sen_provision_code, s.primary_sen_need_code,
+             s.fsm_eligible, s.lac_episode_status, s.possible_sessions, s.present_sessions,
+             s.authorised_absence_sessions, s.unauthorised_absence_sessions, s.notes, s.created_at
+      FROM plugin_dfe_census.census_pupil_snapshots s
+      LEFT JOIN plugin_dfe_census.census_returns r ON r.id = s.return_id
+      WHERE s.pupil_id = ?
+      ORDER BY s.created_at ASC, s.id ASC]],
     { pupil_id }
   )
 

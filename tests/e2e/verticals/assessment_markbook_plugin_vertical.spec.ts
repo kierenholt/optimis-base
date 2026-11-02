@@ -283,7 +283,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
 
     await expect(page.getByTestId('host-shell')).toBeVisible();
     await page.getByTestId('nav-rail-search').click();
-    const markbookNavBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Markbook' }).first();
+    const markbookNavBtn = page.locator('[data-testid^="host-search-result-view-"][data-testid$="-home"]').filter({ hasText: 'Markbook' }).first();
     await expect(markbookNavBtn).toBeVisible();
     await markbookNavBtn.click();
 
@@ -420,7 +420,7 @@ test.describe('Assessment & Markbook Plugin Vertical Slice: MAT Grading Schema S
         sameSite: 'Strict',
       },
     ]);
-    await page.goto(`/p/${markbookPlugId}?${query.toString()}`);
+    await page.goto(`/?${query.toString()}`);
 
     const sarPanel = page.getByTestId('sar-redaction-panel');
     await expect(sarPanel).toBeVisible();

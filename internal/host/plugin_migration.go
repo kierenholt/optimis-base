@@ -2,7 +2,9 @@ package host
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +15,11 @@ import (
 
 	"optimis/internal/dal"
 )
+
+func sha256HexString(data []byte) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(string(data))))
+	return hex.EncodeToString(sum[:])
+}
 
 func copyFileSync(srcPath string, dstPath string) error {
 	srcFile, err := os.Open(srcPath)
@@ -75,61 +82,92 @@ func (h *Host) provisionAndMigratePluginDB(ctx context.Context, plugin *LoadedPl
 		}
 	}
 
-	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbFilePath)
-	bootDB, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return fmt.Errorf("failed to open plugin DB %s: %w", alias, err)
-	}
-	bootDB.SetMaxOpenConns(1)
-
-	var pageSize int
-	if err := bootDB.QueryRowContext(ctx, `PRAGMA page_size;`).Scan(&pageSize); err != nil || pageSize <= 0 {
-		pageSize = defaultSQLitePageSz
-	}
-	maxPageCount := computeMaxPageCount(maxDBSizeMB, pageSize)
-
-	if _, err := bootDB.ExecContext(ctx, `PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;`); err != nil {
-		_ = bootDB.Close()
-		return fmt.Errorf("failed to configure WAL pragmas on %s.db: %w", alias, err)
-	}
-	if _, err := bootDB.ExecContext(ctx, fmt.Sprintf(`PRAGMA max_page_count = %d;`, maxPageCount)); err != nil {
-		_ = bootDB.Close()
-		return fmt.Errorf("failed to set max_page_count on %s.db: %w", alias, err)
-	}
-	if _, err := bootDB.ExecContext(
-		ctx,
-		`CREATE TABLE IF NOT EXISTS __plugin_migrations (
-			filename TEXT PRIMARY KEY,
-			applied_at TEXT NOT NULL
-		);`,
-	); err != nil {
-		_ = bootDB.Close()
-		return fmt.Errorf("failed to ensure __plugin_migrations table in %s.db: %w", alias, err)
-	}
-
-	appliedMigrations := make(map[string]bool)
-	rows, err := bootDB.QueryContext(ctx, `SELECT filename FROM __plugin_migrations`)
-	if err != nil {
-		_ = bootDB.Close()
-		return fmt.Errorf("failed to query applied migrations in %s.db: %w", alias, err)
-	}
-	for rows.Next() {
-		var fn string
-		if err := rows.Scan(&fn); err != nil {
-			_ = rows.Close()
-			_ = bootDB.Close()
-			return fmt.Errorf("failed to scan migration filename: %w", err)
-		}
-		appliedMigrations[fn] = true
-	}
-	_ = rows.Close()
-
-	_, _ = bootDB.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE);`)
-	if err := bootDB.Close(); err != nil {
-		return fmt.Errorf("failed to close bootstrap handle for %s.db: %w", alias, err)
-	}
-
 	migrationsDir := filepath.Join(plugin.DirPath, "migrations")
+	initSQLPath := filepath.Join(migrationsDir, "001_init.sql")
+	var expectedInitHash string
+	if rawInit, err := os.ReadFile(initSQLPath); err == nil {
+		expectedInitHash = sha256HexString(rawInit)
+	}
+
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbFilePath)
+
+	initBootDB := func() (map[string]string, int, error) {
+		bootDB, err := sql.Open("sqlite", dsn)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to open plugin DB %s: %w", alias, err)
+		}
+		bootDB.SetMaxOpenConns(1)
+
+		var pageSize int
+		if err := bootDB.QueryRowContext(ctx, `PRAGMA page_size;`).Scan(&pageSize); err != nil || pageSize <= 0 {
+			pageSize = defaultSQLitePageSz
+		}
+		maxPageCount := computeMaxPageCount(maxDBSizeMB, pageSize)
+
+		if _, err := bootDB.ExecContext(ctx, `PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;`); err != nil {
+			_ = bootDB.Close()
+			return nil, 0, fmt.Errorf("failed to configure WAL pragmas on %s.db: %w", alias, err)
+		}
+		if _, err := bootDB.ExecContext(ctx, fmt.Sprintf(`PRAGMA max_page_count = %d;`, maxPageCount)); err != nil {
+			_ = bootDB.Close()
+			return nil, 0, fmt.Errorf("failed to set max_page_count on %s.db: %w", alias, err)
+		}
+		if _, err := bootDB.ExecContext(
+			ctx,
+			`CREATE TABLE IF NOT EXISTS __plugin_migrations (
+				filename TEXT PRIMARY KEY,
+				applied_at TEXT NOT NULL,
+				content_sha256 TEXT NOT NULL DEFAULT ''
+			);`,
+		); err != nil {
+			_ = bootDB.Close()
+			return nil, 0, fmt.Errorf("failed to ensure __plugin_migrations table in %s.db: %w", alias, err)
+		}
+		var hasHashCol int
+		_ = bootDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('__plugin_migrations') WHERE name = 'content_sha256'`).Scan(&hasHashCol)
+		if hasHashCol == 0 {
+			_, _ = bootDB.ExecContext(ctx, `ALTER TABLE __plugin_migrations ADD COLUMN content_sha256 TEXT NOT NULL DEFAULT '';`)
+		}
+
+		applied := make(map[string]string)
+		rows, err := bootDB.QueryContext(ctx, `SELECT filename, COALESCE(content_sha256, '') FROM __plugin_migrations`)
+		if err != nil {
+			_ = bootDB.Close()
+			return nil, 0, fmt.Errorf("failed to query applied migrations in %s.db: %w", alias, err)
+		}
+		for rows.Next() {
+			var fn, hash string
+			if err := rows.Scan(&fn, &hash); err != nil {
+				_ = rows.Close()
+				_ = bootDB.Close()
+				return nil, 0, fmt.Errorf("failed to scan migration filename: %w", err)
+			}
+			applied[fn] = hash
+		}
+		_ = rows.Close()
+
+		_, _ = bootDB.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE);`)
+		if err := bootDB.Close(); err != nil {
+			return nil, 0, fmt.Errorf("failed to close bootstrap handle for %s.db: %w", alias, err)
+		}
+		return applied, maxPageCount, nil
+	}
+
+	appliedMigrations, maxPageCount, err := initBootDB()
+	if err != nil {
+		return err
+	}
+
+	if storedInitHash, hasInit := appliedMigrations["001_init.sql"]; hasInit && expectedInitHash != "" && storedInitHash != expectedInitHash {
+		_ = os.Remove(dbFilePath + "-wal")
+		_ = os.Remove(dbFilePath + "-shm")
+		_ = os.Remove(dbFilePath)
+		appliedMigrations, maxPageCount, err = initBootDB()
+		if err != nil {
+			return err
+		}
+	}
+
 	var pendingFiles []string
 	if info, statErr := os.Stat(migrationsDir); statErr == nil && info.IsDir() {
 		entries, readErr := os.ReadDir(migrationsDir)
@@ -138,7 +176,7 @@ func (h *Host) provisionAndMigratePluginDB(ctx context.Context, plugin *LoadedPl
 		}
 		for _, entry := range entries {
 			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
-				if !appliedMigrations[entry.Name()] {
+				if _, already := appliedMigrations[entry.Name()]; !already {
 					pendingFiles = append(pendingFiles, filepath.Join(migrationsDir, entry.Name()))
 				}
 			}
@@ -217,9 +255,10 @@ func (h *Host) runMigrationsInImmediateTx(ctx context.Context, dsn string, maxPa
 		}
 		if _, recErr := conn.ExecContext(
 			ctx,
-			`INSERT INTO __plugin_migrations (filename, applied_at) VALUES (?, ?)`,
+			`INSERT INTO __plugin_migrations (filename, applied_at, content_sha256) VALUES (?, ?, ?)`,
 			filepath.Base(file),
 			time.Now().UTC().Format(time.RFC3339Nano),
+			sha256HexString(sqlBytes),
 		); recErr != nil {
 			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
 			return fmt.Errorf("failed recording migration %s: %w", filepath.Base(file), recErr)
@@ -234,3 +273,4 @@ func (h *Host) runMigrationsInImmediateTx(ctx context.Context, dsn string, maxPa
 	_, _ = conn.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE);`)
 	return nil
 }
+

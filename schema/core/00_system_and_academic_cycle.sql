@@ -18,6 +18,23 @@ CREATE TABLE IF NOT EXISTS __system_config (
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
+-- @domain: system
+-- @dal_scope: host.internal
+-- @description: Dedicated relational store for installed plugin instances, versions, approved scopes, and lifecycle states (GEMINI.md §6A, §7C, §9.1).
+CREATE TABLE IF NOT EXISTS installed_plugins (
+    manifest_id TEXT PRIMARY KEY,
+    plug_id TEXT NOT NULL UNIQUE CHECK (length(plug_id) = 8),
+    version TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'UNINSTALLED_DORMANT')),
+    database_alias TEXT,
+    folder TEXT NOT NULL,
+    approved_scopes_json TEXT NOT NULL DEFAULT '[]',
+    installed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_installed_plugins_plug_id ON installed_plugins(plug_id);
+
 -- @domain: academic_cycle
 -- @dal_scope: dal.academic.read | dal.academic.write
 -- @dfe_cbds: School Census Academic Year (e.g. '2026/2027')
@@ -108,31 +125,3 @@ CREATE TABLE IF NOT EXISTS data_retention_policies (
     retention_years INTEGER NOT NULL,
     statutory_basis TEXT NOT NULL                      -- e.g. 'KCSIE', 'DfE School Attendance Regulations', 'SEND_CODE_OF_PRACTICE'
 );
-
--- @domain: system
--- @dal_scope: host.internal
--- @description: Ordered 1D JSON array of { plug_id, widget_id } dashboard widgets per role default or staff override (GEMINI.md §9.5 / 9B).
-CREATE TABLE IF NOT EXISTS dashboard_layouts (
-    id TEXT PRIMARY KEY,                               -- e.g. 'role:TEACHER' or 'staff:stf_tch_7a'
-    scope_type TEXT NOT NULL CHECK (scope_type IN ('ROLE_DEFAULT', 'STAFF')),
-    scope_target TEXT NOT NULL,                        -- role_id (e.g. 'TEACHER', 'ADMIN') or staff_id (e.g. 'stf_tch_7a')
-    widgets_json TEXT NOT NULL DEFAULT '[]',           -- Ordered 1D JSON array: [{"plug_id":"...","widget_id":"..."}]
-    column_count INTEGER NOT NULL DEFAULT 4 CHECK (column_count BETWEEN 2 AND 8),
-    updated_by_staff_id TEXT,
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    UNIQUE (scope_type, scope_target)
-);
-CREATE INDEX IF NOT EXISTS idx_dashboard_layouts_scope ON dashboard_layouts(scope_type, scope_target);
-
--- @domain: system
--- @dal_scope: host.internal
--- @description: Per-staff UI preferences and pinned recents (base_font_size, theme_mode, pinned_recents_json).
-CREATE TABLE IF NOT EXISTS staff_settings (
-    staff_id TEXT PRIMARY KEY,
-    base_font_size TEXT NOT NULL DEFAULT 'medium' CHECK (base_font_size IN ('small', 'medium', 'large', 'extra-large')),
-    theme_mode TEXT NOT NULL DEFAULT 'light' CHECK (theme_mode IN ('light', 'high-contrast')),
-    pinned_recents_json TEXT NOT NULL DEFAULT '[]',
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-);
-
-

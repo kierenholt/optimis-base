@@ -9,19 +9,30 @@ import (
 )
 
 func TestVerifyPluginDir_ValidAndInvalidBundles(t *testing.T) {
-	// 1. Valid production plugin (behaviour_plugin) should pass all 4 CI gates
-	var out bytes.Buffer
-	report, err := VerifyPluginDir(filepath.Join("..", "..", "plugins", "behaviour_plugin"), &out)
-	if err != nil {
-		t.Fatalf("expected behaviour_plugin to pass VerifyPluginDir, got error: %v", err)
-	}
-	if report.PluginID != "uk.org.optimis.behaviour" {
-		t.Fatalf("unexpected plugin ID: %s", report.PluginID)
-	}
-	stdout := out.String()
-	for _, gate := range []string{"MANIFEST_LUA_UI_OK", "CSP_OFFLINE_OK", "MIGRATIONS_OK", "GDPR_ZERO_ORPHANS_OK"} {
-		if !strings.Contains(stdout, gate) {
-			t.Fatalf("expected VerifyPluginDir output to contain %s, got: %s", gate, stdout)
+	// 1. Valid production plugins should pass all 4 CI gates (including FK-aware GDPR_ZERO_ORPHANS_OK)
+	for _, folder := range []string{
+		"behaviour_plugin",
+		"staff_cover_plugin",
+		"senco_provision_plugin",
+		"lms_sync_plugin",
+		"sparx_maths_plugin",
+		"first_aid_medical_plugin",
+		"trips_consent_plugin",
+		"dfe_census_plugin",
+	} {
+		var out bytes.Buffer
+		report, err := VerifyPluginDir(filepath.Join("..", "..", "plugins", folder), &out)
+		if err != nil {
+			t.Fatalf("expected %s to pass VerifyPluginDir, got error: %v", folder, err)
+		}
+		if report.PluginID == "" {
+			t.Fatalf("unexpected empty plugin ID for %s", folder)
+		}
+		stdout := out.String()
+		for _, gate := range []string{"MANIFEST_LUA_UI_OK", "CSP_OFFLINE_OK", "MIGRATIONS_OK", "GDPR_ZERO_ORPHANS_OK"} {
+			if !strings.Contains(stdout, gate) {
+				t.Fatalf("expected VerifyPluginDir(%s) output to contain %s, got: %s", folder, gate, stdout)
+			}
 		}
 	}
 

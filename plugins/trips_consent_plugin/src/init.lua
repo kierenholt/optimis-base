@@ -166,17 +166,16 @@ function record_trip_consent(ctx, args)
   )
   ctx.plugin_db.exec(
     [[INSERT INTO plugin_trips.trip_consents (
-        id, trip_id, pupil_id, guardian_person_id, guardian_name,
+        id, trip_id, pupil_id, guardian_person_id,
         relationship_code, has_parental_responsibility, consent_status,
         dietary_notes, medical_notes, emergency_phone,
         recorded_by_staff_id, recorded_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)]],
+      ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)]],
     {
       consent_id,
       trip.id,
       args.pupil_id,
       authorized_guardian.guardian_person_id,
-      guardian_name,
       relationship_code,
       consent_status,
       dietary_notes,
@@ -204,6 +203,24 @@ function record_trip_consent(ctx, args)
       recorded_at = recorded_at
     }
   }
+end
+
+local function hydrate_guardian_name_for_pupil(ctx, pupil_id, guardian_person_id, opts)
+  if not ctx.dal or not ctx.dal.guardians then
+    return tostring(guardian_person_id or "")
+  end
+  local ok_g, guardians = pcall(function()
+    return ctx.dal.guardians.list_for_pupil(pupil_id, opts)
+  end)
+  if ok_g and type(guardians) == "table" then
+    for i = 1, #guardians do
+      local g = guardians[i]
+      if g.guardian_person_id == guardian_person_id then
+        return (g.first_name or "") .. " " .. (g.last_name or "")
+      end
+    end
+  end
+  return tostring(guardian_person_id or "")
 end
 
 function generate_trip_emergency_pack(ctx, args)
@@ -235,7 +252,7 @@ function generate_trip_emergency_pack(ctx, args)
 
   -- 2. Query consented pupils for this trip
   local consent_rows = ctx.plugin_db.query(
-    [[SELECT id, trip_id, pupil_id, guardian_person_id, guardian_name,
+    [[SELECT id, trip_id, pupil_id, guardian_person_id,
              relationship_code, has_parental_responsibility, consent_status,
              dietary_notes, medical_notes, emergency_phone,
              recorded_by_staff_id, recorded_at
@@ -270,6 +287,7 @@ function generate_trip_emergency_pack(ctx, args)
     local sm = sen_medical_map[c.pupil_id] or {}
     local first_name = p.preferred_first_name or p.first_name or ""
     local last_name = p.preferred_last_name or p.last_name or ""
+    local guardian_name = hydrate_guardian_name_for_pupil(ctx, c.pupil_id, c.guardian_person_id, opts)
 
     table.insert(emergency_manifest, {
       pupil_id = p.id,
@@ -278,7 +296,7 @@ function generate_trip_emergency_pack(ctx, args)
       consent_id = c.id,
       consent_status = c.consent_status,
       guardian_person_id = c.guardian_person_id,
-      guardian_name = c.guardian_name,
+      guardian_name = guardian_name,
       relationship_code = c.relationship_code,
       has_parental_responsibility = true,
       emergency_phone = c.emergency_phone or "",
@@ -341,8 +359,9 @@ function get_trip_details(ctx, args)
   end
 
   local trip = trip_rows[1]
+  local opts = resolve_temporal_opts(ctx, args, trip.academic_year_id)
   local consents = ctx.plugin_db.query(
-    [[SELECT id, trip_id, pupil_id, guardian_person_id, guardian_name,
+    [[SELECT id, trip_id, pupil_id, guardian_person_id,
              relationship_code, has_parental_responsibility, consent_status,
              dietary_notes, medical_notes, emergency_phone,
              recorded_by_staff_id, recorded_at
@@ -351,6 +370,10 @@ function get_trip_details(ctx, args)
       ORDER BY recorded_at ASC, id ASC]],
     { trip.id }
   )
+  for i = 1, #consents do
+    local c = consents[i]
+    c.guardian_name = hydrate_guardian_name_for_pupil(ctx, c.pupil_id, c.guardian_person_id, opts)
+  end
 
   return {
     ok = true,
@@ -403,7 +426,6 @@ function on_parent_dmz_submission(ctx, event)
   end
 
   local consent_id = "tcon_" .. ctx.crypto.uuid()
-  local guardian_name = (authorized_guardian.first_name or "") .. " " .. (authorized_guardian.last_name or "")
   local recorded_at = ctx.clock.now_utc()
 
   ctx.plugin_db.exec(
@@ -412,17 +434,16 @@ function on_parent_dmz_submission(ctx, event)
   )
   ctx.plugin_db.exec(
     [[INSERT INTO plugin_trips.trip_consents (
-        id, trip_id, pupil_id, guardian_person_id, guardian_name,
+        id, trip_id, pupil_id, guardian_person_id,
         relationship_code, has_parental_responsibility, consent_status,
         dietary_notes, medical_notes, emergency_phone,
         recorded_by_staff_id, recorded_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, 'CONSENTED', ?, '', ?, 'SYSTEM_DMZ', ?)]],
+      ) VALUES (?, ?, ?, ?, ?, 1, 'CONSENTED', ?, '', ?, 'SYSTEM_DMZ', ?)]],
     {
       consent_id,
       trip.id,
       pupil_id,
       guardian_id,
-      guardian_name,
       authorized_guardian.relationship_code or "",
       payload.reason or "",
       authorized_guardian.phone_primary or "",
@@ -448,7 +469,7 @@ function export_pupil_data(ctx, args)
 
   local rows = ctx.plugin_db.query(
     [[SELECT tc.id, tc.trip_id, t.trip_name, t.destination, t.trip_date,
-             tc.pupil_id, tc.guardian_person_id, tc.guardian_name,
+             tc.pupil_id, tc.guardian_person_id,
              tc.relationship_code, tc.has_parental_responsibility,
              tc.consent_status, tc.dietary_notes, tc.medical_notes,
              tc.emergency_phone, tc.recorded_by_staff_id, tc.recorded_at

@@ -247,3 +247,170 @@ func TestUpsertSessionAttendanceBatchScoped_InvalidNonAmPmSessionOrUnauthorizedG
 	}
 	logTap.Logf("verified fail-fast rollback for invalid session and unauthorized group")
 }
+
+func TestUpsertLessonAttendanceBatchScoped_ValidLessonMarks_PersistsToDedicatedLessonSubmissionsTable_test(t *testing.T) {
+	ctx := context.Background()
+	d, fx, logTap := setupIsolatedCoreDALWithFixtures(t)
+
+	scope := dal.DALQueryScope{
+		Mode:           dal.ScopeOwnGroups,
+		StaffID:        fx.TeacherStaffID,
+		AcademicYearID: fx.AcademicYearID,
+		ReferenceDate:  fx.ReferenceDate,
+	}
+
+	res, err := d.UpsertLessonAttendanceBatchScoped(ctx, scope, dal.UpsertLessonAttendanceBatchInput{
+		GroupID:         fx.OwnGroupID,
+		TimetableSlotID: fx.TimetableSlotAMID,
+		Date:            fx.ReferenceDate,
+		Marks: []dal.SessionAttendanceMarkInput{
+			{
+				PupilID:        fx.ActivePupilID,
+				AttendanceCode: "/",
+				MinutesLate:    0,
+				Comment:        "Present for lesson",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpsertLessonAttendanceBatchScoped failed: %v", err)
+	}
+	if res.UpsertedCount != 1 || res.SubmissionID == "" {
+		t.Fatalf("expected UpsertedCount=1 and non-empty SubmissionID, got %+v", res)
+	}
+	logTap.Logf("persisted lesson register submission %s for slot %s", res.SubmissionID, fx.TimetableSlotAMID)
+
+	// Verify directly in attendance_lesson_register_submissions
+	var lessonSubCount int
+	err = d.ReadDB().QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM attendance_lesson_register_submissions WHERE group_id = ? AND date = ? AND timetable_slot_id = ?`,
+		fx.OwnGroupID, fx.ReferenceDate, fx.TimetableSlotAMID,
+	).Scan(&lessonSubCount)
+	if err != nil || lessonSubCount != 1 {
+		t.Fatalf("expected 1 row in attendance_lesson_register_submissions, got count=%d err=%v", lessonSubCount, err)
+	}
+
+	// Verify in backwards-compatible unified view attendance_register_submissions
+	var viewCount int
+	var subType string
+	err = d.ReadDB().QueryRowContext(
+		ctx,
+		`SELECT COUNT(*), submission_type FROM attendance_register_submissions WHERE group_id = ? AND date = ? AND timetable_slot_id = ? GROUP BY submission_type`,
+		fx.OwnGroupID, fx.ReferenceDate, fx.TimetableSlotAMID,
+	).Scan(&viewCount, &subType)
+	if err != nil || viewCount != 1 || subType != "LESSON" {
+		t.Fatalf("expected 1 LESSON row in attendance_register_submissions view, got count=%d subType=%s err=%v", viewCount, subType, err)
+	}
+}
+
+func TestListAttendanceRegisterSubmissionsScoped_SessionAndLesson_ReturnsUnifiedResultsWithDiscriminatedTypes_test(t *testing.T) {
+	ctx := context.Background()
+	d, fx, _ := setupIsolatedCoreDALWithFixtures(t)
+
+	scope := dal.DALQueryScope{
+		Mode:           dal.ScopeOwnGroups,
+		StaffID:        fx.TeacherStaffID,
+		AcademicYearID: fx.AcademicYearID,
+		ReferenceDate:  fx.ReferenceDate,
+	}
+
+	// 1. Submit session register (AM)
+	_, err := d.UpsertSessionAttendanceBatchScoped(ctx, scope, dal.UpsertSessionAttendanceBatchInput{
+		GroupID: fx.OwnGroupID,
+		Date:    fx.ReferenceDate,
+		Session: "AM",
+		Marks: []dal.SessionAttendanceMarkInput{
+			{PupilID: fx.ActivePupilID, AttendanceCode: "/"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("upsert AM session failed: %v", err)
+	}
+
+	// 2. Submit lesson register (Slot)
+	_, err = d.UpsertLessonAttendanceBatchScoped(ctx, scope, dal.UpsertLessonAttendanceBatchInput{
+		GroupID:         fx.OwnGroupID,
+		TimetableSlotID: fx.TimetableSlotAMID,
+		Date:            fx.ReferenceDate,
+		Marks: []dal.SessionAttendanceMarkInput{
+			{PupilID: fx.ActivePupilID, AttendanceCode: "/"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("upsert lesson failed: %v", err)
+	}
+
+	// 3. List register submissions
+	subs, err := d.ListAttendanceRegisterSubmissionsScoped(ctx, scope, fx.ReferenceDate, fx.OwnGroupID)
+	if err != nil {
+		t.Fatalf("ListAttendanceRegisterSubmissionsScoped failed: %v", err)
+	}
+	if len(subs) != 2 {
+		t.Fatalf("expected 2 submissions (1 session + 1 lesson), got %d: %+v", len(subs), subs)
+	}
+
+	foundSession := false
+	foundLesson := false
+	for _, s := range subs {
+		if s.SubmissionType == "SESSION" {
+			foundSession = true
+			if s.Session != "AM" || s.SessionOrSlotKey != "AM" || s.TimetableSlotID != "" {
+				t.Errorf("unexpected session submission data: %+v", s)
+			}
+		}
+		if s.SubmissionType == "LESSON" {
+			foundLesson = true
+			if s.TimetableSlotID != fx.TimetableSlotAMID || s.SessionOrSlotKey != fx.TimetableSlotAMID || s.Session != "" {
+				t.Errorf("unexpected lesson submission data: %+v", s)
+			}
+		}
+	}
+	if !foundSession || !foundLesson {
+		t.Fatalf("expected both session and lesson submissions, got %+v", subs)
+	}
+}
+
+func TestAttendanceRegisterSubmissions_SchemaIntegrity_EnforcesForeignKeysAndCheckConstraints_test(t *testing.T) {
+	ctx := context.Background()
+	d, fx, _ := setupIsolatedCoreDALWithFixtures(t)
+
+	// 1. Direct insert of invalid session ('MIDDAY') into attendance_session_register_submissions MUST violate CHECK constraint
+	_, err := d.WriteDB().ExecContext(
+		ctx,
+		`INSERT INTO attendance_session_register_submissions (id, group_id, date, session, taken_by_staff_id)
+		 VALUES ('ars_chk_fail', ?, ?, 'MIDDAY', ?)`,
+		fx.OwnGroupID, fx.ReferenceDate, fx.TeacherStaffID,
+	)
+	if err == nil {
+		t.Fatalf("expected SQLite CHECK constraint failure on attendance_session_register_submissions for session='MIDDAY', got nil")
+	}
+
+	// 2. Direct insert of non-existent timetable_slot_id into attendance_lesson_register_submissions MUST violate FOREIGN KEY constraint
+	_, err = d.WriteDB().ExecContext(
+		ctx,
+		`INSERT INTO attendance_lesson_register_submissions (id, group_id, timetable_slot_id, date, taken_by_staff_id)
+		 VALUES ('ars_fk_fail', ?, 'non_existent_slot_999', ?, ?)`,
+		fx.OwnGroupID, fx.ReferenceDate, fx.TeacherStaffID,
+	)
+	if err == nil {
+		t.Fatalf("expected SQLite FOREIGN KEY constraint failure on attendance_lesson_register_submissions for invalid slot, got nil")
+	}
+
+	// 3. Inserting valid lesson submission then trying to delete referenced timetable slot MUST be blocked by ON DELETE RESTRICT
+	_, err = d.WriteDB().ExecContext(
+		ctx,
+		`INSERT INTO attendance_lesson_register_submissions (id, group_id, timetable_slot_id, date, taken_by_staff_id)
+		 VALUES ('ars_fk_valid', ?, ?, ?, ?)`,
+		fx.OwnGroupID, fx.TimetableSlotAMID, fx.ReferenceDate, fx.TeacherStaffID,
+	)
+	if err != nil {
+		t.Fatalf("insert valid lesson submission failed: %v", err)
+	}
+
+	_, err = d.WriteDB().ExecContext(ctx, `DELETE FROM timetable_slots WHERE id = ?`, fx.TimetableSlotAMID)
+	if err == nil {
+		t.Fatalf("expected SQLite FOREIGN KEY (ON DELETE RESTRICT) to block deleting timetable_slot referenced by attendance_lesson_register_submissions, got nil")
+	}
+}
+

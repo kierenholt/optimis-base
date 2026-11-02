@@ -25,11 +25,8 @@ CREATE TABLE IF NOT EXISTS census_returns (
 
 CREATE TABLE IF NOT EXISTS census_pupil_snapshots (
     id TEXT PRIMARY KEY,
-    return_id TEXT NOT NULL,
+    return_id TEXT NOT NULL REFERENCES census_returns(id) ON DELETE CASCADE,
     pupil_id TEXT NOT NULL,
-    academic_year_id TEXT NOT NULL,
-    term_code TEXT NOT NULL,
-    census_date TEXT NOT NULL,
     upn TEXT NOT NULL,
     nc_year_group TEXT NOT NULL,
     enrolment_status TEXT NOT NULL,
@@ -46,3 +43,4 @@ CREATE TABLE IF NOT EXISTS census_pupil_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_census_pupil_snapshots_pupil ON census_pupil_snapshots(pupil_id);
 CREATE INDEX IF NOT EXISTS idx_census_pupil_snapshots_return ON census_pupil_snapshots(return_id);
+

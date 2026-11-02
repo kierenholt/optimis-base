@@ -242,7 +242,7 @@ func seedDomain04StatutoryAttendance(tx *sql.Tx, st *qaSeedState) error {
 	}
 	defer sessionStmt.Close()
 
-	regSubStmt, err := tx.Prepare(`INSERT INTO attendance_register_submissions (id, group_id, date, session_or_slot_key, taken_by_staff_id)
+	regSubStmt, err := tx.Prepare(`INSERT INTO attendance_session_register_submissions (id, group_id, date, session, taken_by_staff_id)
 		VALUES (?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err

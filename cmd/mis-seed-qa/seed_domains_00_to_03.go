@@ -180,26 +180,6 @@ func seedDomain00SystemAndCalendar(tx *sql.Tx, st *qaSeedState) error {
 		}
 	}
 
-	dashboardLayouts := []struct {
-		id, scopeType, scopeTarget, widgetsJSON string
-	}{
-		{"role:ADMIN", "ROLE_DEFAULT", "ADMIN", `[]`},
-		{"role:TEACHER", "ROLE_DEFAULT", "TEACHER", `[]`},
-		{"role:HOD", "ROLE_DEFAULT", "HOD", `[]`},
-		{"role:DSL", "ROLE_DEFAULT", "DSL", `[]`},
-		{"role:SENCO", "ROLE_DEFAULT", "SENCO", `[]`},
-	}
-	for _, dl := range dashboardLayouts {
-		if _, err := tx.Exec(
-			`INSERT INTO dashboard_layouts (id, scope_type, scope_target, widgets_json, updated_by_staff_id)
-			 VALUES (?, ?, ?, ?, 'stf_admin_01')
-			 ON CONFLICT(scope_type, scope_target) DO UPDATE SET widgets_json = excluded.widgets_json`,
-			dl.id, dl.scopeType, dl.scopeTarget, dl.widgetsJSON,
-		); err != nil {
-			return fmt.Errorf("dashboard_layouts insert failed: %w", err)
-		}
-	}
-
 	return nil
 }
 
@@ -270,8 +250,14 @@ func seedDomain01And03StaffGroupsAndPupils(tx *sql.Tx, st *qaSeedState) error {
 			"cnt_"+a.staffID, a.staffID, contractType, a.swcPost, a.jobTitle, a.payScale, a.spinePoint, a.fte); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO staff_settings (staff_id, base_font_size, theme_mode, pinned_recents_json)
-			VALUES (?, 'medium', 'light', '[]')
+		if _, err := tx.Exec(`INSERT INTO staff_ui_preferences (staff_id, base_font_size, theme_mode)
+			VALUES (?, 'medium', 'light')
+			ON CONFLICT(staff_id) DO NOTHING`,
+			a.staffID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO staff_pinned_recents (staff_id, pinned_recents_json)
+			VALUES (?, '[]')
 			ON CONFLICT(staff_id) DO NOTHING`,
 			a.staffID); err != nil {
 			return err
@@ -282,6 +268,18 @@ func seedDomain01And03StaffGroupsAndPupils(tx *sql.Tx, st *qaSeedState) error {
 		}
 		if a.hlta == 1 {
 			st.taStaffIDs = append(st.taStaffIDs, a.staffID)
+		}
+	}
+
+	roleLayouts := []string{"ADMIN", "TEACHER", "HOD", "DSL", "SENCO"}
+	for _, r := range roleLayouts {
+		if _, err := tx.Exec(
+			`INSERT INTO role_dashboard_layouts (role_id, widgets_json, updated_by_staff_id)
+			 VALUES (?, '[]', 'stf_admin_01')
+			 ON CONFLICT(role_id) DO UPDATE SET widgets_json = excluded.widgets_json`,
+			r,
+		); err != nil {
+			return fmt.Errorf("role_dashboard_layouts insert failed for %s: %w", r, err)
 		}
 	}
 
@@ -454,7 +452,9 @@ func seedDomain01And03StaffGroupsAndPupils(tx *sql.Tx, st *qaSeedState) error {
 	formIdx := 0
 	for ygIdx, yg := range yearGroupSpecs {
 		hoyID := st.teacherStaffIDs[(ygIdx+3)%len(st.teacherStaffIDs)]
-		if _, err := tx.Exec(`INSERT INTO year_groups (id, nc_code, name, phase, key_stage, sequence_number, head_of_year_staff_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		if _, err := tx.Exec(`INSERT INTO year_groups (id, nc_code, name, phase, key_stage, sequence_number, head_of_year_staff_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET head_of_year_staff_id = excluded.head_of_year_staff_id`,
 			yg.id, yg.ncCode, yg.name, yg.phase, yg.ks, yg.seq, hoyID); err != nil {
 			return err
 		}

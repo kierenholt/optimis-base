@@ -202,25 +202,25 @@ func (d *CoreDAL) UpsertSessionAttendanceBatchScoped(
 	newSubID := "ars_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	_, err = tx.ExecContext(
 		ctx,
-		`INSERT INTO attendance_register_submissions (
-			id, group_id, date, session_or_slot_key, taken_by_staff_id
+		`INSERT INTO attendance_session_register_submissions (
+			id, group_id, date, session, taken_by_staff_id
 		) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(group_id, date, session_or_slot_key) DO UPDATE SET
+		ON CONFLICT(group_id, date, session) DO UPDATE SET
 			taken_by_staff_id = excluded.taken_by_staff_id,
 			taken_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
 		newSubID, in.GroupID, in.Date, in.Session, scope.StaffID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to upsert attendance_register_submissions row: %w", err)
+		return nil, fmt.Errorf("failed to upsert attendance_session_register_submissions row: %w", err)
 	}
 
 	var persistedSubID string
 	if err := tx.QueryRowContext(
 		ctx,
-		`SELECT id FROM attendance_register_submissions WHERE group_id = ? AND date = ? AND session_or_slot_key = ?`,
+		`SELECT id FROM attendance_session_register_submissions WHERE group_id = ? AND date = ? AND session = ?`,
 		in.GroupID, in.Date, in.Session,
 	).Scan(&persistedSubID); err != nil {
-		return nil, fmt.Errorf("failed to read attendance register submission ID: %w", err)
+		return nil, fmt.Errorf("failed to read attendance session register submission ID: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

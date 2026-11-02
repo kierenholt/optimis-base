@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 
+	"optimis/internal/dal"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -429,3 +431,310 @@ func TestDeleteTimetableSlotAndRecordSessionAttendance_ExistingMarksAndDuplicate
 		t.Fatalf("expected UNIQUE (pupil_id, date, session) to reject duplicate AM mark")
 	}
 }
+
+// 4. Split Dashboard Layouts Relational & Foreign Key Tests
+func TestDashboardLayouts_RoleAndStaffSplitTables_EnforcesForeignKeysAnd2DCoordinates_test(t *testing.T) {
+	h := setupCoreSchemaHarness(t)
+	seedBaseSchoolFixtures(t, h)
+
+	// 1. Valid insert into role_dashboard_layouts referencing roles(id) and staff(id)
+	_, err := h.writeDB.Exec(`
+		INSERT INTO roles (id, category, name, name_short)
+		VALUES ('TEACHER', 'STAFF', 'Classroom Teacher', 'TCH');
+
+		INSERT INTO role_dashboard_layouts (role_id, widgets_json, updated_by_staff_id)
+		VALUES ('TEACHER', '[{"plug_id":"test","widget_id":"attendance_pulse","col":1,"row":1}]', 'stf_teacher_1');
+	`)
+	if err != nil {
+		t.Fatalf("expected valid role_dashboard_layouts insert to succeed, got: %v", err)
+	}
+
+	// 2. Inserting role_dashboard_layouts with non-existent role_id MUST fail foreign key check
+	if _, err := h.writeDB.Exec(`
+		INSERT INTO role_dashboard_layouts (role_id, widgets_json, updated_by_staff_id)
+		VALUES ('NON_EXISTENT_ROLE', '[]', 'stf_teacher_1');
+	`); err == nil {
+		t.Fatalf("expected foreign key failure when inserting non-existent role_id, but insert succeeded")
+	}
+
+	// 3. Inserting role_dashboard_layouts with non-existent updated_by_staff_id MUST fail foreign key check
+	if _, err := h.writeDB.Exec(`
+		INSERT INTO role_dashboard_layouts (role_id, widgets_json, updated_by_staff_id)
+		VALUES ('TEACHER', '[]', 'stf_non_existent');
+	`); err == nil {
+		t.Fatalf("expected foreign key failure when inserting non-existent updated_by_staff_id, but insert succeeded")
+	}
+
+	// 4. Valid insert into staff_dashboard_layouts referencing staff(id)
+	_, err = h.writeDB.Exec(`
+		INSERT INTO staff_dashboard_layouts (staff_id, widgets_json, column_count, updated_by_staff_id)
+		VALUES ('stf_teacher_1', '[{"plug_id":"test","widget_id":"attendance_pulse","col":1,"row":1}]', 4, 'stf_teacher_1');
+	`)
+	if err != nil {
+		t.Fatalf("expected valid staff_dashboard_layouts insert to succeed, got: %v", err)
+	}
+
+	// 5. Inserting staff_dashboard_layouts with non-existent staff_id MUST fail foreign key check
+	if _, err := h.writeDB.Exec(`
+		INSERT INTO staff_dashboard_layouts (staff_id, widgets_json, column_count, updated_by_staff_id)
+		VALUES ('stf_non_existent', '[]', 4, 'stf_teacher_1');
+	`); err == nil {
+		t.Fatalf("expected foreign key failure when inserting non-existent staff_id, but insert succeeded")
+	}
+
+	// 6. Invalid column_count (< 2 or > 8) MUST fail CHECK constraint
+	if _, err := h.writeDB.Exec(`
+		INSERT INTO staff_dashboard_layouts (staff_id, widgets_json, column_count, updated_by_staff_id)
+		VALUES ('stf_dsl_1', '[]', 10, 'stf_dsl_1');
+	`); err == nil {
+		t.Fatalf("expected CHECK constraint failure for column_count=10, but insert succeeded")
+	}
+}
+
+// 5. Foreign Key Integrity Tests for Enrolments, Cover, and Split Staff Settings
+func TestSchemaForeignKeys_PupilEnrolmentsStaffCoverAndStaffPreferences_EnforcesForeignKeysAndCascades_test(t *testing.T) {
+	h := setupCoreSchemaHarness(t)
+	seedBaseSchoolFixtures(t, h)
+
+	// 1. Staff UI Preferences: valid insert
+	_, err := h.writeDB.Exec(`
+		INSERT INTO staff_ui_preferences (staff_id, base_font_size, theme_mode)
+		VALUES ('stf_teacher_1', 'large', 'high-contrast');
+	`)
+	if err != nil {
+		t.Fatalf("expected valid staff_ui_preferences insert to succeed, got: %v", err)
+	}
+
+	// 2. Staff UI Preferences: non-existent staff_id must fail FK
+	if _, err := h.writeDB.Exec(`
+		INSERT INTO staff_ui_preferences (staff_id, base_font_size, theme_mode)
+		VALUES ('stf_non_existent', 'medium', 'light');
+	`); err == nil {
+		t.Fatalf("expected FK violation for non-existent staff_id in staff_ui_preferences")
+	}
+
+	// 3. Staff UI Preferences: invalid CHECK constraints
+	if _, err := h.writeDB.Exec(`
+		INSERT INTO staff_ui_preferences (staff_id, base_font_size, theme_mode)
+		VALUES ('stf_dsl_1', 'huge', 'light');
+	`); err == nil {
+		t.Fatalf("expected CHECK violation for invalid base_font_size in staff_ui_preferences")
+	}
+
+	// 4. Staff Pinned Recents: valid insert
+	_, err = h.writeDB.Exec(`
+		INSERT INTO staff_pinned_recents (staff_id, pinned_recents_json)
+		VALUES ('stf_teacher_1', '[{"route":"/p/test","title":"Test View"}]');
+	`)
+	if err != nil {
+		t.Fatalf("expected valid staff_pinned_recents insert to succeed, got: %v", err)
+	}
+
+	// 5. Staff Pinned Recents: non-existent staff_id must fail FK
+	if _, err := h.writeDB.Exec(`
+		INSERT INTO staff_pinned_recents (staff_id, pinned_recents_json)
+		VALUES ('stf_non_existent', '[]');
+	`); err == nil {
+		t.Fatalf("expected FK violation for non-existent staff_id in staff_pinned_recents")
+	}
+
+	// 6. View staff_settings: verifies unified projection from split tables
+	var baseFontSize, themeMode, pinnedJSON string
+	err = h.readDB.QueryRow(`
+		SELECT base_font_size, theme_mode, pinned_recents_json
+		FROM staff_settings
+		WHERE staff_id = 'stf_teacher_1';
+	`).Scan(&baseFontSize, &themeMode, &pinnedJSON)
+	if err != nil {
+		t.Fatalf("failed to query staff_settings view: %v", err)
+	}
+	if baseFontSize != "large" || themeMode != "high-contrast" || !strings.Contains(pinnedJSON, "/p/test") {
+		t.Fatalf("unexpected view values: (%s, %s, %s)", baseFontSize, themeMode, pinnedJSON)
+	}
+
+	// 7. Cascade deletion: deleting staff removes staff_ui_preferences and staff_pinned_recents
+	_, err = h.writeDB.Exec(`
+		INSERT INTO persons (id, legal_first_name, legal_last_name, sex, status)
+		VALUES ('per_cascade_1', 'Temp', 'Staff', 'U', 'ACTIVE');
+		INSERT INTO staff (id, person_id, staff_type, job_title, hire_date)
+		VALUES ('stf_cascade_1', 'per_cascade_1', 'TEACHING', 'Temp', '2026-09-01');
+		INSERT INTO staff_ui_preferences (staff_id, base_font_size, theme_mode)
+		VALUES ('stf_cascade_1', 'small', 'light');
+		INSERT INTO staff_pinned_recents (staff_id, pinned_recents_json)
+		VALUES ('stf_cascade_1', '[]');
+	`)
+	if err != nil {
+		t.Fatalf("failed to seed cascade test records: %v", err)
+	}
+
+	if _, err := h.writeDB.Exec(`DELETE FROM staff WHERE id = 'stf_cascade_1';`); err != nil {
+		t.Fatalf("failed to delete staff for cascade test: %v", err)
+	}
+	var prefCount, pinCount int
+	_ = h.readDB.QueryRow(`SELECT COUNT(*) FROM staff_ui_preferences WHERE staff_id = 'stf_cascade_1'`).Scan(&prefCount)
+	_ = h.readDB.QueryRow(`SELECT COUNT(*) FROM staff_pinned_recents WHERE staff_id = 'stf_cascade_1'`).Scan(&pinCount)
+	if prefCount != 0 || pinCount != 0 {
+		t.Fatalf("expected ON DELETE CASCADE to remove preferences and pinned recents, got prefCount=%d, pinCount=%d", prefCount, pinCount)
+	}
+
+	// 8. Pupil Year Enrolments: nc_year_group FK enforcement
+	// Valid NC year group (e.g. '7', seeded in 03)
+	_, err = h.writeDB.Exec(`
+		INSERT INTO pupil_year_enrolments (id, pupil_id, academic_year_id, nc_year_group, effective_from)
+		VALUES ('enr_valid_nc', 'pup_1', 'ay_2026_2027', '7', '2026-09-01');
+	`)
+	if err != nil {
+		t.Fatalf("expected valid nc_year_group insert to succeed, got: %v", err)
+	}
+
+	// Invalid NC year group ('99') must fail FK
+	if _, err := h.writeDB.Exec(`
+		INSERT INTO pupil_year_enrolments (id, pupil_id, academic_year_id, nc_year_group, effective_from)
+		VALUES ('enr_invalid_nc', 'pup_1', 'ay_2026_2027', '99', '2026-09-01');
+	`); err == nil {
+		t.Fatalf("expected FK violation for non-existent nc_year_group '99'")
+	}
+
+	// 9. Pupil Year Enrolments: registration_group_id and house_id FK enforcement
+	_, err = h.writeDB.Exec(`
+		INSERT INTO houses (id, name, name_short) VALUES ('house_phoenix', 'Phoenix House', 'PHX');
+		INSERT INTO groups (id, academic_year_id, group_type, code, name, effective_from)
+		VALUES ('grp_reg_7a', 'ay_2026_2027', 'REGISTRATION_FORM', '7A', 'Form 7A', '2026-09-01');
+	`)
+	if err != nil {
+		t.Fatalf("failed to seed houses and groups: %v", err)
+	}
+
+	// Valid registration_group_id and house_id
+	_, err = h.writeDB.Exec(`
+		INSERT INTO pupil_year_enrolments (id, pupil_id, academic_year_id, nc_year_group, registration_group_id, house_id, effective_from)
+		VALUES ('enr_with_group_house', 'pup_1', 'ay_2026_2027', '7', 'grp_reg_7a', 'house_phoenix', '2026-09-02');
+	`)
+	if err != nil {
+		t.Fatalf("expected valid registration_group_id and house_id insert to succeed, got: %v", err)
+	}
+
+	// Non-existent registration_group_id must fail FK
+	if _, err := h.writeDB.Exec(`
+		INSERT INTO pupil_year_enrolments (id, pupil_id, academic_year_id, nc_year_group, registration_group_id, effective_from)
+		VALUES ('enr_bad_group', 'pup_1', 'ay_2026_2027', '7', 'grp_non_existent', '2026-09-03');
+	`); err == nil {
+		t.Fatalf("expected FK violation for non-existent registration_group_id")
+	}
+
+	// Non-existent house_id must fail FK
+	if _, err := h.writeDB.Exec(`
+		INSERT INTO pupil_year_enrolments (id, pupil_id, academic_year_id, nc_year_group, house_id, effective_from)
+		VALUES ('enr_bad_house', 'pup_1', 'ay_2026_2027', '7', 'house_non_existent', '2026-09-04');
+	`); err == nil {
+		t.Fatalf("expected FK violation for non-existent house_id")
+	}
+
+	// 10. Staff Cover Assignments: timetable_slot_id FK enforcement
+	_, err = h.writeDB.Exec(`
+		INSERT INTO timetable_periods (
+			id, academic_year_id, cycle_week, day_of_week_id, period_code, name,
+			start_time, end_time, period_type, sequence_number
+		) VALUES (
+			'ttp_p1', 'ay_2026_2027', 1, 1, 'P1', 'Period 1', '09:00', '10:00', 'LESSON', 2
+		);
+		INSERT INTO timetable_slots (id, timetable_period_id, group_id, staff_id, effective_from)
+		VALUES ('slot_p1_7a', 'ttp_p1', 'grp_reg_7a', 'stf_teacher_1', '2026-09-01');
+		INSERT INTO staff_absences (id, staff_id, academic_year_id, absence_category_code, start_date, end_date)
+		VALUES ('abs_test_1', 'stf_teacher_1', 'ay_2026_2027', 'SICK', '2026-10-01', '2026-10-01');
+	`)
+	if err != nil {
+		t.Fatalf("failed to seed timetable_slots and staff_absences: %v", err)
+	}
+
+	// Valid timetable_slot_id
+	_, err = h.writeDB.Exec(`
+		INSERT INTO staff_cover_assignments (id, staff_absence_id, timetable_slot_id, date, absent_staff_id, status)
+		VALUES ('cov_valid', 'abs_test_1', 'slot_p1_7a', '2026-10-01', 'stf_teacher_1', 'REQUESTED');
+	`)
+	if err != nil {
+		t.Fatalf("expected valid timetable_slot_id insert to succeed, got: %v", err)
+	}
+
+	// Non-existent timetable_slot_id must fail FK
+	if _, err := h.writeDB.Exec(`
+		INSERT INTO staff_cover_assignments (id, staff_absence_id, timetable_slot_id, date, absent_staff_id, status)
+		VALUES ('cov_bad_slot', 'abs_test_1', 'slot_non_existent', '2026-10-01', 'stf_teacher_1', 'REQUESTED');
+	`); err == nil {
+		t.Fatalf("expected FK violation for non-existent timetable_slot_id in staff_cover_assignments")
+	}
+}
+
+func TestInitSchema_LegacyDashboardLayoutsAndAttendanceSubmissionsWithOrphanedForeignKeys_MigratesCleanlyWithoutForeignKeyFailure_test(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "core.db")
+
+	// 1. Bootstrap a normal core.db first
+	dal1, err := dal.NewCoreDALWithPath(tempDir, "100001", dbPath)
+	if err != nil {
+		t.Fatalf("initial NewCoreDALWithPath failed: %v", err)
+	}
+
+	// 2. Simulate a pre-migration core.db state where dashboard_layouts and attendance_register_submissions
+	// were physical tables containing orphaned staff_id / role_id / group_id references from deleted test fixtures
+	_, err = dal1.WriteDB().Exec(`
+		INSERT OR IGNORE INTO roles (id, category, name, name_short, description)
+		VALUES ('TEACHER', 'STAFF', 'Classroom Teacher', 'TCH', 'Classroom Teacher');
+
+		DROP VIEW IF EXISTS dashboard_layouts;
+		DROP TABLE IF EXISTS role_dashboard_layouts;
+		DROP TABLE IF EXISTS staff_dashboard_layouts;
+		CREATE TABLE dashboard_layouts (
+			scope_type TEXT NOT NULL,
+			scope_target TEXT NOT NULL,
+			widgets_json TEXT NOT NULL DEFAULT '[]',
+			column_count INTEGER NOT NULL DEFAULT 4,
+			updated_by_staff_id TEXT NOT NULL DEFAULT '',
+			updated_at TEXT NOT NULL DEFAULT '2026-10-28T10:00:00Z',
+			PRIMARY KEY (scope_type, scope_target)
+		);
+		INSERT INTO dashboard_layouts (scope_type, scope_target, widgets_json, column_count, updated_by_staff_id)
+		VALUES
+			('ROLE_DEFAULT', 'TEACHER', '[{"plug_id":"test0001","widget_id":"w1"}]', 4, 'stf_deleted_fixture_admin'),
+			('ROLE_DEFAULT', 'NON_EXISTENT_ROLE', '[]', 4, ''),
+			('STAFF', 'stf_deleted_fixture_teacher', '[]', 4, 'stf_deleted_fixture_teacher');
+
+		DROP VIEW IF EXISTS attendance_register_submissions;
+		DROP TABLE IF EXISTS attendance_session_register_submissions;
+		DROP TABLE IF EXISTS attendance_lesson_register_submissions;
+		CREATE TABLE attendance_register_submissions (
+			id TEXT PRIMARY KEY,
+			group_id TEXT NOT NULL,
+			date TEXT NOT NULL,
+			session_or_slot_key TEXT NOT NULL,
+			taken_by_staff_id TEXT NOT NULL,
+			taken_at TEXT NOT NULL DEFAULT '2026-10-28T09:00:00Z'
+		);
+		INSERT INTO attendance_register_submissions (id, group_id, date, session_or_slot_key, taken_by_staff_id)
+		VALUES
+			('sub_orphaned_1', 'grp_deleted_fixture', '2026-10-28', 'AM', 'stf_deleted_fixture'),
+			('sub_orphaned_2', 'grp_deleted_fixture', '2026-10-28', 'slot_deleted_fixture', 'stf_deleted_fixture');
+	`)
+	if err != nil {
+		_ = dal1.Close()
+		t.Fatalf("failed to seed legacy tables: %v", err)
+	}
+	_ = dal1.Close()
+
+	// 3. Re-open CoreDAL over the same core.db and verify initSchema migrates without FK error (787)
+	dal2, err := dal.NewCoreDALWithPath(tempDir, "100001", dbPath)
+	if err != nil {
+		t.Fatalf("expected NewCoreDALWithPath to migrate legacy tables with orphaned FKs cleanly, got: %v", err)
+	}
+	defer func() {
+		_ = dal2.Close()
+	}()
+
+	items, found, err := dal2.GetRoleDefaultDashboardLayout(t.Context(), "TEACHER")
+	if err != nil || !found || len(items) != 1 {
+		t.Fatalf("expected valid TEACHER role default layout to be preserved with NULL updated_by_staff_id, got found=%v items=%+v err=%v", found, items, err)
+	}
+}
+
+
+

@@ -96,6 +96,11 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
     });
     await request.delete('/api/test/egress-mock');
     if (seeded?.active_pupil_id && testPlugId) {
+      if (seeded?.dsl_staff_id) {
+        await request.post('/api/auth/persona', {
+          data: { staff_id: seeded.dsl_staff_id },
+        });
+      }
       await request.post(`/api/p/${testPlugId}/rpc/purge_pupil_data`, {
         data: { args: { pupil_id: seeded.active_pupil_id } },
       });
@@ -187,7 +192,7 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
       reference_date: seeded.reference_date,
       academic_year_id: seeded.academic_year_id,
     });
-    await page.goto(`/?${query.toString()}`);
+    await page.goto(`/p/${testPlugId}?${query.toString()}`);
 
     const hostShell = page.getByTestId('host-shell');
     await expect(hostShell).toBeVisible();
@@ -236,7 +241,7 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
       reference_date: seeded.reference_date,
       academic_year_id: seeded.academic_year_id,
     });
-    await page.goto(`/?${query.toString()}`);
+    await page.goto(`/p/${testPlugId}?${query.toString()}`);
 
     const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${testPlugId}"]`);
     const syncGetBtn = pluginFrame.getByTestId('egress-sync-get-btn');
@@ -305,6 +310,9 @@ test.describe('Real & Mock ctx.http Egress Engine (Sections 4, 9.2 & 10.1)', () 
     expect(writeTxBody.error_code).toContain('disallowed inside an open SQLite write transaction');
 
     // 4. Verify the uncommitted note was rolled back in plugin_test.db
+    await request.post('/api/auth/persona', {
+      data: { staff_id: seeded.dsl_staff_id },
+    });
     const listRes = await request.post(`/api/p/${testPlugId}/rpc/list_pupil_notes`, {
       data: {
         args: {

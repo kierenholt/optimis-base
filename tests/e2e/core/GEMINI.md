@@ -7,7 +7,7 @@ This directory contains sequential Playwright E2E integration suites for the Opt
 ## E2E Spec Files
 
 * [`core_schema_functional.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/core/core_schema_functional.spec.ts):
-  * Verifies end-to-end 46-table Core Schema invariants through the Host UI Shell and sandboxed plugin iframe.
+  * Verifies end-to-end 48-table Core Schema invariants through the Host UI Shell and sandboxed plugin iframe, as well as split staff settings persistence (`staff_ui_preferences` and `staff_pinned_recents`) and foreign key constraints across enrolments, cover assignments, and staff preferences.
 * [`milestone1_core_dal_scoping.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/core/milestone1_core_dal_scoping.spec.ts):
   * Verifies coarse-grained Core DAL methods (`get_group_roster_summary`, `get_pupil_guardians`, `record_group_am_attendance`, `submit_safeguarding_postbox`), `:own_groups` temporal isolation, court-order/confidential refuge address redaction, and write-only safeguarding postbox submission.
 * [`event_bus_worker_subscriptions.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/core/event_bus_worker_subscriptions.spec.ts):

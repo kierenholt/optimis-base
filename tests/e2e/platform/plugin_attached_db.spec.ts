@@ -120,7 +120,7 @@ test.describe('Per-Plugin Attached SQLite (plugin_test.db) & Migration Snapshots
     page,
     request,
   }) => {
-    await page.goto(`/?pupil_id=${encodeURIComponent(seededPupilId)}`);
+    await page.goto(`/p/${testPlugId}?pupil_id=${encodeURIComponent(seededPupilId)}`);
 
     const hostShell = page.getByTestId('host-shell');
     await expect(hostShell).toBeVisible();

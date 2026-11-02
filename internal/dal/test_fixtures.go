@@ -441,7 +441,11 @@ func (d *CoreDAL) DeleteMilestone1Fixtures(ctx context.Context, fixtureID string
 			args: []any{activePupilID, secondActivePupilID, transPupilID, otherPupilID},
 		},
 		{
-			sql:  `DELETE FROM attendance_register_submissions WHERE group_id IN (?, ?)`,
+			sql:  `DELETE FROM attendance_session_register_submissions WHERE group_id IN (?, ?)`,
+			args: []any{ownGroupID, otherGroupID},
+		},
+		{
+			sql:  `DELETE FROM attendance_lesson_register_submissions WHERE group_id IN (?, ?)`,
 			args: []any{ownGroupID, otherGroupID},
 		},
 		{

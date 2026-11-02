@@ -1,6 +1,6 @@
 local function build_pupil_sen_rollup(ctx, pupil, sen_summary)
   local rows = ctx.plugin_db.query(
-    [[SELECT id, pupil_id, academic_year_id, sen_provision_code, primary_sen_need_code,
+    [[SELECT id, pupil_id, academic_year_id,
              iep_target, classroom_adjustment, ta_allocation_hours, assigned_ta_name,
              review_notes, logged_by_staff_id, effective_date, created_at
       FROM plugin_sen_provision.sen_provisions
@@ -14,7 +14,13 @@ local function build_pupil_sen_rollup(ctx, pupil, sen_summary)
   local latest_classroom_adjustment = ""
   local latest_assigned_ta_name = ""
 
+  local src = sen_summary or pupil
+  local prov_code = (src and src.sen_provision_code) or "N"
+  local need_code = (src and src.primary_sen_need_code) or ""
+
   for i = 1, #rows do
+    rows[i].sen_provision_code = prov_code
+    rows[i].primary_sen_need_code = need_code
     local hrs = tonumber(rows[i].ta_allocation_hours) or 0
     total_ta_hours = total_ta_hours + hrs
     latest_iep_target = rows[i].iep_target or ""
@@ -24,9 +30,6 @@ local function build_pupil_sen_rollup(ctx, pupil, sen_summary)
 
   local first_name = pupil.preferred_first_name or pupil.first_name or ""
   local last_name = pupil.preferred_last_name or pupil.last_name or ""
-  local src = sen_summary or pupil
-  local prov_code = (src and src.sen_provision_code) or "N"
-  local need_code = (src and src.primary_sen_need_code) or ""
   local sec_need_code = (src and src.secondary_sen_need_code) or ""
   local strategies = (src and src.teaching_strategies) or ""
   local pupil_targets = (src and src.pupil_targets) or ""
@@ -147,16 +150,14 @@ function log_iep_provision(ctx, args)
 
   ctx.plugin_db.exec(
     [[INSERT INTO plugin_sen_provision.sen_provisions (
-        id, pupil_id, academic_year_id, sen_provision_code, primary_sen_need_code,
+        id, pupil_id, academic_year_id,
         iep_target, classroom_adjustment, ta_allocation_hours, assigned_ta_name,
         review_notes, logged_by_staff_id, effective_date, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
     {
       provision_id,
       pupil.id,
       ay_id,
-      prov_code,
-      sen_summary.primary_sen_need_code or "",
       args.iep_target,
       args.classroom_adjustment,
       ta_hours,
@@ -273,7 +274,7 @@ function export_pupil_data(ctx, args)
   end
 
   local rows = ctx.plugin_db.query(
-    [[SELECT id, pupil_id, academic_year_id, sen_provision_code, primary_sen_need_code,
+    [[SELECT id, pupil_id, academic_year_id,
              iep_target, classroom_adjustment, ta_allocation_hours, assigned_ta_name,
              review_notes, logged_by_staff_id, effective_date, created_at
       FROM plugin_sen_provision.sen_provisions

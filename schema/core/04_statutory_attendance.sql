@@ -87,16 +87,68 @@ CREATE INDEX IF NOT EXISTS idx_att_lesson_staff ON attendance_lesson_marks(recor
 
 -- @domain: attendance
 -- @dal_scope: dal.attendance.read | dal.attendance.write
--- @description: Audit log of completed session/lesson registers (for missing-register alerts)
--- @gibbon_ref: gibbonAttendanceLogFormGroup, gibbonAttendanceLogCourseClass
-CREATE TABLE IF NOT EXISTS attendance_register_submissions (
+-- @description: Audit log of completed statutory roll-call session registers (AM / PM)
+-- @gibbon_ref: gibbonAttendanceLogFormGroup
+CREATE TABLE IF NOT EXISTS attendance_session_register_submissions (
     id TEXT PRIMARY KEY,
     group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE RESTRICT,
     date TEXT NOT NULL,
-    session_or_slot_key TEXT NOT NULL,                -- 'AM', 'PM', or `timetable_slot_id`
+    session TEXT NOT NULL CHECK (session IN ('AM', 'PM')),
     taken_by_staff_id TEXT NOT NULL REFERENCES staff(id) ON DELETE RESTRICT,
     taken_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    UNIQUE (group_id, date, session_or_slot_key)
+    UNIQUE (group_id, date, session)
 );
-CREATE INDEX IF NOT EXISTS idx_att_submissions_date ON attendance_register_submissions(date, group_id);
-CREATE INDEX IF NOT EXISTS idx_att_submissions_staff ON attendance_register_submissions(taken_by_staff_id);
+CREATE INDEX IF NOT EXISTS idx_att_sess_submissions_date ON attendance_session_register_submissions(date, group_id);
+CREATE INDEX IF NOT EXISTS idx_att_sess_submissions_staff ON attendance_session_register_submissions(taken_by_staff_id);
+
+-- @domain: attendance
+-- @dal_scope: dal.attendance.read | dal.attendance.write
+-- @description: Audit log of completed timetable lesson/period registers
+-- @gibbon_ref: gibbonAttendanceLogCourseClass
+CREATE TABLE IF NOT EXISTS attendance_lesson_register_submissions (
+    id TEXT PRIMARY KEY,
+    group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE RESTRICT,
+    timetable_slot_id TEXT NOT NULL REFERENCES timetable_slots(id) ON DELETE RESTRICT,
+    date TEXT NOT NULL,
+    taken_by_staff_id TEXT NOT NULL REFERENCES staff(id) ON DELETE RESTRICT,
+    taken_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    UNIQUE (group_id, timetable_slot_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_att_less_submissions_date ON attendance_lesson_register_submissions(date, group_id);
+CREATE INDEX IF NOT EXISTS idx_att_less_submissions_slot ON attendance_lesson_register_submissions(timetable_slot_id, date);
+CREATE INDEX IF NOT EXISTS idx_att_less_submissions_staff ON attendance_lesson_register_submissions(taken_by_staff_id);
+
+-- @domain: attendance
+-- @description: Unified backwards-compatible read/audit view combining session and lesson registers
+CREATE VIEW IF NOT EXISTS attendance_register_submissions AS
+SELECT
+    id,
+    'SESSION' AS submission_type,
+    group_id,
+    date,
+    session AS session_or_slot_key,
+    session,
+    NULL AS timetable_slot_id,
+    taken_by_staff_id,
+    taken_at
+FROM attendance_session_register_submissions
+UNION ALL
+SELECT
+    id,
+    'LESSON' AS submission_type,
+    group_id,
+    date,
+    timetable_slot_id AS session_or_slot_key,
+    NULL AS session,
+    timetable_slot_id,
+    taken_by_staff_id,
+    taken_at
+FROM attendance_lesson_register_submissions;
+
+CREATE TRIGGER IF NOT EXISTS trg_att_reg_submissions_delete
+INSTEAD OF DELETE ON attendance_register_submissions
+BEGIN
+    DELETE FROM attendance_session_register_submissions WHERE id = OLD.id;
+    DELETE FROM attendance_lesson_register_submissions WHERE id = OLD.id;
+END;
+

@@ -142,22 +142,22 @@ func (d *CoreDAL) UpsertLessonAttendanceBatchScoped(
 	newSubID := "ars_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	if _, err := tx.ExecContext(
 		ctx,
-		`INSERT INTO attendance_register_submissions (
-			id, group_id, date, session_or_slot_key, taken_by_staff_id
+		`INSERT INTO attendance_lesson_register_submissions (
+			id, group_id, timetable_slot_id, date, taken_by_staff_id
 		) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(group_id, date, session_or_slot_key) DO UPDATE SET
+		ON CONFLICT(group_id, timetable_slot_id, date) DO UPDATE SET
 			taken_by_staff_id = excluded.taken_by_staff_id,
 			taken_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
-		newSubID, groupID, date, slotID, scope.StaffID,
+		newSubID, groupID, slotID, date, scope.StaffID,
 	); err != nil {
-		return nil, fmt.Errorf("failed to upsert lesson attendance_register_submissions row: %w", err)
+		return nil, fmt.Errorf("failed to upsert lesson attendance_lesson_register_submissions row: %w", err)
 	}
 
 	var persistedSubID string
 	if err := tx.QueryRowContext(
 		ctx,
-		`SELECT id FROM attendance_register_submissions WHERE group_id = ? AND date = ? AND session_or_slot_key = ?`,
-		groupID, date, slotID,
+		`SELECT id FROM attendance_lesson_register_submissions WHERE group_id = ? AND timetable_slot_id = ? AND date = ?`,
+		groupID, slotID, date,
 	).Scan(&persistedSubID); err != nil {
 		return nil, fmt.Errorf("failed to read lesson attendance register submission ID: %w", err)
 	}
@@ -178,8 +178,11 @@ func (d *CoreDAL) UpsertLessonAttendanceBatchScoped(
 type AttendanceRegisterSubmissionSummary struct {
 	ID               string `json:"id"`
 	SubmissionID     string `json:"submission_id"`
+	SubmissionType   string `json:"submission_type"`
 	GroupID          string `json:"group_id"`
 	Date             string `json:"date"`
+	Session          string `json:"session,omitempty"`
+	TimetableSlotID  string `json:"timetable_slot_id,omitempty"`
 	SessionOrSlotKey string `json:"session_or_slot_key"`
 	TakenByStaffID   string `json:"taken_by_staff_id"`
 	TakenAt          string `json:"taken_at"`
@@ -202,7 +205,7 @@ func (d *CoreDAL) ListAttendanceRegisterSubmissionsScoped(
 	}
 
 	query := `
-		SELECT ars.id, ars.group_id, ars.date, ars.session_or_slot_key, ars.taken_by_staff_id, COALESCE(ars.taken_at, '')
+		SELECT ars.id, ars.submission_type, ars.group_id, ars.date, COALESCE(ars.session, ''), COALESCE(ars.timetable_slot_id, ''), ars.session_or_slot_key, ars.taken_by_staff_id, COALESCE(ars.taken_at, '')
 		FROM attendance_register_submissions ars
 		WHERE 1=1`
 	var args []any
@@ -236,7 +239,7 @@ func (d *CoreDAL) ListAttendanceRegisterSubmissionsScoped(
 	result := make([]AttendanceRegisterSubmissionSummary, 0)
 	for rows.Next() {
 		var r AttendanceRegisterSubmissionSummary
-		if err := rows.Scan(&r.ID, &r.GroupID, &r.Date, &r.SessionOrSlotKey, &r.TakenByStaffID, &r.TakenAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.SubmissionType, &r.GroupID, &r.Date, &r.Session, &r.TimetableSlotID, &r.SessionOrSlotKey, &r.TakenByStaffID, &r.TakenAt); err != nil {
 			return nil, fmt.Errorf("failed to scan attendance_register_submissions row: %w", err)
 		}
 		r.SubmissionID = r.ID

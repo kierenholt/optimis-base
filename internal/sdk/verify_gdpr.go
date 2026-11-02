@@ -85,25 +85,59 @@ func verifyGDPRHooksZeroOrphans(pluginDir string, manifest *host.Manifest) error
 	const syntheticPupilID = "pup_verify_gdpr_01"
 	var pupilTables []string
 
+	tableMap := make(map[string]tableDDL, len(tables))
+	colsMap := make(map[string][]columnMeta, len(tables))
+	fkMap := make(map[string]map[string]string, len(tables))
+
 	for _, tbl := range tables {
+		tableMap[tbl.name] = tbl
 		cols, err := inspectTableColumns(ctx, writeDB, alias, tbl.name)
 		if err != nil {
 			return err
 		}
-		hasPupilID := false
+		colsMap[tbl.name] = cols
+
+		fks, err := inspectTableForeignKeys(ctx, writeDB, alias, tbl.name)
+		if err != nil {
+			return err
+		}
+		fkMap[tbl.name] = fks
+
 		for _, c := range cols {
 			if strings.EqualFold(c.Name, "pupil_id") {
-				hasPupilID = true
+				pupilTables = append(pupilTables, tbl.name)
 				break
 			}
 		}
-		if !hasPupilID {
-			continue
-		}
-		pupilTables = append(pupilTables, tbl.name)
+	}
 
-		if err := insertSyntheticPupilRow(ctx, writeDB, alias, tbl.name, tbl.ddl, cols, syntheticPupilID); err != nil {
+	seededTables := make(map[string]bool, len(tables))
+	var ensureTableSeeded func(tableName string) error
+	ensureTableSeeded = func(tableName string) error {
+		if seededTables[tableName] {
+			return nil
+		}
+		tbl, ok := tableMap[tableName]
+		if !ok {
+			return nil
+		}
+		for _, parentTable := range fkMap[tableName] {
+			if parentTable != "" && parentTable != tableName {
+				if err := ensureTableSeeded(parentTable); err != nil {
+					return err
+				}
+			}
+		}
+		if err := insertSyntheticPupilRow(ctx, writeDB, alias, tbl.name, tbl.ddl, colsMap[tableName], fkMap[tableName], syntheticPupilID); err != nil {
 			return fmt.Errorf("failed to seed synthetic GDPR row in %s.%s: %w", alias, tbl.name, err)
+		}
+		seededTables[tableName] = true
+		return nil
+	}
+
+	for _, tblName := range pupilTables {
+		if err := ensureTableSeeded(tblName); err != nil {
+			return err
 		}
 	}
 
@@ -147,6 +181,25 @@ func verifyGDPRHooksZeroOrphans(pluginDir string, manifest *host.Manifest) error
 	return nil
 }
 
+func inspectTableForeignKeys(ctx context.Context, db *sql.DB, alias string, table string) (map[string]string, error) {
+	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA %s.foreign_key_list(%s)", alias, table))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	fks := make(map[string]string)
+	for rows.Next() {
+		var id, seq int
+		var refTable, from, to, onUpdate, onDelete, match string
+		if err := rows.Scan(&id, &seq, &refTable, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+			return nil, err
+		}
+		fks[strings.ToLower(from)] = refTable
+	}
+	return fks, rows.Err()
+}
+
 func inspectTableColumns(ctx context.Context, db *sql.DB, alias string, table string) ([]columnMeta, error) {
 	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA %s.table_info(%s)", alias, table))
 	if err != nil {
@@ -178,7 +231,7 @@ func extractCheckAllowedValue(ddl string, colName string) (string, bool) {
 	return "", false
 }
 
-func insertSyntheticPupilRow(ctx context.Context, db *sql.DB, alias string, table string, ddl string, cols []columnMeta, pupilID string) error {
+func insertSyntheticPupilRow(ctx context.Context, db *sql.DB, alias string, table string, ddl string, cols []columnMeta, fks map[string]string, pupilID string) error {
 	var colNames []string
 	var placeholders []string
 	var args []any
@@ -194,6 +247,16 @@ func insertSyntheticPupilRow(ctx context.Context, db *sql.DB, alias string, tabl
 
 		colNames = append(colNames, c.Name)
 		placeholders = append(placeholders, "?")
+
+		if parentTable, isFK := fks[lowerName]; isFK && parentTable != "" {
+			args = append(args, fmt.Sprintf("syn_fk_%s", parentTable))
+			continue
+		}
+
+		if c.PK > 0 && lowerName != "pupil_id" {
+			args = append(args, fmt.Sprintf("syn_fk_%s", table))
+			continue
+		}
 
 		if checkVal, ok := extractCheckAllowedValue(ddl, c.Name); ok {
 			args = append(args, checkVal)

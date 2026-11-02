@@ -3,7 +3,6 @@ package host
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -255,51 +254,41 @@ func (h *Host) ensurePluginInstanceID(ctx context.Context, manifestID string) (s
 	if trimmedManifestID == "" {
 		return "", errors.New("missing mandatory manifestID for instance plug_id")
 	}
-	configKey := "plugin_instance_id." + trimmedManifestID
 
+	// 1. Check existing record in dedicated installed_plugins relational table
+	rec, err := h.coreDAL.GetInstalledPlugin(ctx, trimmedManifestID)
+	if err == nil && opaquePlugIDPattern.MatchString(rec.PlugID) {
+		return rec.PlugID, nil
+	}
+
+	// 2. Fallback check for legacy __system_config key during transition
+	configKey := "plugin_instance_id." + trimmedManifestID
 	var existing string
-	err := h.coreDAL.ReadDB().QueryRowContext(
+	if err := h.coreDAL.ReadDB().QueryRowContext(
 		ctx,
 		`SELECT value FROM __system_config WHERE key = ?`,
 		configKey,
-	).Scan(&existing)
-	if err == nil {
+	).Scan(&existing); err == nil {
 		trimmedExisting := strings.TrimSpace(existing)
 		if opaquePlugIDPattern.MatchString(trimmedExisting) {
 			return trimmedExisting, nil
 		}
 	}
 
+	// 3. Allocate a collision-free 8-char random plug_id using installed_plugins index
 	for attempt := 0; attempt < 16; attempt++ {
 		candidate, genErr := generateRandomPlugID()
 		if genErr != nil {
 			return "", genErr
 		}
-		var conflictKey string
-		cErr := h.coreDAL.ReadDB().QueryRowContext(
-			ctx,
-			`SELECT key FROM __system_config WHERE key LIKE 'plugin_instance_id.%' AND value = ? AND key != ? LIMIT 1`,
-			candidate,
-			configKey,
-		).Scan(&conflictKey)
-		if cErr != nil && !errors.Is(cErr, sql.ErrNoRows) {
+		allocated, cErr := h.coreDAL.IsPlugIDAllocated(ctx, candidate, trimmedManifestID)
+		if cErr != nil {
 			return "", fmt.Errorf("failed to check plug_id collision: %w", cErr)
 		}
-		if conflictKey != "" {
+		if allocated {
 			continue
 		}
 
-		_, execErr := h.coreDAL.WriteDB().ExecContext(
-			ctx,
-			`INSERT INTO __system_config (key, value, updated_at)
-			 VALUES (?, ?, CURRENT_TIMESTAMP)
-			 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
-			configKey,
-			candidate,
-		)
-		if execErr != nil {
-			return "", fmt.Errorf("failed to persist opaque plug_id in __system_config: %w", execErr)
-		}
 		return candidate, nil
 	}
 	return "", errors.New("failed to allocate unique opaque plug_id after 16 attempts")

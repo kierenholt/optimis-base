@@ -190,27 +190,23 @@ function on_membership_changed(ctx, args)
     end
   end
 
-  local log_id = "lms_log_" .. ctx.crypto.uuid()
+  local run_id = "lms_run_" .. ctx.crypto.uuid()
+  local entry_id = "lms_log_" .. ctx.crypto.uuid()
   local synced_at = ctx.clock.now_utc()
 
-  -- 3. Persist sync status audit record into plugin_lms_sync.db
+  -- 3. Persist normalized group sync run and pupil membership entry into plugin_lms_sync.db
   ctx.plugin_db.exec(
-    [[INSERT INTO plugin_lms_sync.lms_sync_logs (
-        id, event_name, hop, membership_id, group_id, pupil_id,
-        academic_year_id, effective_from, effective_to, roster_count,
+    [[INSERT INTO plugin_lms_sync.lms_sync_runs (
+        id, event_name, hop, group_id, academic_year_id, roster_count,
         target_url, http_status, status, external_sync_id,
-        caller_type, caller_staff_id, sync_notes, synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
+        caller_type, caller_staff_id, synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
     {
-      log_id,
+      run_id,
       event_name,
       hop,
-      membership_id,
       group_id,
-      pupil_id,
       academic_year_id,
-      effective_from,
-      effective_to,
       #roster,
       CLASSROOM_SYNC_URL,
       http_status,
@@ -218,6 +214,22 @@ function on_membership_changed(ctx, args)
       external_sync_id,
       ctx.caller.type or "SYSTEM",
       ctx.caller.staff_id or "",
+      synced_at
+    }
+  )
+
+  ctx.plugin_db.exec(
+    [[INSERT INTO plugin_lms_sync.lms_sync_pupil_entries (
+        id, sync_run_id, pupil_id, membership_id,
+        effective_from, effective_to, sync_notes, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)]],
+    {
+      entry_id,
+      run_id,
+      pupil_id,
+      membership_id,
+      effective_from,
+      effective_to,
       sync_notes,
       synced_at
     }
@@ -226,7 +238,8 @@ function on_membership_changed(ctx, args)
   return {
     ok = true,
     data = {
-      log_id = log_id,
+      log_id = entry_id,
+      run_id = run_id,
       status = sync_status,
       http_status = http_status,
       external_sync_id = external_sync_id,
@@ -238,6 +251,15 @@ function on_membership_changed(ctx, args)
   }
 end
 
+local LMS_JOIN_SELECT = [[
+  SELECT e.id, r.event_name, r.hop, e.membership_id, r.group_id, e.pupil_id,
+         r.academic_year_id, e.effective_from, e.effective_to, r.roster_count,
+         r.target_url, r.http_status, r.status, r.external_sync_id,
+         r.caller_type, r.caller_staff_id, e.sync_notes, r.synced_at
+  FROM plugin_lms_sync.lms_sync_pupil_entries e
+  INNER JOIN plugin_lms_sync.lms_sync_runs r ON r.id = e.sync_run_id
+]]
+
 function list_sync_logs(ctx, args)
   local pupil_id = args.pupil_id or ""
   local group_id = args.group_id or ""
@@ -245,45 +267,22 @@ function list_sync_logs(ctx, args)
   local rows
   if pupil_id ~= "" and group_id ~= "" then
     rows = ctx.plugin_db.query(
-      [[SELECT id, event_name, hop, membership_id, group_id, pupil_id,
-               academic_year_id, effective_from, effective_to, roster_count,
-               target_url, http_status, status, external_sync_id,
-               caller_type, caller_staff_id, sync_notes, synced_at
-        FROM plugin_lms_sync.lms_sync_logs
-        WHERE pupil_id = ? AND group_id = ?
-        ORDER BY synced_at DESC, id DESC]],
+      LMS_JOIN_SELECT .. " WHERE e.pupil_id = ? AND r.group_id = ? ORDER BY r.synced_at DESC, e.id DESC",
       { pupil_id, group_id }
     )
   elseif pupil_id ~= "" then
     rows = ctx.plugin_db.query(
-      [[SELECT id, event_name, hop, membership_id, group_id, pupil_id,
-               academic_year_id, effective_from, effective_to, roster_count,
-               target_url, http_status, status, external_sync_id,
-               caller_type, caller_staff_id, sync_notes, synced_at
-        FROM plugin_lms_sync.lms_sync_logs
-        WHERE pupil_id = ?
-        ORDER BY synced_at DESC, id DESC]],
+      LMS_JOIN_SELECT .. " WHERE e.pupil_id = ? ORDER BY r.synced_at DESC, e.id DESC",
       { pupil_id }
     )
   elseif group_id ~= "" then
     rows = ctx.plugin_db.query(
-      [[SELECT id, event_name, hop, membership_id, group_id, pupil_id,
-               academic_year_id, effective_from, effective_to, roster_count,
-               target_url, http_status, status, external_sync_id,
-               caller_type, caller_staff_id, sync_notes, synced_at
-        FROM plugin_lms_sync.lms_sync_logs
-        WHERE group_id = ?
-        ORDER BY synced_at DESC, id DESC]],
+      LMS_JOIN_SELECT .. " WHERE r.group_id = ? ORDER BY r.synced_at DESC, e.id DESC",
       { group_id }
     )
   else
     rows = ctx.plugin_db.query(
-      [[SELECT id, event_name, hop, membership_id, group_id, pupil_id,
-               academic_year_id, effective_from, effective_to, roster_count,
-               target_url, http_status, status, external_sync_id,
-               caller_type, caller_staff_id, sync_notes, synced_at
-        FROM plugin_lms_sync.lms_sync_logs
-        ORDER BY synced_at DESC, id DESC]],
+      LMS_JOIN_SELECT .. " ORDER BY r.synced_at DESC, e.id DESC",
       {}
     )
   end
@@ -303,13 +302,7 @@ function export_pupil_data(ctx, args)
   end
 
   local rows = ctx.plugin_db.query(
-    [[SELECT id, event_name, hop, membership_id, group_id, pupil_id,
-             academic_year_id, effective_from, effective_to, roster_count,
-             target_url, http_status, status, external_sync_id,
-             caller_type, caller_staff_id, sync_notes, synced_at
-      FROM plugin_lms_sync.lms_sync_logs
-      WHERE pupil_id = ?
-      ORDER BY synced_at ASC, id ASC]],
+    LMS_JOIN_SELECT .. " WHERE e.pupil_id = ? ORDER BY r.synced_at ASC, e.id ASC",
     { pupil_id }
   )
 
@@ -334,7 +327,7 @@ function purge_pupil_data(ctx, args)
   end
 
   local res = ctx.plugin_db.exec(
-    "DELETE FROM plugin_lms_sync.lms_sync_logs WHERE pupil_id = ?",
+    "DELETE FROM plugin_lms_sync.lms_sync_pupil_entries WHERE pupil_id = ?",
     { pupil_id }
   )
 
@@ -346,3 +339,4 @@ function purge_pupil_data(ctx, args)
     }
   }
 end
+

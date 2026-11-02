@@ -250,7 +250,7 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     await expect(page.getByTestId('host-shell')).toBeVisible();
 
     await page.getByTestId('nav-rail-search').click();
-    const navItem = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Cover' }).first();
+    const navItem = page.locator('[data-testid^="host-search-result-view-"][data-testid$="-home"]').filter({ hasText: 'Cover' }).first();
     await expect(navItem).toBeVisible();
     await navItem.click();
 
@@ -523,6 +523,9 @@ test.describe('Vertical 8: Staff Absence & Dynamic Cover Assignment Plugin (uk.o
     expect(section.redactable_fields).toContain('register_comment');
     expect(section.records.length).toBeGreaterThanOrEqual(1);
     expect(JSON.stringify(section.records)).toContain('Helper note with Charles Babbage mentioned');
+    // Normalized schema invariant: plugin_cover handover notes must not duplicate Core statutory attendance_code or minutes_late
+    expect(section.records[0].attendance_code).toBeUndefined();
+    expect(section.records[0].minutes_late).toBeUndefined();
 
     // 5. Verify UK GDPR purge_pupil_data deletes the pupil's rows and subsequent export_pupil_data returns 0 records
     const purgeRes = await request.post(

@@ -49,7 +49,8 @@
     "get_trip_details": {
       "scopes": [
         "dal.groups.read:own_groups",
-        "dal.pupils.read:own_groups"
+        "dal.pupils.read:own_groups",
+        "dal.guardians.read:own_groups"
       ],
       "mutates": false,
       "timeout_ms": 2500

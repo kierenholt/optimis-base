@@ -108,7 +108,7 @@ test.describe('MVP Plugin Sandboxed UI & Lua DAL Console Print', () => {
   });
 
   test('getPupilRecord_seededPupilClickedInPluginUI_printsDatabaseRecordToConsole_test', async ({ page }) => {
-    await page.goto(`/?pupil_id=${encodeURIComponent(seededPupilId)}`);
+    await page.goto(`/p/${testPlugId}?pupil_id=${encodeURIComponent(seededPupilId)}`);
 
     const hostShell = page.getByTestId('host-shell');
     await expect(hostShell).toBeVisible();

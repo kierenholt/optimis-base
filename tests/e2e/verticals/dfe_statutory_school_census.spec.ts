@@ -222,7 +222,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
     await expect(hostShell).toBeVisible();
 
     await page.getByTestId('nav-rail-search').click();
-    const censusNavBtn = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Census' }).first();
+    const censusNavBtn = page.locator('[data-testid^="host-search-result-view-"][data-testid$="-home"]').filter({ hasText: 'Census' }).first();
     await expect(censusNavBtn).toBeVisible();
     await censusNavBtn.click();
 
@@ -394,7 +394,7 @@ test.describe('DfE Statutory School Census Plugin, Host XML/XSD Validator & Mock
       `/?pupil_id=${encodeURIComponent(seeded.pupil_sen_k_fsm_id)}&reference_date=2026-10-01&academic_year_id=ay_2026_2027`
     );
     await page.getByTestId('nav-rail-search').click();
-    await page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Census' }).first().click();
+    await page.locator('[data-testid^="host-search-result-view-"][data-testid$="-home"]').filter({ hasText: 'Census' }).first().click();
 
     const pluginFrame = page.frameLocator(`[data-testid="plugin-iframe-${censusPlugId}"]`);
     await pluginFrame.getByTestId('generate-census-btn').click();

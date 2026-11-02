@@ -12,64 +12,98 @@
 # Error details
 
 ```
-Error: expect(locator).toBeVisible() failed
-
-Locator: locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Cover' }).first()
-Expected: visible
-Timeout: 5000ms
-Error: element(s) not found
-
+Error: apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:18080
 Call log:
-  - Expect "toBeVisible" locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Cover' }).first() with timeout 5000ms
-  - waiting for locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Cover' }).first()
+  - → GET http://127.0.0.1:18080/api/test/logs/cursor
+    - user-agent: Playwright/1.64.1 (x64; debian 13) node/20.19
+    - accept: */*
+    - accept-encoding: gzip,deflate,br
 
 ```
 
-```yaml
-- complementary:
-  - text: URN 100001
-  - heading "Oakridge All-Through Academy" [level=1]
-  - text: ay_2026_2027
-  - navigation "Primary Icon Rail":
-    - button "Home"
-    - button "Search"
-  - text: Pinned
-  - button "Settings"
-  - button "Logout"
-- main:
-  - region "Global Search and Discovery":
-    - heading "Global Search & Discovery" [level=2]
-    - text: Search plugin views, dashboard widgets, pupils, and teaching groups across your school workspace
-    - searchbox "Type a command, synonym, pupil name, or group code..."
-    - tablist "Search category filter tabs":
-      - tab "All (9)" [selected]
-      - tab "Pages (6)"
-      - tab "Widgets (0)"
-      - tab "Pupils (2)"
-      - tab "Groups (1)"
-    - text: Views (6)
-    - button "Educational Visits & Trip Consent Educational Visits & Trip Consent • /p/331qo66q (4 methods) Open View"
-    - button "Pin Educational Visits & Trip Consent": Pin
-    - button "Group Trip Consent & Manifest Educational Visits & Trip Consent • /p/331qo66q/group/:group_id (4 methods) Open View"
-    - button "Pin Group Trip Consent & Manifest": Pin
-    - button "Staff Absence & Cover Manager Staff Absence & Cover Manager • /p/kj7wyoj1 (3 methods) Open View"
-    - button "Pin Staff Absence & Cover Manager": Pin
-    - button "Cover Class Roster Staff Absence & Cover Manager • /p/kj7wyoj1/group/:group_id (3 methods) Open View"
-    - button "Pin Cover Class Roster": Pin
-    - button "Timetable & Statutory Attendance Timetable & Statutory Attendance • /p/e454uy6j (3 methods) Open View"
-    - button "Pin Timetable & Statutory Attendance": Pin
-    - button "Class Session Register Timetable & Statutory Attendance • /p/e454uy6j/group/:group_id (3 methods) Open View"
-    - button "Pin Class Session Register": Pin
-    - text: Pupils (2)
-    - button "Charles Babbage UPN U2EAE79AB5002 • Year 10 Open Student"
-    - button "Alan Turing UPN U3EAE79AB5003 • Year 10 Open Student"
-    - text: Groups (1)
-    - button "10Ma2_eae7 — Year 10 Maths Set 2 TEACHING_CLASS Open Group"
+```
+Error: apiRequestContext.post: connect ECONNREFUSED 127.0.0.1:18080
+Call log:
+  - → POST http://127.0.0.1:18080/api/test/auth-mode
+    - user-agent: Playwright/1.64.1 (x64; debian 13) node/20.19
+    - accept: */*
+    - accept-encoding: gzip,deflate,br
+    - content-type: application/json
+    - content-length: 36
+
 ```
 
 # Test source
 
 ```ts
+  86  |     }
+  87  |     const personaBody = (await personaRes.json()) as SeededPersonaFixtures;
+  88  |     if (!personaBody.fixture_id || !personaBody.admin_staff_id) {
+  89  |       throw new Error('Seeded persona fixture response missing mandatory admin_staff_id');
+  90  |     }
+  91  |     personas = personaBody;
+  92  | 
+  93  |     // 5. Seed Milestone 1 fixtures (Absent Teacher, Cover Teacher, classes, pupils, and AM/PM timetable slots)
+  94  |     const seedRes = await request.post('/api/test/seed-milestone1-fixtures', {
+  95  |       data: {
+  96  |         academic_year_id: 'ay_2026_2027',
+  97  |         reference_date: '2026-10-28',
+  98  |         include_second_active_pupil: true,
+  99  |       },
+  100 |     });
+  101 |     if (!seedRes.ok()) {
+  102 |       throw new Error(`Failed to seed Milestone 1 fixtures: ${seedRes.status()} ${await seedRes.text()}`);
+  103 |     }
+  104 |     const seedBody = (await seedRes.json()) as Milestone1CoverSeedResponse;
+  105 |     if (
+  106 |       !seedBody.fixture_id ||
+  107 |       !seedBody.teacher_staff_id ||
+  108 |       !seedBody.other_teacher_staff_id ||
+  109 |       !seedBody.own_group_id ||
+  110 |       !seedBody.other_group_id ||
+  111 |       !seedBody.active_pupil_id ||
+  112 |       !seedBody.second_active_pupil_id ||
+  113 |       !seedBody.transferred_pupil_id ||
+  114 |       !seedBody.timetable_slot_am_id
+  115 |     ) {
+  116 |       throw new Error('Seeded Milestone 1 fixture response missing mandatory staff cover identifiers');
+  117 |     }
+  118 |     seeded = seedBody;
+  119 | 
+  120 |     // 6. Runtime-install and activate staff_cover_plugin (uk.org.optimis.ops.cover)
+  121 |     const installRes = await request.post('/api/admin/plugins/install', {
+  122 |       data: {
+  123 |         folder: PLUGIN_FOLDER,
+  124 |         staff_id: personas.admin_staff_id,
+  125 |       },
+  126 |     });
+  127 |     if (!installRes.ok()) {
+  128 |       throw new Error(
+  129 |         `Failed to install ${PLUGIN_FOLDER}: ${installRes.status()} ${await installRes.text()}`
+  130 |       );
+  131 |     }
+  132 |     const installBody = await installRes.json();
+  133 |     expect(installBody.ok).toBe(true);
+  134 |     expect(installBody.plug_id).toMatch(/^[a-z0-9]{8}$/);
+  135 |     expect(installBody.database_alias).toBe(PLUGIN_DB_ALIAS);
+  136 |     coverPlugId = installBody.plug_id;
+  137 | 
+  138 |     const activateRes = await request.post(
+  139 |       `/api/admin/plugins/${encodeURIComponent(PLUGIN_ID)}/activate`,
+  140 |       {
+  141 |         data: { staff_id: personas.admin_staff_id },
+  142 |       }
+  143 |     );
+  144 |     if (!activateRes.ok()) {
+  145 |       throw new Error(
+  146 |         `Failed to activate ${PLUGIN_ID}: ${activateRes.status()} ${await activateRes.text()}`
+  147 |       );
+  148 |     }
+  149 |   });
+  150 | 
+  151 |   test.afterEach(async ({ request }, testInfo) => {
+  152 |     // 1. Purge plugin pupil data created during the test
+  153 |     if (personas && seeded && coverPlugId) {
   154 |       await request.post('/api/auth/persona', {
   155 |         data: { staff_id: personas.admin_staff_id },
   156 |       });
@@ -102,7 +136,8 @@ Call log:
   183 |     }
   184 | 
   185 |     // 4. Remove runtime-installed plugin
-  186 |     await request.post('/api/test/auth-mode', {
+> 186 |     await request.post('/api/test/auth-mode', {
+      |                   ^ Error: apiRequestContext.post: connect ECONNREFUSED 127.0.0.1:18080
   187 |       data: { enable_dev_persona_switcher: true },
   188 |     });
   189 |     await request.delete(`/api/admin/plugins/${encodeURIComponent(PLUGIN_ID)}`);
@@ -169,9 +204,8 @@ Call log:
   250 |     await expect(page.getByTestId('host-shell')).toBeVisible();
   251 | 
   252 |     await page.getByTestId('nav-rail-search').click();
-  253 |     const navItem = page.locator('[data-testid^="command-palette-result-view-"][data-testid$="-home"]').filter({ hasText: 'Cover' }).first();
-> 254 |     await expect(navItem).toBeVisible();
-      |                           ^ Error: expect(locator).toBeVisible() failed
+  253 |     const navItem = page.locator('[data-testid^="host-search-result-view-"][data-testid$="-home"]').filter({ hasText: 'Cover' }).first();
+  254 |     await expect(navItem).toBeVisible();
   255 |     await navItem.click();
   256 | 
   257 |     const iframeEl = page.getByTestId(`plugin-iframe-${coverPlugId}`);
@@ -204,72 +238,4 @@ Call log:
   284 |           },
   285 |         },
   286 |       }
-  287 |     );
-  288 |     expect(preCoverSubmitRes.status()).toBe(400);
-  289 |     const preCoverSubmitBody = await preCoverSubmitRes.json();
-  290 |     expect(preCoverSubmitBody.ok).toBe(false);
-  291 |     expect(preCoverSubmitBody.error_code).toContain('access denied under own_groups scope');
-  292 | 
-  293 |     // =========================================================================
-  294 |     // Step 2: Cover Manager (personas.admin_staff_id) records teacher absence and assigns Cover Teacher to Absent Teacher's timetable slot
-  295 |     // =========================================================================
-  296 |     const switchAdminRes = await request.post('/api/auth/persona', {
-  297 |       data: { staff_id: personas.admin_staff_id },
-  298 |     });
-  299 |     expect(switchAdminRes.ok()).toBe(true);
-  300 |     const adminSessionBody = await switchAdminRes.json();
-  301 |     await page.context().addCookies([
-  302 |       {
-  303 |         name: 'mis_session',
-  304 |         value: adminSessionBody.session_token,
-  305 |         url: 'http://127.0.0.1:18080',
-  306 |         sameSite: 'Strict',
-  307 |       },
-  308 |     ]);
-  309 |     await page.goto(`/p/${coverPlugId}?${params.toString()}`);
-  310 |     await expect(pluginFrame.getByTestId('cover-active-persona-badge')).toContainText(personas.admin_staff_id);
-  311 | 
-  312 |     const loadAbsentTimetableBtn = pluginFrame.getByTestId('load-absent-timetable-btn');
-  313 |     await expect(loadAbsentTimetableBtn).toBeVisible();
-  314 |     await expect(loadAbsentTimetableBtn).toHaveAttribute('data-mis-rpc', 'load_absent_teacher_timetable');
-  315 |     await loadAbsentTimetableBtn.click();
-  316 | 
-  317 |     const absentSlotCard = pluginFrame.getByTestId(`absent-slot-card-${seeded.timetable_slot_am_id}`);
-  318 |     await expect(absentSlotCard).toBeVisible();
-  319 |     await expect(absentSlotCard).toContainText('P1_AM');
-  320 |     await expect(absentSlotCard).toContainText('AM');
-  321 |     await expect(absentSlotCard).toContainText('Free Cover Staff:');
-  322 | 
-  323 |     const absenceReasonInput = pluginFrame.getByTestId('absence-reason-input');
-  324 |     const coverNotesInput = pluginFrame.getByTestId('cover-notes-input');
-  325 |     await expect(absenceReasonInput).toBeVisible();
-  326 |     await expect(coverNotesInput).toBeVisible();
-  327 |     await absenceReasonInput.fill('Flu / Medical Absence');
-  328 |     await coverNotesInput.fill('Complete quadratic equations worksheet on desk');
-  329 | 
-  330 |     const assignCoverBtn = pluginFrame.getByTestId('assign-cover-btn');
-  331 |     await expect(assignCoverBtn).toBeVisible();
-  332 |     await expect(assignCoverBtn).toHaveAttribute('data-mis-rpc', 'record_absence_and_assign_cover');
-  333 |     await assignCoverBtn.click();
-  334 | 
-  335 |     const assignmentReceipt = pluginFrame.getByTestId('cover-assignment-receipt');
-  336 |     await expect(assignmentReceipt).toBeVisible();
-  337 |     await expect(assignmentReceipt).toContainText('COVER_ASSIGNED');
-  338 |     await expect(assignmentReceipt).toContainText(seeded.teacher_staff_id);
-  339 |     await expect(assignmentReceipt).toContainText(seeded.other_teacher_staff_id);
-  340 |     await expect(assignmentReceipt).toContainText(seeded.own_group_id);
-  341 |     await expect(assignmentReceipt).toContainText('COVER_TEACHER');
-  342 | 
-  343 |     // =========================================================================
-  344 |     // Step 3: Switch back to Cover Teacher persona (seeded.other_teacher_staff_id) -> :own_groups now permits loading the class roster and submitting the statutory attendance register
-  345 |     // =========================================================================
-  346 |     const switchCoverAgainRes = await request.post('/api/auth/persona', {
-  347 |       data: { staff_id: seeded.other_teacher_staff_id },
-  348 |     });
-  349 |     expect(switchCoverAgainRes.ok()).toBe(true);
-  350 |     const coverAgainSessionBody = await switchCoverAgainRes.json();
-  351 |     await page.context().addCookies([
-  352 |       {
-  353 |         name: 'mis_session',
-  354 |         value: coverAgainSessionBody.session_token,
 ```

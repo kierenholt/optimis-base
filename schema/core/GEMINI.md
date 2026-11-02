@@ -1,6 +1,6 @@
 # Core SQLite Schema (`schema/core`)
 
-This directory defines the 47-table modular SQLite schema for `core.db`, executed in lexical order (`00` through `06`) by [`CoreDAL.initSchema`](file:///home/kieren/Documents/code/optimis/internal/dal/dal.go#L98-L155).
+This directory defines the 48-table modular SQLite schema for `core.db`, executed in lexical order (`00` through `06`) by [`CoreDAL.initSchema`](file:///home/kieren/Documents/code/optimis/internal/dal/dal.go#L98-L155).
 
 ## Architectural Invariants
 
@@ -10,11 +10,11 @@ This directory defines the 47-table modular SQLite schema for `core.db`, execute
 
 ## Key Files
 
-* [`SCHEMA_MAP.md`](file:///home/kieren/Documents/code/optimis/schema/core/SCHEMA_MAP.md): Master agent navigation map indexing all 47 tables and 75 foreign keys across domains `00`–`06`.
-* [`00_system_and_academic_cycle.sql`](file:///home/kieren/Documents/code/optimis/schema/core/00_system_and_academic_cycle.sql): `__system_config`, `academic_years`, `academic_terms`, `days_of_week`, `academic_special_days`, `alert_levels`, `data_retention_policies`, `dashboard_layouts` (including `column_count INTEGER NOT NULL DEFAULT 4 CHECK (column_count BETWEEN 2 AND 8)`), `staff_settings`.
-* [`01_identity_pupils_and_staff.sql`](file:///home/kieren/Documents/code/optimis/schema/core/01_identity_pupils_and_staff.sql): `roles`, `persons`, `person_roles`, `pupils` (DfE CBDS), `pupil_year_enrolments`, `staff` (SWC/SCR), `staff_contracts`, `staff_absences`, `staff_cover_assignments`.
+* [`SCHEMA_MAP.md`](file:///home/kieren/Documents/code/optimis/schema/core/SCHEMA_MAP.md): Master agent navigation map indexing all 49 tables and 84 foreign keys across domains `00`–`06`.
+* [`00_system_and_academic_cycle.sql`](file:///home/kieren/Documents/code/optimis/schema/core/00_system_and_academic_cycle.sql): `__system_config`, `installed_plugins` (relational store for installed plugin manifest IDs, opaque plug IDs, versions, approved scopes, and lifecycle states), `academic_years`, `academic_terms`, `days_of_week`, `academic_special_days`, `alert_levels`, `data_retention_policies`.
+* [`01_identity_pupils_and_staff.sql`](file:///home/kieren/Documents/code/optimis/schema/core/01_identity_pupils_and_staff.sql): `roles`, `persons`, `person_roles`, `pupils` (DfE CBDS), `pupil_year_enrolments` (with FKs to `year_groups`, `groups`, and `houses`), `staff` (SWC/SCR), `staff_contracts`, `staff_absences`, `staff_cover_assignments` (with FK to `timetable_slots`), `staff_ui_preferences` (accessibility/theming), `staff_pinned_recents` (navigation state), backward-compatible `staff_settings` view, `role_dashboard_layouts` (with FKs to `roles` and `staff`), `staff_dashboard_layouts` (with FKs to `staff`), and backward-compatible `dashboard_layouts` view.
 * [`02_households_and_guardians.sql`](file:///home/kieren/Documents/code/optimis/schema/core/02_households_and_guardians.sql): `households` (BS7666 / `is_confidential_address`), `household_memberships`, `guardian_relationships` (`has_parental_responsibility` & `court_order_restricted` lockdown `CHECK`).
-* [`03_groups_and_timetable.sql`](file:///home/kieren/Documents/code/optimis/schema/core/03_groups_and_timetable.sql): `year_groups`, `houses`, `departments`, `rooms`, `courses`, `groups`, `group_pupil_memberships`, `group_staff_assignments`, `timetable_periods`, `timetable_slots`.
-* [`04_statutory_attendance.sql`](file:///home/kieren/Documents/code/optimis/schema/core/04_statutory_attendance.sql): `attendance_codes`, `attendance_session_marks` (`AM`/`PM`), `attendance_lesson_marks`, `attendance_register_submissions`.
+* [`03_groups_and_timetable.sql`](file:///home/kieren/Documents/code/optimis/schema/core/03_groups_and_timetable.sql): `year_groups` (pre-seeded with DfE statutory NC year groups `E1` through `14`), `houses`, `departments`, `rooms`, `courses`, `groups`, `group_pupil_memberships`, `group_staff_assignments`, `timetable_periods`, `timetable_slots`.
+* [`04_statutory_attendance.sql`](file:///home/kieren/Documents/code/optimis/schema/core/04_statutory_attendance.sql): `attendance_codes`, `attendance_session_marks` (`AM`/`PM`), `attendance_lesson_marks`, `attendance_session_register_submissions`, `attendance_lesson_register_submissions`, and unified view `attendance_register_submissions`.
 * [`05_sen_medical_and_characteristics.sql`](file:///home/kieren/Documents/code/optimis/schema/core/05_sen_medical_and_characteristics.sql): `pupil_fsm_periods`, `sen_need_types`, `pupil_sen_records` (`N`/`K`/`E`), `pupil_sen_needs`, `pupil_sen_assistants`, `pupil_suspensions_exclusions`, `pupil_alternative_provisions`, `pupil_post16_learning_aims`, `pupil_medical_conditions`, `pupil_pastoral_notes`.
 * [`06_safeguarding_vault.sql`](file:///home/kieren/Documents/code/optimis/schema/core/06_safeguarding_vault.sql): `safeguarding_notes` and `safeguarding_audit_logs` with append-only and KCSIE retention-lock SQLite triggers.

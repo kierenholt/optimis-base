@@ -77,17 +77,43 @@ local function load_pupil_first_aid_bundle(ctx, pupil_id, academic_year_id, refe
     }
   end
 
+  local guardian_name_by_id = {}
+  for i = 1, #safe_contacts do
+    local sc = safe_contacts[i]
+    if sc.guardian_person_id and sc.guardian_person_id ~= "" then
+      guardian_name_by_id[sc.guardian_person_id] = sc.full_name
+    end
+  end
+
+  local pupil_name = ""
+  local nc_year_group = ""
+  if type(selected_pupil) == "table" then
+    pupil_name = (selected_pupil.preferred_first_name or selected_pupil.legal_first_name or selected_pupil.first_name or "") .. " " ..
+                 (selected_pupil.preferred_last_name or selected_pupil.legal_last_name or selected_pupil.last_name or "")
+    nc_year_group = selected_pupil.nc_year_group or ""
+  end
+
   local treatments = ctx.plugin_db.query(
-    "SELECT id, pupil_id, pupil_name, nc_year_group, incident_date, incident_location, " ..
+    "SELECT id, pupil_id, incident_date, incident_location, " ..
     "injury_summary, treatment_given, outcome, critical_alert_snapshot, " ..
-    "notified_guardian_id, notified_guardian_name, recorded_by_staff_id, created_at " ..
-    "FROM plugin_first_aid.first_aid_treatments WHERE pupil_id = ? ORDER BY id DESC",
+    "notified_guardian_id, recorded_by_staff_id, created_at " ..
+    "FROM plugin_first_aid.first_aid_treatments WHERE pupil_id = ? ORDER BY created_at DESC, id DESC",
     { pupil_id }
   )
+  for i = 1, #treatments do
+    local t = treatments[i]
+    t.pupil_name = pupil_name
+    t.nc_year_group = nc_year_group
+    local gid = tostring(t.notified_guardian_id or "")
+    t.notified_guardian_name = guardian_name_by_id[gid] or "None"
+  end
 
   local event_logs = ctx.plugin_db.query(
-    "SELECT id, treatment_id, pupil_id, event_name, hop_count, outcome, dispatch_status, dispatched_at " ..
-    "FROM plugin_first_aid.first_aid_event_logs WHERE pupil_id = ? ORDER BY id DESC",
+    "SELECT e.id, e.treatment_id, e.pupil_id, e.event_name, e.hop_count, " ..
+    "COALESCE(t.outcome, '') AS outcome, e.dispatch_status, e.dispatched_at " ..
+    "FROM plugin_first_aid.first_aid_event_logs e " ..
+    "LEFT JOIN plugin_first_aid.first_aid_treatments t ON t.id = e.treatment_id " ..
+    "WHERE e.pupil_id = ? ORDER BY e.dispatched_at DESC, e.id DESC",
     { pupil_id }
   )
 
@@ -166,17 +192,18 @@ function log_first_aid_treatment(ctx, args)
   end
 
   local staff_id = (ctx.caller and ctx.caller.staff_id and ctx.caller.staff_id ~= "") and ctx.caller.staff_id or "SYSTEM"
+  local treatment_id = "fat_" .. ctx.crypto.uuid()
+  local created_at = ctx.clock.now_utc()
 
-  local exec_res = ctx.plugin_db.exec(
+  ctx.plugin_db.exec(
     "INSERT INTO plugin_first_aid.first_aid_treatments (" ..
-    "pupil_id, pupil_name, nc_year_group, incident_date, incident_location, " ..
+    "id, pupil_id, incident_date, incident_location, " ..
     "injury_summary, treatment_given, outcome, critical_alert_snapshot, " ..
-    "notified_guardian_id, notified_guardian_name, recorded_by_staff_id" ..
-    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "notified_guardian_id, recorded_by_staff_id, created_at" ..
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     {
+      treatment_id,
       pupil_id,
-      pupil_name,
-      pupil.nc_year_group or "",
       reference_date,
       incident_location,
       injury_summary,
@@ -184,12 +211,11 @@ function log_first_aid_treatment(ctx, args)
       outcome,
       alert_summary,
       notified_guardian_id,
-      notified_guardian_name,
-      staff_id
+      staff_id,
+      created_at
     }
   )
 
-  local treatment_id = exec_res.last_insert_id or 1
   local custom_event_name = "plugin.uk.org.optimis.medical.firstaid.logged"
 
   ctx.events.emit(custom_event_name, {
@@ -223,22 +249,27 @@ function on_first_aid_logged(ctx, event)
   if type(pupil_id) ~= "string" or pupil_id == "" then
     error("event payload pupil_id is required")
   end
-  local treatment_id = tonumber(payload.treatment_id) or 0
+  local treatment_id = tostring(payload.treatment_id or "")
+  if treatment_id == "" then
+    error("event payload treatment_id is required")
+  end
   local event_name = event.event_name or "plugin.uk.org.optimis.medical.firstaid.logged"
   local hop_count = tonumber(event.hop_count) or 1
-  local outcome = payload.outcome or "RECORDED"
+  local event_log_id = "fae_" .. ctx.crypto.uuid()
+  local dispatched_at = ctx.clock.now_utc()
 
   ctx.plugin_db.exec(
     "INSERT INTO plugin_first_aid.first_aid_event_logs (" ..
-    "treatment_id, pupil_id, event_name, hop_count, outcome, dispatch_status" ..
-    ") VALUES (?, ?, ?, ?, ?, ?)",
+    "id, treatment_id, pupil_id, event_name, hop_count, dispatch_status, dispatched_at" ..
+    ") VALUES (?, ?, ?, ?, ?, ?, ?)",
     {
+      event_log_id,
       treatment_id,
       pupil_id,
       event_name,
       hop_count,
-      outcome,
-      "DISPATCHED_POST_COMMIT"
+      "DISPATCHED_POST_COMMIT",
+      dispatched_at
     }
   )
 
@@ -257,16 +288,19 @@ function export_pupil_data(ctx, args)
   local pupil_id = resolve_pupil_id(args)
 
   local treatments = ctx.plugin_db.query(
-    "SELECT id, pupil_id, pupil_name, nc_year_group, incident_date, incident_location, " ..
+    "SELECT id, pupil_id, incident_date, incident_location, " ..
     "injury_summary, treatment_given, outcome, critical_alert_snapshot, " ..
-    "notified_guardian_id, notified_guardian_name, recorded_by_staff_id, created_at " ..
-    "FROM plugin_first_aid.first_aid_treatments WHERE pupil_id = ? ORDER BY id ASC",
+    "notified_guardian_id, recorded_by_staff_id, created_at " ..
+    "FROM plugin_first_aid.first_aid_treatments WHERE pupil_id = ? ORDER BY created_at ASC, id ASC",
     { pupil_id }
   )
 
   local event_logs = ctx.plugin_db.query(
-    "SELECT id, treatment_id, pupil_id, event_name, hop_count, outcome, dispatch_status, dispatched_at " ..
-    "FROM plugin_first_aid.first_aid_event_logs WHERE pupil_id = ? ORDER BY id ASC",
+    "SELECT e.id, e.treatment_id, e.pupil_id, e.event_name, e.hop_count, " ..
+    "COALESCE(t.outcome, '') AS outcome, e.dispatch_status, e.dispatched_at " ..
+    "FROM plugin_first_aid.first_aid_event_logs e " ..
+    "LEFT JOIN plugin_first_aid.first_aid_treatments t ON t.id = e.treatment_id " ..
+    "WHERE e.pupil_id = ? ORDER BY e.dispatched_at ASC, e.id ASC",
     { pupil_id }
   )
 
