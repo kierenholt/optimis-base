@@ -43,26 +43,6 @@ func (p *pluginEventWorkerPool) stop() {
 	p.wg.Wait()
 }
 
-func (s EndpointSpec) SubscribedEvents() []string {
-	seen := make(map[string]struct{})
-	var out []string
-	if trimmed := strings.TrimSpace(s.Event); trimmed != "" {
-		seen[trimmed] = struct{}{}
-		out = append(out, trimmed)
-	}
-	for _, raw := range s.Events {
-		trimmed := strings.TrimSpace(raw)
-		if trimmed == "" {
-			continue
-		}
-		if _, exists := seen[trimmed]; !exists {
-			seen[trimmed] = struct{}{}
-			out = append(out, trimmed)
-		}
-	}
-	return out
-}
-
 func resolvePluginWorkerConcurrency(manifest Manifest) int {
 	if manifest.MaxConcurrency > 0 {
 		return manifest.MaxConcurrency

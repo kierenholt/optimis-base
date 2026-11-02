@@ -5,18 +5,26 @@ This directory contains the canonical client-side Plugin UI SDK (`mis-bridge.js`
 ## Key Files & Responsibilities
 
 1. **[`mis-bridge.js`](file:///home/kieren/Documents/code/optimis/sdk/ui/mis-bridge.js) — Sandboxed Plugin UI SDK (`window.mis`)**:
+   - **File Size & Architecture**:
+     - Strict size limit: strictly `< 500 lines` (currently 488 lines), zero external runtime dependencies.
+     - Fully aligned with `@optimis/bridge` npm package exports (`sdk/packages/bridge/index.js`), exposing `DECLARATIVE_ATTRIBUTES` (`RPC_METHOD`, `RPC_ARGS`, `ENTITY_LINK`, `PUPIL_ID`, `GROUP_ID`, `STAFF_ID`, `PLUGIN_TARGET`, `ROUTE_TAB`).
    - **Initialization & Theme Handshake (`mis:ready` -> `mis:init` / `mis:theme:update` / `mis:plugin:invalidated`)**:
      - Automatically dispatches `{ type: 'mis:ready' }` to `window.parent` on load.
      - Injects all `--mis-*` CSS Custom Properties onto `document.documentElement` (`:root`), synchronizes `data-mis-theme="light" | "high-contrast"` and `data-mis-font-size="small" | "medium" | "large" | "extra-large"`, and scales `<style>` and inline pixel `font-size` declarations via `scaleDocumentTypography` (`calc(<N>px * var(--mis-font-scale, 1))`).
-     - Exposes `window.mis.context`, `window.mis.theme`, `window.mis.themeMode`, `window.mis.permittedMethods`, `window.mis.scopes`, `window.mis.activeRoles`, `window.mis.ready()`, `window.mis.onInit(callback)`, `window.mis.onPersonaChanged(callback)` (triggered plus a DOM `mis:persona:changed` `CustomEvent` when `staff_id` changes), and `window.mis.onInvalidated(callback)` (triggered plus a DOM `mis:plugin:invalidated` `CustomEvent` whenever a mutating RPC completes across sibling plugin/widget iframes).
-   - **Programmatic RPC Promise API (`window.mis.rpc(method, args)`)**:
+     - Exposes `window.mis.context`, `window.mis.theme`, `window.mis.themeMode`, `window.mis.permittedMethods`, `window.mis.scopes`, `window.mis.activeRoles`, `window.mis.ready()`.
+     - Event listeners (`onInit`, `onRouteChanged`, `onPersonaChanged`, `onInvalidated`) return an `unsubscribe` cleanup function.
+     - `onPersonaChanged(callback)` is triggered alongside a DOM `mis:persona:changed` `CustomEvent` when `staff_id` changes.
+     - `onInvalidated(callback)` is triggered alongside a DOM `mis:plugin:invalidated` `CustomEvent` whenever a mutating RPC completes across sibling plugin/widget iframes.
+   - **Programmatic RPC Promise API (`window.mis.rpc(method, args)`) & Hook (`window.mis.useMisRpc(method, defaultArgs)`)**:
      - Validates `method` (non-empty string) and `args` (plain JSON object), failing fast by rejecting the returned `Promise` immediately on malformed inputs (`MISSING_RPC_METHOD`, `INVALID_RPC_ARGS`).
+     - `useMisRpc` returns `{ method, call: function(overrideArgs) }` supporting partial argument merging with `defaultArgs`.
      - Posts `{ type: 'mis:rpc:request', request_id, method, args }` to `window.parent` and resolves with `msg.data` (`ok: true`) or rejects with a structured `Error` (`err.code = msg.error_code`).
    - **Declarative DOM RPC Delegation (`[data-mis-rpc]`)**:
      - Intercepts clicks on elements with `data-mis-rpc="<method_name>"` and `data-mis-args='<json>'`, manages `data-mis-loading="true"`, and dispatches bubbling `mis:rpc:success` and `mis:rpc:error` `CustomEvent`s.
    - **Declarative Entity Deep-Linking (`[data-mis-link]`, Section 9.5 / 9C)**:
      - Intercepts clicks on `<a data-mis-link="student|group|staff" ...>`, prevents default iframe navigation, validates the target entity ID (`data-pupil-id`, `data-group-id`, `data-staff-id`, or `data-entity-id`), supports optional `data-mis-plugin="<plugin_id | self>"` target plugin overrides, and emits `{ type: 'mis:link:navigate', entity_type, entity_id, target_plugin, ... }` to the parent Host Shell (also callable programmatically via `window.mis.navigate(entityType, params)`).
    - **Declarative Monochrome Lucide Icon Hydration (`[data-mis-icon]`, `window.mis.renderIcons`, `window.mis.getLucideSvg`)**:
+     - Synchronized 44-icon catalog matching `internal/sdk/pack.go` and `internal/sdk/verify.go`.
      - Automatically hydrates any `<span class="mis-icon" data-mis-icon="<lucide-name>"></span>` element on `DOMContentLoaded` and `mis:init` into an inline monochrome `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide-icon="<lucide-name>">` inheriting `--mis-*` `currentColor` across Light and WCAG AAA High-Contrast themes.
    - **Automatic Full-Page Vertical Content Sizing (`mis:resize`)**:
      - Measures intrinsic child bounds (`computeRequiredContentHeight`) on `DOMContentLoaded`, `load`, `mis:init`, `mis:route:changed`, `mis:rpc:response`, `MutationObserver`, `ResizeObserver`, and horizontal width changes, posting `{ type: 'mis:resize', height }` to `window.parent` so full-page plugin iframes expand vertically without clipping.

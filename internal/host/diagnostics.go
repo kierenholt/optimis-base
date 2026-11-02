@@ -59,6 +59,7 @@ var (
 	entityIDRegex     = regexp.MustCompile(`(?i)\b(pup|per|stf|grd|hh|sfg|pnote|wlog|usr|req|wrk|sess)_[a-z0-9_-]+\b`)
 	upnTokenRegex     = regexp.MustCompile(`\b[A-Z][0-9]{12}[A-Z0-9]?\b`)
 	vendorSecretRegex = regexp.MustCompile(`(?i)(Bearer\s+[A-Za-z0-9._~+/=-]{6,}|\b(spx|sk|pk|api|key|sec|tok|pat)_[A-Za-z0-9_-]{6,}\b|(api[_-]?key|x-sparx-api-key|authorization|token|secret)\s*[:=]\s*[^\s,;)"']+)`)
+	piiScrubPattern   = regexp.MustCompile(`(?i)\b(pup_[a-z0-9_]+|per_[a-z0-9_]+|[A-Z][0-9]{12})\b`)
 )
 
 func scrubDiagnosticText(raw string, extraSecrets []string) string {

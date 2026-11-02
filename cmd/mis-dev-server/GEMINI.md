@@ -12,4 +12,4 @@ Distributable Local Testbed Server (`bin/mis-dev-server`, Sections 8A, 10A & 10D
 
 ## Files
 
-* [`main.go`](file:///home/kieren/Documents/code/optimis/cmd/mis-dev-server/main.go): Parses `--plugin`, `--persona`, `--port`, `--db`, and `--dry-run`, seeds the synthetic school cohort via [`sdk.SeedSyntheticDevCohort`](file:///home/kieren/Documents/code/optimis/internal/sdk/test_runner.go), mounts the target plugin, and serves the Host HTTP gateway with structured `stdout` logging.
+* [`main.go`](file:///home/kieren/Documents/code/optimis/cmd/mis-dev-server/main.go): Parses `--plugin`, `--persona`, `--port`, `--db`, and `--dry-run`, seeds the synthetic school cohort via [`sdk.SeedSyntheticDevCohort`](file:///home/kieren/Documents/code/optimis/internal/sdk/dev_cohort.go), mounts the target plugin, and serves the Host HTTP gateway with structured `stdout` logging.

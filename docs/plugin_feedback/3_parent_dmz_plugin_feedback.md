@@ -1,6 +1,6 @@
 # Plugin Contract Feedback — Vertical 4: Parent Portal DMZ Sync (`uk.org.optimis.parent.dmz`)
 
-This document captures engineering feedback on the **Optimis Plugin Contract** (Sections 1, 3, 5, 6, 9, and 10 of [`GEMINI.md`](file:///home/kieren/Documents/code/optimis/GEMINI.md)) gathered while implementing [`plugins/parent_dmz_plugin`](file:///home/kieren/Documents/code/optimis/plugins/parent_dmz_plugin/GEMINI.md) and its full-stack verification suite ([`tests/e2e/parent_dmz_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/parent_dmz_plugin_vertical.spec.ts)).
+This document captures engineering feedback on the **Optimis Plugin Contract** (Sections 1, 3, 5, 6, 9, and 10 of [`GEMINI.md`](file:///home/kieren/Documents/code/optimis/GEMINI.md)) gathered while implementing [`plugins/parent_dmz_plugin`](file:///home/kieren/Documents/code/optimis/plugins/parent_dmz_plugin/GEMINI.md) and its full-stack verification suite ([`tests/e2e/verticals/parent_dmz_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/verticals/parent_dmz_plugin_vertical.spec.ts)).
 
 ---
 

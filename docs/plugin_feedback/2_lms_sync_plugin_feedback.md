@@ -1,6 +1,6 @@
 # Plugin Contract Feedback — Vertical 2: Google Classroom LMS Sync (`uk.org.optimis.lms.classroom`)
 
-This document captures engineering feedback on the **Optimis Plugin Contract** (Sections 5, 6, 9, and 10 of [`GEMINI.md`](file:///home/kieren/Documents/code/optimis/GEMINI.md)) gathered while implementing [`plugins/lms_sync_plugin`](file:///home/kieren/Documents/code/optimis/plugins/lms_sync_plugin/GEMINI.md) and its full-stack verification suites ([`tests/e2e/lms_sync_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/lms_sync_plugin_vertical.spec.ts) and [`internal/host/lms_sync_plugin_test.go`](file:///home/kieren/Documents/code/optimis/internal/host/lms_sync_plugin_test.go)).
+This document captures engineering feedback on the **Optimis Plugin Contract** (Sections 5, 6, 9, and 10 of [`GEMINI.md`](file:///home/kieren/Documents/code/optimis/GEMINI.md)) gathered while implementing [`plugins/lms_sync_plugin`](file:///home/kieren/Documents/code/optimis/plugins/lms_sync_plugin/GEMINI.md) and its full-stack verification suites ([`tests/e2e/verticals/lms_sync_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/verticals/lms_sync_plugin_vertical.spec.ts) and [`internal/host/lms_sync_plugin_test.go`](file:///home/kieren/Documents/code/optimis/internal/host/lms_sync_plugin_test.go)).
 
 ---
 

@@ -3,7 +3,7 @@
 **Plugin Path:** [`plugins/first_aid_medical_plugin`](file:///home/kieren/Documents/code/optimis/plugins/first_aid_medical_plugin/GEMINI.md)  
 **Plugin ID:** `uk.org.optimis.medical.firstaid`  
 **Attached Database:** `plugin_first_aid` (`plugin_first_aid.db`)  
-**Verification Suites:** [`tests/e2e/first_aid_medical_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/first_aid_medical_plugin_vertical.spec.ts) & [`internal/host/first_aid_medical_plugin_test.go`](file:///home/kieren/Documents/code/optimis/internal/host/first_aid_medical_plugin_test.go)
+**Verification Suites:** [`tests/e2e/verticals/first_aid_medical_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/verticals/first_aid_medical_plugin_vertical.spec.ts) & [`internal/host/first_aid_medical_plugin_test.go`](file:///home/kieren/Documents/code/optimis/internal/host/first_aid_medical_plugin_test.go)
 
 ---
 

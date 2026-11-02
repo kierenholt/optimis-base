@@ -3,7 +3,7 @@
 **Plugin Path:** [`plugins/trips_consent_plugin`](file:///home/kieren/Documents/code/optimis/plugins/trips_consent_plugin/GEMINI.md)  
 **Plugin ID:** `uk.org.optimis.ops.trips`  
 **Attached Database:** `plugin_trips` (`plugin_trips.db`)  
-**E2E Verification Suite:** [`tests/e2e/trips_consent_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/trips_consent_plugin_vertical.spec.ts)
+**E2E Verification Suite:** [`tests/e2e/verticals/trips_consent_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/verticals/trips_consent_plugin_vertical.spec.ts)
 
 ---
 

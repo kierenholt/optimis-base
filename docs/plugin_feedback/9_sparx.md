@@ -1,6 +1,6 @@
 # Plugin Contract Feedback — Vertical 10: Sparx Maths Third-Party Partner Sync (`uk.co.sparx.maths`)
 
-This document captures engineering feedback on the **Optimis Plugin Contract** (Sections 4, 5, 8 Gap 1, 9, and 10 of [`GEMINI.md`](file:///home/kieren/Documents/code/optimis/GEMINI.md)) gathered while implementing [`plugins/sparx_maths_plugin`](file:///home/kieren/Documents/code/optimis/plugins/sparx_maths_plugin/GEMINI.md) and its verification suites ([`tests/e2e/sparx_maths_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/sparx_maths_plugin_vertical.spec.ts) and [`internal/host/sparx_maths_plugin_test.go`](file:///home/kieren/Documents/code/optimis/internal/host/sparx_maths_plugin_test.go)).
+This document captures engineering feedback on the **Optimis Plugin Contract** (Sections 4, 5, 8 Gap 1, 9, and 10 of [`GEMINI.md`](file:///home/kieren/Documents/code/optimis/GEMINI.md)) gathered while implementing [`plugins/sparx_maths_plugin`](file:///home/kieren/Documents/code/optimis/plugins/sparx_maths_plugin/GEMINI.md) and its verification suites ([`tests/e2e/verticals/sparx_maths_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/verticals/sparx_maths_plugin_vertical.spec.ts) and [`internal/host/sparx_maths_plugin_test.go`](file:///home/kieren/Documents/code/optimis/internal/host/sparx_maths_plugin_test.go)).
 
 ---
 

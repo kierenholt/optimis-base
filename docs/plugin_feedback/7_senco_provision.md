@@ -1,7 +1,7 @@
 # Plugin Contract Evaluation — Vertical 9: SENCO & Classroom Differentiation (`uk.org.optimis.sen.provision`)
 
 **Plugin Under Review:** [`plugins/senco_provision_plugin`](file:///home/kieren/Documents/code/optimis/plugins/senco_provision_plugin/GEMINI.md) (`uk.org.optimis.sen.provision`)  
-**E2E Verification Suite:** [`tests/e2e/senco_provision_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/senco_provision_plugin_vertical.spec.ts)  
+**E2E Verification Suite:** [`tests/e2e/verticals/senco_provision_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/verticals/senco_provision_plugin_vertical.spec.ts)  
 **Contract Surfaces Exercised:**
 * Attached Plugin SQLite DB (`database.alias: "plugin_sen_provision"`)
 * Asymmetric Read/Write Endpoint Scopes:
@@ -71,7 +71,7 @@
 
 ## 3. Resolution & Adoption (`5_7_response.md` — `1D`, `1G`, `1H`)
 
-Following [`docs/plugin_feedback/5_7_response.md`](file:///home/kieren/Documents/code/optimis/docs/plugin_feedback/5_7_response.md), [`plugins/senco_provision_plugin`](file:///home/kieren/Documents/code/optimis/plugins/senco_provision_plugin/GEMINI.md) and [`tests/e2e/senco_provision_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/senco_provision_plugin_vertical.spec.ts) have been updated to adopt and verify the new platform capabilities:
+Following [`docs/plugin_feedback/5_7_response.md`](file:///home/kieren/Documents/code/optimis/docs/plugin_feedback/5_7_response.md), [`plugins/senco_provision_plugin`](file:///home/kieren/Documents/code/optimis/plugins/senco_provision_plugin/GEMINI.md) and [`tests/e2e/verticals/senco_provision_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/verticals/senco_provision_plugin_vertical.spec.ts) have been updated to adopt and verify the new platform capabilities:
 1. **`1H` (`data-mis-plugin="self"` on `[data-mis-link]`):** [`ui/dist/widget.html`](file:///home/kieren/Documents/code/optimis/plugins/senco_provision_plugin/ui/dist/widget.html) sets `data-mis-plugin="self"` on each pupil badge link (`<a data-mis-link="student" data-mis-plugin="self" data-pupil-id="...">`), and [`ui/src/App.tsx`](file:///home/kieren/Documents/code/optimis/ui/src/App.tsx#L561-L575) directly wakes `uk.org.optimis.sen.provision` in the Keep-Alive LRU Pool (`student:<pupil_id> -> uk.org.optimis.sen.provision`).
 2. **`1G` (`ctx.dal.sen.list_register(opts)` & Expanded SEN Fields):** [`src/init.lua`](file:///home/kieren/Documents/code/optimis/plugins/senco_provision_plugin/src/init.lua) now uses `ctx.dal.sen.list_register(opts)` (backed by batched `IN (...)` queries in `ListPupilSenAndMedicalBatch`) for both group rosters and whole-school/scoped SEN register queries, exposing `ehcp_start_date`, `ehcp_review_due_date`, `next_annual_review_date`, `secondary_sen_need_code`, `sen_needs`, and `sen_assistants`.
 3. **`1D` (Global `403 Forbidden` Scope Rejections & Structured Error Returns):** [`internal/host/server.go`](file:///home/kieren/Documents/code/optimis/internal/host/server.go#L194-L197) globally returns `403 Forbidden` on `"caller lacks required DAL scopes"` without per-plugin ID whitelists.

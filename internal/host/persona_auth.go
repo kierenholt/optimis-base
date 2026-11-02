@@ -532,3 +532,13 @@ func (h *Host) RegisterAuthAndPersonaRoutes(mux *http.ServeMux) {
 		})
 	})
 }
+
+func callerHasAllRole(activeRoles []string) bool {
+	for _, r := range activeRoles {
+		switch strings.ToUpper(strings.TrimSpace(r)) {
+		case "ADMIN", "HOD", "DSL", "SUPPORT", "LEADERSHIP", "DPO", "SYSTEM_ADMIN":
+			return true
+		}
+	}
+	return false
+}

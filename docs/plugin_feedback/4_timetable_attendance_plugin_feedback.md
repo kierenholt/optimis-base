@@ -1,7 +1,7 @@
 # Plugin Contract Feedback — Vertical 1: Timetable & Statutory Session Attendance (`uk.org.optimis.timetable.attendance`)
 
 **Plugin Under Review:** [`plugins/timetable_attendance_plugin`](file:///home/kieren/Documents/code/optimis/plugins/timetable_attendance_plugin/GEMINI.md) (`uk.org.optimis.timetable.attendance`)  
-**E2E Verification Suite:** [`tests/e2e/timetable_attendance_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/timetable_attendance_plugin_vertical.spec.ts)  
+**E2E Verification Suite:** [`tests/e2e/verticals/timetable_attendance_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/verticals/timetable_attendance_plugin_vertical.spec.ts)  
 **Architecture Blueprint Reference:** [`GEMINI.md` §9 (Plugin Contract Specification) & §10 (Runtime & Resource Contract)](file:///home/kieren/Documents/code/optimis/GEMINI.md)
 
 ---

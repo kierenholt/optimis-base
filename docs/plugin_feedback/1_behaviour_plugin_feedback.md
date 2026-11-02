@@ -1,7 +1,7 @@
 # Plugin Contract Evaluation — Vertical 3: Behaviour & Rewards (`uk.org.optimis.behaviour`)
 
 **Plugin Under Review:** [`plugins/behaviour_plugin`](file:///home/kieren/Documents/code/optimis/plugins/behaviour_plugin/GEMINI.md) (`uk.org.optimis.behaviour`)  
-**E2E Verification Suite:** [`tests/e2e/behaviour_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/behaviour_plugin_vertical.spec.ts)  
+**E2E Verification Suite:** [`tests/e2e/verticals/behaviour_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/verticals/behaviour_plugin_vertical.spec.ts)  
 **Contract Surfaces Exercised:**
 * Attached Plugin SQLite DB (`database.alias: "plugin_behaviour"`)
 * Interactive Endpoints (`log_behaviour_event` with `mutates: true`, `get_pupil_behaviour_summary` with `mutates: false`)

@@ -1,7 +1,7 @@
 # Plugin Contract Feedback — Vertical 8: Cover Manager & Supply Teacher (`uk.org.optimis.ops.cover`)
 
 **Plugin Under Review:** [`plugins/staff_cover_plugin`](file:///home/kieren/Documents/code/optimis/plugins/staff_cover_plugin/GEMINI.md) (`uk.org.optimis.ops.cover`)  
-**E2E Verification Suite:** [`tests/e2e/staff_cover_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/staff_cover_plugin_vertical.spec.ts)  
+**E2E Verification Suite:** [`tests/e2e/verticals/staff_cover_plugin_vertical.spec.ts`](file:///home/kieren/Documents/code/optimis/tests/e2e/verticals/staff_cover_plugin_vertical.spec.ts)  
 **Architecture Blueprint Reference:** [`GEMINI.md` §3, §5, §6, §9 & §10](file:///home/kieren/Documents/code/optimis/GEMINI.md)
 
 **Contract Surfaces Exercised:**

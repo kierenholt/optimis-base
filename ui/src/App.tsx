@@ -1,26 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { AdminDiagnosticsPanel } from './AdminDiagnosticsPanel';
 import {
   GlobalCommandPaletteModal,
   HostFullPageSearchView,
-  LandingPageTopHalfSearch,
 } from './components/GlobalSearchAndCommandPalette';
 import { HostSidebar } from './components/HostSidebar';
-import { MonochromeLucideIcon } from './components/MonochromeLucideIcon';
 import { useHostIframeBridge } from './components/useHostIframeBridge';
-import { DashboardWidgetGridPanel } from './DashboardWidgetGridPanel';
-import { GdprSarPanel } from './GdprSarPanel';
-import { SafeguardingVaultPanel } from './SafeguardingVaultPanel';
 import {
   applyHostThemeToRoot,
-  BASE_FONT_SIZE_PRESETS,
   BaseFontSize,
-  PluginViewDescriptor,
   ThemeMode,
 } from './themeAndTypes';
 import { DashboardSummaryStrip } from './views/DashboardSummaryStrip';
+import { HostHomeDashboardView } from './views/HostHomeDashboardView';
+import { HostSettingsView } from './views/HostSettingsView';
 import { KeepAlivePluginWorkspace } from './views/KeepAlivePluginWorkspace';
 import { useHostAdminAndDslState } from './views/useHostAdminAndDslState';
+import { useHostSearchNavigation } from './views/useHostSearchNavigation';
 import { useHostWorkspaceState } from './views/useHostWorkspaceState';
 
 export function App() {
@@ -180,6 +175,29 @@ export function App() {
     broadcastInitToMountedIframes,
   });
 
+  const {
+    handleTogglePinSearchView,
+    handleSelectSearchViewResult,
+    handleSelectSearchPupilResult,
+    handleSelectSearchGroupResult,
+  } = useHostSearchNavigation({
+    activePupilId,
+    setActivePupilId,
+    activeGroupId,
+    setActiveGroupId,
+    activeStaffId,
+    setActiveViewPath,
+    setActiveRouteQuery,
+    setRouteError,
+    setActiveEntityContext,
+    setDeepLinkNavigationStatus,
+    activatePluginInKeepAlivePool,
+    broadcastInitToMountedIframes,
+    entityLinkHandlers,
+    installedPlugins,
+    handlePinOrUnpinRoute,
+  });
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -241,85 +259,12 @@ export function App() {
     void handlePinOrUnpinRoute(canonicalActivePluginRoute, activePlugin.title);
   };
 
-  const resolveViewPathStrict = (rawPath: string | undefined): string => {
-    let resolvedPath = rawPath || '/';
-    if (resolvedPath.includes(':pupil_id')) {
-      if (!activePupilId) {
-        throw new Error('Missing mandatory activePupilId for :pupil_id view route');
-      }
-      resolvedPath = resolvedPath.replace(':pupil_id', activePupilId);
-    }
-    if (resolvedPath.includes(':group_id')) {
-      if (!activeGroupId) {
-        throw new Error('Missing mandatory activeGroupId for :group_id view route');
-      }
-      resolvedPath = resolvedPath.replace(':group_id', activeGroupId);
-    }
-    if (resolvedPath.includes(':staff_id')) {
-      if (!activeStaffId) {
-        throw new Error('Missing mandatory activeStaffId for :staff_id view route');
-      }
-      resolvedPath = resolvedPath.replace(':staff_id', activeStaffId);
-    }
-    return resolvedPath;
-  };
-
-  const handleTogglePinSearchView = (
-    pluginId: string,
-    view: PluginViewDescriptor,
-    pluginTitle: string
-  ) => {
-    const resolvedPath = resolveViewPathStrict(view.path);
-    const route = `/p/${pluginId}${resolvedPath === '/' ? '' : resolvedPath}`;
-    void handlePinOrUnpinRoute(route, view.title || pluginTitle, view.id);
-  };
-
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
     } finally {
       setIsLoggedOut(true);
     }
-  };
-
-  const handleSelectSearchViewResult = (pluginId: string, view: PluginViewDescriptor) => {
-    const resolvedPath = resolveViewPathStrict(view.path);
-    setActiveViewPath(resolvedPath);
-    setActiveRouteQuery({});
-    setRouteError('');
-    activatePluginInKeepAlivePool(pluginId, resolvedPath, {});
-  };
-
-  const handleSelectSearchPupilResult = (pupilId: string) => {
-    const targetPluginId = entityLinkHandlers.student || installedPlugins[0]?.id || '';
-    if (!targetPluginId) {
-      return;
-    }
-    const targetPath = `/student/${pupilId}`;
-    setActivePupilId(pupilId);
-    setActiveViewPath(targetPath);
-    setActiveRouteQuery({});
-    setRouteError('');
-    setActiveEntityContext(`student:${pupilId}`);
-    setDeepLinkNavigationStatus(`DEEP_LINK_OK:student:${pupilId}->${targetPluginId}`);
-    activatePluginInKeepAlivePool(targetPluginId, targetPath, {});
-    broadcastInitToMountedIframes({ pupil_id: pupilId });
-  };
-
-  const handleSelectSearchGroupResult = (groupId: string) => {
-    const targetPluginId = entityLinkHandlers.group || installedPlugins[0]?.id || '';
-    if (!targetPluginId) {
-      return;
-    }
-    const targetPath = `/group/${groupId}`;
-    setActiveGroupId(groupId);
-    setActiveViewPath(targetPath);
-    setActiveRouteQuery({});
-    setRouteError('');
-    setActiveEntityContext(`group:${groupId}`);
-    setDeepLinkNavigationStatus(`DEEP_LINK_OK:group:${groupId}->${targetPluginId}`);
-    activatePluginInKeepAlivePool(targetPluginId, targetPath, {});
-    broadcastInitToMountedIframes({ group_id: groupId });
   };
 
   return (
@@ -387,83 +332,58 @@ export function App() {
         >
           <DashboardSummaryStrip routeError={routeError} />
 
-          <div
-            style={{
-              display: hostViewMode === 'home' ? 'flex' : 'none',
-              flexDirection: 'column',
-              gap: '20px',
-            }}
-          >
-            <LandingPageTopHalfSearch
-              installedPlugins={installedPlugins}
-              placedWidgets={placedWidgets}
-              entityLinkHandlers={entityLinkHandlers}
-              activePupilId={activePupilId}
-              activeGroupId={activeGroupId}
-              activeStaffId={activeCaller?.staff_id || activeStaffId}
-              referenceDate={initialReferenceDate}
-              academicYearId={configuredAcademicYear}
-              pinnedRecents={pinnedRecents}
-              onPlaceWidget={handlePlaceWidget}
-              onSelectViewResult={handleSelectSearchViewResult}
-              onSelectPupilResult={handleSelectSearchPupilResult}
-              onSelectGroupResult={handleSelectSearchGroupResult}
-              onTogglePinView={handleTogglePinSearchView}
-              onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-            />
-
-            <DashboardWidgetGridPanel
-              isEditMode={isDashboardEditMode}
-              columnCount={dashboardColumnCount}
-              availableWidgets={availableWidgets}
-              placedWidgets={placedWidgets}
-              onToggleEditMode={() => setIsDashboardEditMode((prev) => !prev)}
-              onPlaceWidget={handlePlaceWidget}
-              onRemoveWidget={handleRemoveWidget}
-              onMoveWidgetUp={handleMoveWidgetUp}
-              onMoveWidgetDown={handleMoveWidgetDown}
-              onMoveWidgetLeft={handleMoveWidgetLeft}
-              onMoveWidgetRight={handleMoveWidgetRight}
-              onAddColumn={handleAddDashboardColumn}
-              onRemoveColumn={handleRemoveDashboardColumn}
-              dashboardSaveStatus={dashboardSaveStatus}
-              onRegisterWidgetIframeRef={handleRegisterWidgetIframeRef}
-            />
-
-            {hasSafeguardingRead && (
-              <SafeguardingVaultPanel
-                safeguardingEnvelopes={safeguardingEnvelopes}
-                cloudKeyToken={cloudKeyToken}
-                onCloudKeyTokenChange={setCloudKeyToken}
-                onRenewCloudKey={handleRenewCloudKey}
-                onDecryptNote={handleDecryptSafeguardingNote}
-                decryptedNotes={decryptedNotes}
-                dslVaultError={dslVaultError}
-              />
-            )}
-
-            {hasAdminOrDpoAccess && (
-              <GdprSarPanel
-                sarSections={sarSections}
-                sarExportStatus={sarExportStatus}
-                sarFinalizedJson={sarFinalizedJson}
-                sarPurgeStatus={sarPurgeStatus}
-                onLoadSarExport={handleLoadSarExport}
-                onFinalizeSarExport={handleFinalizeSarExport}
-                onPurgePupilData={handlePurgePupilData}
-                onUpdateRedactableField={handleUpdateRedactableField}
-              />
-            )}
-
-            {hasAdminOrDpoAccess && (
-              <AdminDiagnosticsPanel
-                diagnosticBundleStatus={diagnosticBundleStatus}
-                diagnosticBundleJson={diagnosticBundleJson}
-                diagnosticBundleLog={diagnosticBundleLog}
-                onDownloadDiagnosticBundle={handleDownloadDiagnosticBundle}
-              />
-            )}
-          </div>
+          <HostHomeDashboardView
+            isVisible={hostViewMode === 'home'}
+            installedPlugins={installedPlugins}
+            placedWidgets={placedWidgets}
+            entityLinkHandlers={entityLinkHandlers}
+            activePupilId={activePupilId}
+            activeGroupId={activeGroupId}
+            activeStaffId={activeCaller?.staff_id || activeStaffId}
+            referenceDate={initialReferenceDate}
+            academicYearId={configuredAcademicYear}
+            pinnedRecents={pinnedRecents}
+            onPlaceWidget={handlePlaceWidget}
+            onSelectSearchViewResult={handleSelectSearchViewResult}
+            onSelectSearchPupilResult={handleSelectSearchPupilResult}
+            onSelectSearchGroupResult={handleSelectSearchGroupResult}
+            onTogglePinSearchView={handleTogglePinSearchView}
+            onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+            isDashboardEditMode={isDashboardEditMode}
+            dashboardColumnCount={dashboardColumnCount}
+            availableWidgets={availableWidgets}
+            onToggleDashboardEditMode={() => setIsDashboardEditMode((prev) => !prev)}
+            onRemoveWidget={handleRemoveWidget}
+            onMoveWidgetUp={handleMoveWidgetUp}
+            onMoveWidgetDown={handleMoveWidgetDown}
+            onMoveWidgetLeft={handleMoveWidgetLeft}
+            onMoveWidgetRight={handleMoveWidgetRight}
+            onAddDashboardColumn={handleAddDashboardColumn}
+            onRemoveDashboardColumn={handleRemoveDashboardColumn}
+            dashboardSaveStatus={dashboardSaveStatus}
+            onRegisterWidgetIframeRef={handleRegisterWidgetIframeRef}
+            hasSafeguardingRead={hasSafeguardingRead}
+            safeguardingEnvelopes={safeguardingEnvelopes}
+            cloudKeyToken={cloudKeyToken}
+            onCloudKeyTokenChange={setCloudKeyToken}
+            onRenewCloudKey={handleRenewCloudKey}
+            onDecryptSafeguardingNote={handleDecryptSafeguardingNote}
+            decryptedNotes={decryptedNotes}
+            dslVaultError={dslVaultError}
+            hasAdminOrDpoAccess={hasAdminOrDpoAccess}
+            sarSections={sarSections}
+            sarExportStatus={sarExportStatus}
+            sarFinalizedJson={sarFinalizedJson}
+            sarPurgeStatus={sarPurgeStatus}
+            onLoadSarExport={handleLoadSarExport}
+            onFinalizeSarExport={handleFinalizeSarExport}
+            onPurgePupilData={handlePurgePupilData}
+            onUpdateRedactableField={handleUpdateRedactableField}
+            diagnosticBundleStatus={diagnosticBundleStatus}
+            diagnosticBundleJson={diagnosticBundleJson}
+            diagnosticBundleLog={diagnosticBundleLog}
+            onDownloadDiagnosticBundle={handleDownloadDiagnosticBundle}
+          />
 
           {hostViewMode === 'search' && (
             <HostFullPageSearchView
@@ -485,158 +405,16 @@ export function App() {
           )}
 
           {hostViewMode === 'settings' && (
-            <section
-              data-testid="host-settings-view"
-              aria-label="Host Settings and Preferences"
-              style={{
-                width: '100%',
-                backgroundColor: 'var(--mis-bg-surface)',
-                color: 'var(--mis-text-primary)',
-                border: '1px solid var(--mis-border-strong)',
-                borderRadius: 'var(--mis-radius-md, 8px)',
-                boxShadow: 'var(--mis-shadow-card)',
-                padding: '20px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-                boxSizing: 'border-box',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ margin: 0, fontSize: 'calc(16px * var(--mis-font-scale, 1))', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                  <MonochromeLucideIcon name="settings" size={16} />
-                  <span>Host Settings &amp; Preferences</span>
-                </h2>
-              </div>
-              <div style={{ fontSize: 'calc(13px * var(--mis-font-scale, 1))', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div>
-                  <strong>School Name:</strong> {schoolName}
-                </div>
-                <div>
-                  <strong>School URN:</strong> {schoolURN}
-                </div>
-                <div>
-                  <strong>Academic Year:</strong> {configuredAcademicYear}
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '10px',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <label
-                    htmlFor="theme-mode-toggle-switch"
-                    style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <strong>High-Contrast Mode:</strong>{' '}
-                    <span style={{ color: 'var(--mis-text-secondary)' }}>({themeMode})</span>
-                  </label>
-                  <button
-                    id="theme-mode-toggle-switch"
-                    type="button"
-                    role="switch"
-                    aria-checked={themeMode === 'high-contrast'}
-                    aria-label="Toggle High-Contrast Theme"
-                    data-testid="host-settings-theme-toggle-btn"
-                    onClick={handleToggleThemeMode}
-                    style={{
-                      position: 'relative',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      width: '44px',
-                      height: '24px',
-                      padding: '2px',
-                      borderRadius: '999px',
-                      border: '1px solid var(--mis-border-strong)',
-                      backgroundColor:
-                        themeMode === 'high-contrast'
-                          ? 'var(--mis-brand-primary)'
-                          : 'var(--mis-bg-elevated)',
-                      cursor: 'pointer',
-                      transition: 'background-color 150ms ease-in-out',
-                    }}
-                  >
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        width: '18px',
-                        height: '18px',
-                        borderRadius: '50%',
-                        backgroundColor:
-                          themeMode === 'high-contrast'
-                            ? 'var(--mis-brand-primary-fg)'
-                            : 'var(--mis-text-primary)',
-                        transform:
-                          themeMode === 'high-contrast' ? 'translateX(20px)' : 'translateX(0px)',
-                        transition: 'transform 150ms ease-in-out',
-                      }}
-                    />
-                  </button>
-                </div>
-                <div
-                  data-testid="host-settings-font-size-control"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '6px',
-                  }}
-                >
-                  <div>
-                    <strong>Base Font Size:</strong>{' '}
-                    <span style={{ color: 'var(--mis-text-secondary)' }}>
-                      ({BASE_FONT_SIZE_PRESETS[baseFontSize].label} — {BASE_FONT_SIZE_PRESETS[baseFontSize].px})
-                    </span>
-                  </div>
-                  <div
-                    role="group"
-                    aria-label="Base Font Size"
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(4, 1fr)',
-                      gap: '6px',
-                    }}
-                  >
-                    {(['small', 'medium', 'large', 'extra-large'] as BaseFontSize[]).map((presetKey) => {
-                      const preset = BASE_FONT_SIZE_PRESETS[presetKey];
-                      const isSelected = baseFontSize === presetKey;
-                      return (
-                        <button
-                          key={presetKey}
-                          type="button"
-                          data-testid={`host-settings-font-size-btn-${presetKey}`}
-                          aria-pressed={isSelected}
-                          onClick={() => handleSelectBaseFontSize(presetKey)}
-                          style={{
-                            padding: '6px 8px',
-                            borderRadius: 'var(--mis-radius-sm, 4px)',
-                            border: isSelected
-                              ? '1px solid var(--mis-brand-primary)'
-                              : '1px solid var(--mis-border-subtle)',
-                            backgroundColor: isSelected
-                              ? 'var(--mis-brand-primary)'
-                              : 'var(--mis-bg-elevated)',
-                            color: isSelected
-                              ? 'var(--mis-brand-primary-fg)'
-                              : 'var(--mis-text-primary)',
-                            fontSize: 'calc(12px * var(--mis-font-scale, 1))',
-                            fontWeight: isSelected ? 700 : 600,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {preset.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <strong>Pinned Views:</strong> {pinnedRecents.length}
-                </div>
-              </div>
-            </section>
+            <HostSettingsView
+              schoolName={schoolName}
+              schoolURN={schoolURN}
+              configuredAcademicYear={configuredAcademicYear}
+              themeMode={themeMode}
+              baseFontSize={baseFontSize}
+              pinnedViewsCount={pinnedRecents.length}
+              onToggleThemeMode={handleToggleThemeMode}
+              onSelectBaseFontSize={handleSelectBaseFontSize}
+            />
           )}
 
           <KeepAlivePluginWorkspace

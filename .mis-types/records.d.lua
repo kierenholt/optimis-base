@@ -1,0 +1,465 @@
+---@meta
+-- Optimis School MIS — Lua 5.1 Plugin Runtime Entity Record Annotations (LuaLS / EmmyLua)
+-- Architecture Blueprint: Sections 9.2 & 10B (Zero-Config .vscode/ Workspace & .mis-types/records.d.lua)
+-- Pre-bound via .vscode/settings.json for instant IDE autocomplete and inline linting.
+
+---@class OptimisAcademicYearRecord
+---@field id string
+---@field academic_year_id string
+---@field name string
+---@field status "PAST"|"CURRENT"|"FUTURE"
+---@field sequence_number integer
+---@field first_day string
+---@field last_day string
+
+---@class OptimisAcademicTermRecord
+---@field id string
+---@field term_id string
+---@field academic_year_id string
+---@field name string
+---@field name_short string
+---@field sequence_number integer
+---@field first_day string
+---@field last_day string
+
+---@class OptimisDayOfWeekRecord
+---@field id integer
+---@field day_of_week_id integer
+---@field name string
+---@field name_short string
+---@field is_school_day boolean
+---@field school_open_time string
+---@field am_register_time string
+---@field pm_register_time string
+---@field school_close_time string
+
+---@class OptimisAcademicSpecialDayRecord
+---@field id string
+---@field special_day_id string
+---@field academic_term_id string
+---@field date string
+---@field type "INSET_DAY"|"SCHOOL_CLOSURE"|"HALF_TERM_BREAK"|"EXAM_CONTINGENCY_DAY"
+---@field name string
+---@field description string
+
+---@class OptimisAlertLevelRecord
+---@field id string
+---@field alert_level_id string
+---@field name string
+---@field name_short string
+---@field color_hex string
+---@field bg_color_hex string
+---@field description string
+---@field sequence_number integer
+
+---@class OptimisPupilRecord
+---@field id string
+---@field pupil_id string
+---@field person_id string|nil
+---@field upn string
+---@field uln string
+---@field former_upn string
+---@field nhs_number string
+---@field admission_number string
+---@field first_name string
+---@field last_name string
+---@field preferred_first_name string
+---@field preferred_last_name string
+---@field legal_first_name string
+---@field legal_middle_names string
+---@field legal_last_name string
+---@field former_last_name string
+---@field dob string
+---@field sex string
+---@field gender_identity string
+---@field email string
+---@field phone_primary string
+---@field photo_path string
+---@field status string
+---@field ethnicity_code string
+---@field first_language_code string
+---@field eal_flag boolean
+---@field country_of_birth string
+---@field religion_code string
+---@field pupil_premium_flag boolean
+---@field early_years_pp_flag boolean
+---@field service_child_flag string
+---@field looked_after_flag boolean
+---@field post_looked_after_code string
+---@field young_carer_code string
+---@field nc_year_group string
+---@field enrolment_status "C"|"M"|"S"|"F"|"O"
+---@field registration_group_id string
+---@field house_id string
+---@field boarder_status string
+---@field part_time_flag boolean
+---@field ey_funded_hours number
+---@field ey_extended_funded_hours number
+---@field ey_thirty_hour_code string
+---@field ey_daf_indicator boolean
+---@field previous_school_urn string
+---@field destination_school_urn string
+---@field leaving_reason_code string
+---@field academic_year_id string
+---@field effective_from string
+---@field effective_to string|nil
+
+---@class OptimisFSMPeriodSummary
+---@field id string
+---@field fsm_period_id string
+---@field pupil_id string
+---@field fsm_type string
+---@field ever6_fsm_flag boolean
+---@field ecs_reference string
+---@field effective_from string
+---@field effective_to string
+---@field country_code string
+---@field is_active boolean
+
+---@class OptimisPupilExclusionRecord
+---@field id string
+---@field exclusion_id string
+---@field pupil_id string
+---@field academic_year_id string
+---@field exclusion_category "SUSPENSION"|"PERMANENT_EXCLUSION"|"LUNCHTIME_EXCLUSION"
+---@field reason_code string
+---@field reason_code_2 string
+---@field reason_code_3 string
+---@field start_date string
+---@field start_session "AM"|"PM"
+---@field end_date string
+---@field sessions_lost integer
+---@field governor_review_date string
+---@field governor_review_result_code string
+---@field irp_requested_flag boolean
+---@field sen_expert_requested_flag boolean
+---@field notes string
+
+---@class OptimisPupilAlternativeProvisionRecord
+---@field id string
+---@field provision_id string
+---@field pupil_id string
+---@field academic_year_id string
+---@field provider_urn string
+---@field provider_ukprn string
+---@field companies_house_number string
+---@field ap_setting_type_code string
+---@field reason_code string
+---@field placement_start_date string
+---@field placement_end_date string
+---@field sen_provision_on_entry_code string
+---@field sen_provision_on_exit_code string
+---@field attendance_pattern_code "FT"|"PT"
+---@field sessions_per_week integer
+
+---@class OptimisPupilPost16LearningAimRecord
+---@field id string
+---@field aim_id string
+---@field pupil_id string
+---@field academic_year_id string
+---@field course_id string
+---@field qn_code string
+---@field subject_classification_code string
+---@field planned_start_date string
+---@field planned_end_date string
+---@field actual_end_date string
+---@field completion_status_code string
+---@field withdrawal_reason_code string
+---@field programme_type_code string
+---@field planned_learning_hours number
+---@field planned_eep_hours number
+---@field prior_attainment_maths string
+---@field prior_attainment_english string
+
+---@class OptimisPupilPastoralNoteRecord
+---@field id string
+---@field note_id string
+---@field pupil_id string
+---@field recorded_by_staff_id string
+---@field category "PASTORAL_SUPPORT"|"WELFARE_CHECKIN"|"BEREAVEMENT_NOTE"|"COUNSELLING_SESSION"|"PARENTAL_CONTACT"|"GENERAL"
+---@field alert_level_id string
+---@field is_pinned boolean
+---@field note_text string
+---@field effective_from string
+---@field effective_to string
+
+---@class OptimisSenNeedTypeRecord
+---@field code string
+---@field name string
+---@field description string
+---@field is_active boolean
+
+---@class OptimisSenNeedSummary
+---@field id string
+---@field sen_need_code string
+---@field ranking integer
+---@field alert_level_id string
+---@field effective_from string
+
+---@class OptimisSenAssistantSummary
+---@field id string
+---@field staff_id string
+---@field display_name string
+---@field allocation_notes string
+---@field effective_from string
+
+---@class OptimisMedicalConditionAlert
+---@field id string
+---@field condition_id string|nil
+---@field pupil_id string|nil
+---@field condition_name string
+---@field condition_category "MEDICAL"|"ALLERGY"|"DIETARY"
+---@field alert_level_id string
+---@field has_ihcp boolean
+---@field triggers string
+---@field reaction_symptoms string
+---@field emergency_response_plan string
+---@field medication_name_and_dose string
+---@field medication_location string
+---@field parental_consent_given boolean
+---@field effective_from string
+---@field effective_to string
+---@field medication_expiry_date string
+
+---@class OptimisSenAndMedicalSummary
+---@field pupil_id string
+---@field sen_provision_code "N"|"K"|"E"
+---@field primary_sen_need_code string
+---@field secondary_sen_need_code string
+---@field teaching_strategies string
+---@field pupil_targets string
+---@field senco_notes string
+---@field ehcp_start_date string
+---@field ehcp_review_due_date string
+---@field next_annual_review_date string
+---@field sen_needs OptimisSenNeedSummary[]
+---@field sen_assistants OptimisSenAssistantSummary[]
+---@field medical_conditions OptimisMedicalConditionAlert[]
+
+---@class OptimisGuardianRecord
+---@field relationship_id string
+---@field pupil_id string
+---@field guardian_person_id string
+---@field relationship_code string
+---@field first_name string
+---@field last_name string
+---@field email string
+---@field phone_primary string
+---@field has_parental_responsibility boolean
+---@field contact_priority integer
+---@field is_emergency_contact boolean
+---@field authorised_to_collect boolean
+---@field receive_reports boolean
+---@field household_id string
+---@field household_name string
+---@field address_line_1 string
+---@field town_city string
+---@field postcode string
+---@field is_confidential_address_redacted boolean
+
+---@class OptimisSiblingSummary
+---@field pupil_id string
+---@field person_id string
+---@field first_name string
+---@field last_name string
+---@field nc_year_group string
+---@field household_id string
+---@field shared_via string
+
+---@class OptimisHouseholdSummary
+---@field id string
+---@field household_id string
+---@field name string
+---@field address_line_1 string
+---@field address_line_2 string
+---@field address_line_3 string
+---@field town_city string
+---@field county string
+---@field postcode string
+---@field country_code string
+---@field uprn string
+---@field is_confidential_address_redacted boolean
+
+---@class OptimisStaffRecord
+---@field id string
+---@field staff_id string
+---@field person_id string
+---@field staff_code string
+---@field display_name string
+---@field first_name string
+---@field last_name string
+---@field email string
+---@field phone_primary string
+---@field status string
+---@field job_title string
+---@field staff_type string
+---@field is_dsl boolean
+---@field hire_date string
+---@field termination_date string
+---@field trn string
+---@field qts_flag boolean
+---@field eyts_flag boolean
+---@field hlta_flag boolean
+---@field dbs_certificate_number string
+---@field dbs_check_date string
+---@field prohibition_check_date string
+---@field right_to_work_check_date string
+---@field first_aid_qualified boolean
+---@field first_aid_expiry_date string
+---@field roles string[]
+
+---@class OptimisStaffRoleRecord
+---@field id string
+---@field role_id string
+---@field code string
+---@field name string
+---@field description string
+
+---@class OptimisStaffCoverAssignmentRecord
+---@field id string
+---@field cover_id string
+---@field date string
+---@field timetable_slot_id string
+---@field absent_staff_id string
+---@field covering_staff_id string
+---@field room_override_id string
+---@field cover_notes string
+
+---@class OptimisStaffSCRRecord : OptimisStaffRecord
+---@field qts_status boolean
+---@field hlta_status boolean
+---@field dbs_check_level string
+---@field barred_list_check_date string
+---@field overseas_check_date string
+---@field employment_start_date string
+---@field employment_end_date string
+
+---@class OptimisStaffContractRecord
+---@field id string
+---@field contract_id string
+---@field staff_id string
+---@field contract_type string
+---@field swc_post_code string
+---@field job_title string
+---@field pay_scale string
+---@field pay_spine_point string
+---@field fte number
+---@field hours_per_week number
+---@field weeks_per_year number
+---@field effective_from string
+---@field effective_to string
+
+---@class OptimisStaffAbsenceRecord
+---@field id string
+---@field absence_id string
+---@field staff_id string
+---@field academic_year_id string
+---@field absence_category_code string
+---@field reason_detail string
+---@field status string
+---@field cover_required boolean
+---@field start_date string
+---@field end_date string
+---@field working_days_lost number
+
+---@class OptimisGroupSummary
+---@field id string
+---@field group_id string|nil
+---@field academic_year_id string
+---@field group_type string
+---@field code string
+---@field name string
+---@field default_room_id string
+---@field takes_attendance boolean
+---@field effective_from string
+---@field effective_to string|nil
+
+---@class OptimisHouseSummary
+---@field id string
+---@field house_id string
+---@field code string
+---@field name string
+---@field colour_hex string
+---@field head_of_house_staff_id string
+
+---@class OptimisRoomSummary
+---@field id string
+---@field room_id string
+---@field code string
+---@field name string
+---@field room_type string
+---@field capacity integer
+---@field is_active boolean
+---@field phone_extension string
+
+---@class OptimisCourseSummary
+---@field id string
+---@field course_id string
+---@field academic_year_id string
+---@field department_id string
+---@field code string
+---@field name string
+---@field dfe_subject_code string
+
+---@class OptimisDepartmentSummary
+---@field id string
+---@field department_id string
+---@field name string
+---@field name_short string
+---@field type string
+---@field head_of_department_staff_id string
+
+---@class OptimisYearGroupSummary
+---@field id string
+---@field year_group_id string
+---@field nc_code string
+---@field name string
+---@field phase string
+---@field key_stage string
+---@field sequence_number integer
+---@field head_of_year_staff_id string
+
+---@class OptimisTimetablePeriodSummary
+---@field id string
+---@field period_id string
+---@field academic_year_id string
+---@field cycle_week integer
+---@field day_of_week_id integer
+---@field period_code string
+---@field name string
+---@field start_time string
+---@field end_time string
+---@field period_type string
+---@field maps_to_statutory_session "AM"|"PM"|""
+---@field sequence_number integer
+
+---@class OptimisTimetableSlot
+---@field slot_id string
+---@field period_id string
+---@field period_code string
+---@field period_name string
+---@field cycle_week integer
+---@field day_of_week_id integer
+---@field start_time string
+---@field end_time string
+---@field period_type string
+---@field maps_to_statutory_session "AM"|"PM"|""
+---@field group_id string
+---@field group_code string
+---@field staff_id string
+---@field room_id string
+
+---@class OptimisAttendanceCodeRecord
+---@field code string
+---@field dfe_code string
+---@field description string
+---@field statistical_category "PRESENT"|"APPROVED_EDUCATIONAL_ACTIVITY"|"AUTHORISED_ABSENCE"|"UNAUTHORISED_ABSENCE"|"NOT_REQUIRED"|"ADMINISTRATIVE"
+---@field is_present_for_fire_drill boolean
+---@field is_active boolean
+
+---@class OptimisDashboardWidgetPlacement
+---@field plug_id string
+---@field widget_id string
+---@field col integer
+---@field row integer
+

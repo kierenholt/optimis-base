@@ -16,7 +16,7 @@ import (
 	"optimis/internal/dal"
 )
 
-func readPluginFromDisk(dirPath string, folder string) (*LoadedPlugin, error) {
+func ReadPluginFromDisk(dirPath string, folder string) (*LoadedPlugin, error) {
 	manifestPath := filepath.Join(dirPath, "manifest.json")
 	manifestStat, err := os.Stat(manifestPath)
 	if err != nil {
@@ -233,7 +233,9 @@ func defaultPluginViews() []ViewSpec {
 	}
 }
 
-var opaquePlugIDPattern = regexp.MustCompile(`^[a-z0-9]{8}$`)
+var OpaquePlugIDPattern = regexp.MustCompile(`^[a-z0-9]{8}$`)
+var opaquePlugIDPattern = OpaquePlugIDPattern
+var readPluginFromDisk = ReadPluginFromDisk
 
 func generateRandomPlugID() (string, error) {
 	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
