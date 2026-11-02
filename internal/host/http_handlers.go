@@ -256,6 +256,18 @@ func hasAllScopes(callerScopes []string, requiredScopes []string) bool {
 				continue
 			}
 		}
+		if strings.HasSuffix(req, ":admin") {
+			allScope := strings.TrimSuffix(req, ":admin") + ":all"
+			if _, ok := set[allScope]; ok {
+				continue
+			}
+		}
+		if strings.HasSuffix(req, ":all") {
+			adminScope := strings.TrimSuffix(req, ":all") + ":admin"
+			if _, ok := set[adminScope]; ok {
+				continue
+			}
+		}
 		return false
 	}
 	return true

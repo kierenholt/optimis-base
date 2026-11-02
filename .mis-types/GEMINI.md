@@ -5,4 +5,4 @@ This directory contains LuaCATS / EmmyLua type definition stubs pre-bound via [`
 ## Files
 
 * [`dal.d.lua`](file:///home/kieren/Documents/code/optimis/.mis-types/dal.d.lua):
-  * Defines `OptimisPluginContext`, `OptimisDAL` (`pupils`, `groups`, `guardians`, `attendance`, `safeguarding`, `sen`, `medical`, `staff`, `census`), `OptimisPluginDB`, `OptimisHTTP`, `OptimisEvents`, `OptimisXML`, `OptimisCrypto`, `OptimisClock`, and `OptimisJSON`.
+  * Kept byte-identical to [`sdk/lua/ctx_types.lua`](file:///home/kieren/Documents/code/optimis/sdk/lua/ctx_types.lua). Defines `OptimisPluginContext`, `OptimisDAL` (`academic`, `pupils`, `groups`, `guardians`, `attendance`, `safeguarding`, `sen`, `medical`, `staff`, `census`, `dashboard`), `OptimisPluginDB`, `OptimisHTTP`, `OptimisEvents`, `OptimisXML`, `OptimisCrypto`, `OptimisClock`, and `OptimisJSON` across all 27 production plugin stories.

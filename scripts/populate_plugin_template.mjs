@@ -219,6 +219,7 @@ writeFile(
         {
           id: 'praise_summary_widget',
           title: 'Recent Classroom Praise',
+          description: 'Displays recent classroom praise and commendation notes for your assigned teaching groups.',
           icon: 'award',
           entry: 'ui/dist/widget.html',
           width: 1,

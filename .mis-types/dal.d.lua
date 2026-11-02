@@ -18,20 +18,191 @@
 ---@field mat_grading_schema_version string
 ---@field mat_grading_schema table|nil
 
+---@class OptimisAcademicYearRecord
+---@field id string
+---@field academic_year_id string
+---@field name string
+---@field status "PAST"|"CURRENT"|"FUTURE"
+---@field sequence_number integer
+---@field first_day string
+---@field last_day string
+
+---@class OptimisAcademicTermRecord
+---@field id string
+---@field term_id string
+---@field academic_year_id string
+---@field name string
+---@field name_short string
+---@field sequence_number integer
+---@field first_day string
+---@field last_day string
+
+---@class OptimisDayOfWeekRecord
+---@field id integer
+---@field day_of_week_id integer
+---@field name string
+---@field name_short string
+---@field is_school_day boolean
+---@field school_open_time string
+---@field am_register_time string
+---@field pm_register_time string
+---@field school_close_time string
+
+---@class OptimisAcademicSpecialDayRecord
+---@field id string
+---@field special_day_id string
+---@field academic_term_id string
+---@field date string
+---@field type "INSET_DAY"|"SCHOOL_CLOSURE"|"HALF_TERM_BREAK"|"EXAM_CONTINGENCY_DAY"
+---@field name string
+---@field description string
+
+---@class OptimisAlertLevelRecord
+---@field id string
+---@field alert_level_id string
+---@field name string
+---@field name_short string
+---@field color_hex string
+---@field bg_color_hex string
+---@field description string
+---@field sequence_number integer
+
 ---@class OptimisPupilRecord
 ---@field id string
+---@field pupil_id string
+---@field person_id string|nil
 ---@field upn string
+---@field uln string
+---@field former_upn string
+---@field nhs_number string
+---@field admission_number string
 ---@field first_name string
 ---@field last_name string
 ---@field preferred_first_name string
 ---@field preferred_last_name string
 ---@field legal_first_name string
+---@field legal_middle_names string
 ---@field legal_last_name string
+---@field former_last_name string
+---@field dob string
+---@field sex string
+---@field gender_identity string
+---@field email string
+---@field phone_primary string
+---@field photo_path string
+---@field status string
+---@field ethnicity_code string
+---@field first_language_code string
+---@field eal_flag boolean
+---@field country_of_birth string
+---@field religion_code string
+---@field pupil_premium_flag boolean
+---@field early_years_pp_flag boolean
+---@field service_child_flag string
+---@field looked_after_flag boolean
+---@field post_looked_after_code string
+---@field young_carer_code string
 ---@field nc_year_group string
 ---@field enrolment_status "C"|"M"|"S"|"F"|"O"
+---@field registration_group_id string
+---@field house_id string
+---@field boarder_status string
+---@field part_time_flag boolean
+---@field ey_funded_hours number
+---@field ey_extended_funded_hours number
+---@field ey_thirty_hour_code string
+---@field ey_daf_indicator boolean
+---@field previous_school_urn string
+---@field destination_school_urn string
+---@field leaving_reason_code string
 ---@field academic_year_id string
 ---@field effective_from string
 ---@field effective_to string|nil
+
+---@class OptimisFSMPeriodSummary
+---@field id string
+---@field fsm_period_id string
+---@field pupil_id string
+---@field fsm_type string
+---@field ever6_fsm_flag boolean
+---@field ecs_reference string
+---@field effective_from string
+---@field effective_to string
+---@field country_code string
+---@field is_active boolean
+
+---@class OptimisPupilExclusionRecord
+---@field id string
+---@field exclusion_id string
+---@field pupil_id string
+---@field academic_year_id string
+---@field exclusion_category "SUSPENSION"|"PERMANENT_EXCLUSION"|"LUNCHTIME_EXCLUSION"
+---@field reason_code string
+---@field reason_code_2 string
+---@field reason_code_3 string
+---@field start_date string
+---@field start_session "AM"|"PM"
+---@field end_date string
+---@field sessions_lost integer
+---@field governor_review_date string
+---@field governor_review_result_code string
+---@field irp_requested_flag boolean
+---@field sen_expert_requested_flag boolean
+---@field notes string
+
+---@class OptimisPupilAlternativeProvisionRecord
+---@field id string
+---@field provision_id string
+---@field pupil_id string
+---@field academic_year_id string
+---@field provider_urn string
+---@field provider_ukprn string
+---@field companies_house_number string
+---@field ap_setting_type_code string
+---@field reason_code string
+---@field placement_start_date string
+---@field placement_end_date string
+---@field sen_provision_on_entry_code string
+---@field sen_provision_on_exit_code string
+---@field attendance_pattern_code "FT"|"PT"
+---@field sessions_per_week integer
+
+---@class OptimisPupilPost16LearningAimRecord
+---@field id string
+---@field aim_id string
+---@field pupil_id string
+---@field academic_year_id string
+---@field course_id string
+---@field qn_code string
+---@field subject_classification_code string
+---@field planned_start_date string
+---@field planned_end_date string
+---@field actual_end_date string
+---@field completion_status_code string
+---@field withdrawal_reason_code string
+---@field programme_type_code string
+---@field planned_learning_hours number
+---@field planned_eep_hours number
+---@field prior_attainment_maths string
+---@field prior_attainment_english string
+
+---@class OptimisPupilPastoralNoteRecord
+---@field id string
+---@field note_id string
+---@field pupil_id string
+---@field recorded_by_staff_id string
+---@field category "PASTORAL_SUPPORT"|"WELFARE_CHECKIN"|"BEREAVEMENT_NOTE"|"COUNSELLING_SESSION"|"PARENTAL_CONTACT"|"GENERAL"
+---@field alert_level_id string
+---@field is_pinned boolean
+---@field note_text string
+---@field effective_from string
+---@field effective_to string
+
+---@class OptimisSenNeedTypeRecord
+---@field code string
+---@field name string
+---@field description string
+---@field is_active boolean
 
 ---@class OptimisSenNeedSummary
 ---@field id string
@@ -49,6 +220,8 @@
 
 ---@class OptimisMedicalConditionAlert
 ---@field id string
+---@field condition_id string|nil
+---@field pupil_id string|nil
 ---@field condition_name string
 ---@field condition_category "MEDICAL"|"ALLERGY"|"DIETARY"
 ---@field alert_level_id string
@@ -82,26 +255,44 @@
 ---@field relationship_id string
 ---@field pupil_id string
 ---@field guardian_person_id string
+---@field relationship_code string
 ---@field first_name string
 ---@field last_name string
 ---@field email string
 ---@field phone_primary string
----@field relationship_type string
 ---@field has_parental_responsibility boolean
----@field court_order_restricted boolean
----@field portal_access_enabled boolean
----@field authorised_to_collect boolean
----@field is_emergency_contact boolean
----@field receives_reports boolean
 ---@field contact_priority integer
----@field allow_sms boolean
----@field allow_email boolean
----@field allow_phone boolean
+---@field is_emergency_contact boolean
+---@field authorised_to_collect boolean
+---@field receive_reports boolean
 ---@field household_id string
+---@field household_name string
 ---@field address_line_1 string
----@field address_line_2 string
 ---@field town_city string
 ---@field postcode string
+---@field is_confidential_address_redacted boolean
+
+---@class OptimisSiblingSummary
+---@field pupil_id string
+---@field person_id string
+---@field first_name string
+---@field last_name string
+---@field nc_year_group string
+---@field household_id string
+---@field shared_via string
+
+---@class OptimisHouseholdSummary
+---@field id string
+---@field household_id string
+---@field name string
+---@field address_line_1 string
+---@field address_line_2 string
+---@field address_line_3 string
+---@field town_city string
+---@field county string
+---@field postcode string
+---@field country_code string
+---@field uprn string
 ---@field is_confidential_address_redacted boolean
 
 ---@class OptimisStaffRecord
@@ -109,21 +300,86 @@
 ---@field staff_id string
 ---@field person_id string
 ---@field staff_code string
+---@field display_name string
 ---@field first_name string
 ---@field last_name string
----@field preferred_first_name string
----@field preferred_last_name string
----@field legal_first_name string
----@field legal_last_name string
----@field title string
----@field display_name string
 ---@field email string
----@field staff_type string
+---@field phone_primary string
+---@field status string
 ---@field job_title string
+---@field staff_type string
 ---@field is_dsl boolean
+---@field hire_date string
+---@field termination_date string
+---@field trn string
+---@field qts_flag boolean
+---@field eyts_flag boolean
+---@field hlta_flag boolean
+---@field dbs_certificate_number string
+---@field dbs_check_date string
+---@field prohibition_check_date string
+---@field right_to_work_check_date string
+---@field first_aid_qualified boolean
+---@field first_aid_expiry_date string
+---@field roles string[]
+
+---@class OptimisStaffRoleRecord
+---@field id string
+---@field role_id string
+---@field code string
+---@field name string
+---@field description string
+
+---@class OptimisStaffCoverAssignmentRecord
+---@field id string
+---@field cover_id string
+---@field date string
+---@field timetable_slot_id string
+---@field absent_staff_id string
+---@field covering_staff_id string
+---@field room_override_id string
+---@field cover_notes string
+
+---@class OptimisStaffSCRRecord : OptimisStaffRecord
+---@field qts_status boolean
+---@field hlta_status boolean
+---@field dbs_check_level string
+---@field barred_list_check_date string
+---@field overseas_check_date string
+---@field employment_start_date string
+---@field employment_end_date string
+
+---@class OptimisStaffContractRecord
+---@field id string
+---@field contract_id string
+---@field staff_id string
+---@field contract_type string
+---@field swc_post_code string
+---@field job_title string
+---@field pay_scale string
+---@field pay_spine_point string
+---@field fte number
+---@field hours_per_week number
+---@field weeks_per_year number
+---@field effective_from string
+---@field effective_to string
+
+---@class OptimisStaffAbsenceRecord
+---@field id string
+---@field absence_id string
+---@field staff_id string
+---@field academic_year_id string
+---@field absence_category_code string
+---@field reason_detail string
+---@field status string
+---@field cover_required boolean
+---@field start_date string
+---@field end_date string
+---@field working_days_lost number
 
 ---@class OptimisGroupSummary
 ---@field id string
+---@field group_id string|nil
 ---@field academic_year_id string
 ---@field group_type string
 ---@field code string
@@ -131,6 +387,66 @@
 ---@field default_room_id string
 ---@field takes_attendance boolean
 ---@field effective_from string
+---@field effective_to string|nil
+
+---@class OptimisHouseSummary
+---@field id string
+---@field house_id string
+---@field code string
+---@field name string
+---@field colour_hex string
+---@field head_of_house_staff_id string
+
+---@class OptimisRoomSummary
+---@field id string
+---@field room_id string
+---@field code string
+---@field name string
+---@field room_type string
+---@field capacity integer
+---@field is_active boolean
+---@field phone_extension string
+
+---@class OptimisCourseSummary
+---@field id string
+---@field course_id string
+---@field academic_year_id string
+---@field department_id string
+---@field code string
+---@field name string
+---@field dfe_subject_code string
+
+---@class OptimisDepartmentSummary
+---@field id string
+---@field department_id string
+---@field name string
+---@field name_short string
+---@field type string
+---@field head_of_department_staff_id string
+
+---@class OptimisYearGroupSummary
+---@field id string
+---@field year_group_id string
+---@field nc_code string
+---@field name string
+---@field phase string
+---@field key_stage string
+---@field sequence_number integer
+---@field head_of_year_staff_id string
+
+---@class OptimisTimetablePeriodSummary
+---@field id string
+---@field period_id string
+---@field academic_year_id string
+---@field cycle_week integer
+---@field day_of_week_id integer
+---@field period_code string
+---@field name string
+---@field start_time string
+---@field end_time string
+---@field period_type string
+---@field maps_to_statutory_session "AM"|"PM"|""
+---@field sequence_number integer
 
 ---@class OptimisTimetableSlot
 ---@field slot_id string
@@ -148,46 +464,157 @@
 ---@field staff_id string
 ---@field room_id string
 
+---@class OptimisAttendanceCodeRecord
+---@field code string
+---@field dfe_code string
+---@field description string
+---@field statistical_category "PRESENT"|"APPROVED_EDUCATIONAL_ACTIVITY"|"AUTHORISED_ABSENCE"|"UNAUTHORISED_ABSENCE"|"NOT_REQUIRED"|"ADMINISTRATIVE"
+---@field is_present_for_fire_drill boolean
+---@field is_active boolean
+
+---@class OptimisDashboardWidgetPlacement
+---@field plug_id string
+---@field widget_id string
+---@field col integer
+---@field row integer
+
+---@class OptimisAcademicDAL
+---@field list_years fun(): OptimisAcademicYearRecord[]
+---@field upsert_year fun(params: table): OptimisAcademicYearRecord
+---@field list_terms fun(academic_year_id_or_opts?: string|table): OptimisAcademicTermRecord[]
+---@field upsert_term fun(params: table): OptimisAcademicTermRecord
+---@field list_days_of_week fun(): OptimisDayOfWeekRecord[]
+---@field upsert_day_of_week fun(params: table): OptimisDayOfWeekRecord
+---@field list_special_days fun(term_id_or_opts?: string|table): OptimisAcademicSpecialDayRecord[]
+---@field upsert_special_day fun(params: table): OptimisAcademicSpecialDayRecord
+---@field list_alert_levels fun(): OptimisAlertLevelRecord[]
+
 ---@class OptimisPupilsDAL
----@field get_by_id fun(pupil_id: string, opts?: table): OptimisPupilRecord
+---@field get_by_id fun(pupil_id: string|table, opts?: table): OptimisPupilRecord
+---@field get_by_ids_batch fun(pupil_ids: string[]|table, opts?: table): OptimisPupilRecord[]
+---@field get_batch fun(pupil_ids: string[]|table, opts?: table): OptimisPupilRecord[]
+---@field list_all fun(opts?: table): OptimisPupilRecord[]
 ---@field list_by_group fun(group_id: string, opts?: table): OptimisPupilRecord[]
----@field list_active fun(opts?: table): OptimisPupilRecord[]
----@field list_sen_and_medical_batch fun(pupil_ids: string[], opts?: table): table<string, OptimisSenAndMedicalSummary>
----@field assert_caller_has_access fun(pupil_id: string, opts?: table): boolean
+---@field list_fsm_periods_batch fun(pupil_ids: string[]|table, opts?: table): table<string, OptimisFSMPeriodSummary[]>
+---@field upsert_fsm_period fun(params: table, opts?: table): OptimisFSMPeriodSummary
+---@field list_exclusions fun(pupil_id_or_opts?: string|table, opts?: table): OptimisPupilExclusionRecord[]
+---@field upsert_exclusion fun(params: table, opts?: table): OptimisPupilExclusionRecord
+---@field list_alternative_provisions fun(pupil_id_or_opts?: string|table, opts?: table): OptimisPupilAlternativeProvisionRecord[]
+---@field upsert_alternative_provision fun(params: table, opts?: table): OptimisPupilAlternativeProvisionRecord
+---@field list_post16_learning_aims fun(pupil_id_or_opts?: string|table, opts?: table): OptimisPupilPost16LearningAimRecord[]
+---@field upsert_post16_learning_aim fun(params: table, opts?: table): OptimisPupilPost16LearningAimRecord
+---@field list_pastoral_notes fun(pupil_id_or_opts?: string|table, opts?: table): OptimisPupilPastoralNoteRecord[]
+---@field upsert_pastoral_note fun(params: table, opts?: table): OptimisPupilPastoralNoteRecord
+---@field list_sen_and_medical_batch fun(pupil_ids: string[]|table, opts?: table): table<string, OptimisSenAndMedicalSummary>
+---@field list_sen_register fun(opts?: table): OptimisSenAndMedicalSummary[]
+---@field upsert_pupil_admission fun(params: table, opts?: table): OptimisPupilRecord
+---@field upsert_year_enrolment fun(params: table, opts?: table): OptimisPupilRecord
+---@field promote_pupil_enrolment fun(params: table, opts?: table): OptimisPupilRecord
 
 ---@class OptimisGroupsDAL
----@field list_for_staff fun(staff_id: string, opts?: table): OptimisGroupSummary[]
----@field list_by_type fun(group_type: string, opts?: table): OptimisGroupSummary[]
----@field get_staff_timetable_slots fun(staff_id: string, opts?: table): OptimisTimetableSlot[]
----@field assert_caller_assigned fun(group_id: string, opts?: table): boolean
----@field upsert_pupil_membership fun(params: table): table
----@field upsert_staff_assignment fun(params: table): table
+---@field assert_caller_assigned fun(group_id: string|table, opts?: table): boolean
+---@field can_mutate_group fun(group_id: string|table, opts?: table): boolean
+---@field is_caller_assigned fun(group_id: string|table, opts?: table): boolean
+---@field list_groups fun(opts?: table): OptimisGroupSummary[]
+---@field list_my_groups fun(opts?: table): OptimisGroupSummary[]
+---@field list_all_groups fun(opts?: table): OptimisGroupSummary[]
+---@field list_group_pupils fun(group_id: string|table, opts?: table): OptimisPupilRecord[]
+---@field list_pupil_memberships fun(pupil_id_or_opts?: string|table, opts?: table): table[]
+---@field list_staff fun(): OptimisStaffRecord[]
+---@field get_staff_timetable_slots fun(staff_id?: string, cycle_week?: integer, day_of_week_id?: integer, opts?: table): OptimisTimetableSlot[]
+---@field get_staff_timetable_slots_batch fun(staff_ids: string[], cycle_week?: integer, day_of_week_id?: integer, opts?: table): table<string, OptimisTimetableSlot[]>
+---@field get_pupil_timetable_slots fun(pupil_id_or_opts: string|table, cycle_week?: integer|table, day_of_week_id?: integer, opts?: table): OptimisTimetableSlot[]
+---@field list_free_staff_for_period fun(cycle_week_or_opts: integer|table, day_of_week_id?: integer, period_identifier?: string, opts?: table): OptimisStaffRecord[]
+---@field list_houses fun(): OptimisHouseSummary[]
+---@field list_rooms fun(): OptimisRoomSummary[]
+---@field list_courses fun(academic_year_id_or_opts?: string|table): OptimisCourseSummary[]
+---@field list_departments fun(): OptimisDepartmentSummary[]
+---@field list_year_groups fun(): OptimisYearGroupSummary[]
+---@field list_timetable_periods fun(opts?: table): OptimisTimetablePeriodSummary[]
+---@field list_timetable_slots fun(opts?: table): OptimisTimetableSlot[]
+---@field upsert_pupil_membership fun(params: table, opts?: table): table
+---@field upsert_staff_assignment fun(params: table, opts?: table): table
+---@field revoke_staff_assignment fun(params: table, opts?: table): { revoked: boolean, rows_affected: integer }
+---@field delete_staff_assignment fun(params: table, opts?: table): { revoked: boolean, rows_affected: integer }
+---@field upsert_group fun(params: table, opts?: table): OptimisGroupSummary
+---@field upsert_house fun(params: table, opts?: table): OptimisHouseSummary
+---@field upsert_room fun(params: table, opts?: table): OptimisRoomSummary
+---@field upsert_department fun(params: table, opts?: table): OptimisDepartmentSummary
+---@field upsert_course fun(params: table, opts?: table): OptimisCourseSummary
+---@field upsert_year_group fun(params: table, opts?: table): OptimisYearGroupSummary
+---@field upsert_timetable_period fun(params: table, opts?: table): OptimisTimetablePeriodSummary
+---@field upsert_timetable_slot fun(params: table, opts?: table): table
 
 ---@class OptimisGuardiansDAL
 ---@field list_for_pupil fun(pupil_id: string, opts?: table): OptimisGuardianRecord[]
+---@field list_for_pupils_batch fun(pupil_ids: string[]|table, opts?: table): table<string, OptimisGuardianRecord[]>
+---@field list_batch fun(pupil_ids: string[]|table, opts?: table): table<string, OptimisGuardianRecord[]>
+---@field list_siblings_for_pupil fun(pupil_id_or_opts: string|table, opts?: table): OptimisSiblingSummary[]
+---@field list_households fun(pupil_id_or_opts?: string|table, opts?: table): OptimisHouseholdSummary[]
+---@field upsert_guardian_contact fun(params: table, opts?: table): OptimisGuardianRecord
 
 ---@class OptimisAttendanceDAL
----@field list_sessions_for_pupil fun(pupil_id: string, opts?: table): table[]
----@field list_sessions_for_group fun(group_id: string, session_date: string, session_type: "AM"|"PM"): table[]
----@field upsert_session_batch fun(params: table): table
+---@field list_codes fun(): OptimisAttendanceCodeRecord[]
+---@field upsert_code fun(params: table, opts?: table): OptimisAttendanceCodeRecord
+---@field get_group_session fun(group_id: string, session_date: string, session_type: "AM"|"PM", opts?: table): table[]
+---@field get_group_lesson fun(group_id_or_opts: string|table, timetable_slot_id?: string|table, date?: string, opts?: table): table[]
+---@field list_session_marks fun(opts?: table): table[]
+---@field list_register_submissions fun(opts?: table): table[]
+---@field get_pupil_summary fun(pupil_id: string, opts?: table): table
+---@field get_pupil_summaries_batch fun(pupil_ids: string[]|table, opts?: table): table<string, table>
+---@field get_summaries_batch fun(pupil_ids: string[]|table, opts?: table): table<string, table>
+---@field upsert_session_batch fun(params: table, opts?: table): table
+---@field record_session_batch fun(params: table, opts?: table): table
+---@field upsert_lesson_batch fun(params: table, opts?: table): table
+---@field record_lesson_batch fun(params: table, opts?: table): table
 
 ---@class OptimisSafeguardingDAL
----@field create_postbox_concern fun(params: table): table
+---@field create_postbox fun(params: table): { note_id: string, status: string }
 
 ---@class OptimisSenDAL
+---@field list_batch fun(pupil_ids: string[]|table, opts?: table): table<string, OptimisSenAndMedicalSummary>
 ---@field list_register fun(opts?: table): OptimisSenAndMedicalSummary[]
+---@field list_need_types fun(): OptimisSenNeedTypeRecord[]
+---@field upsert_need_type fun(params: table): OptimisSenNeedTypeRecord
+---@field upsert_sen_record fun(params: table, opts?: table): table
+---@field upsert_sen_need fun(params: table, opts?: table): OptimisSenNeedSummary
+---@field upsert_sen_assistant fun(params: table, opts?: table): OptimisSenAssistantSummary
 
 ---@class OptimisMedicalDAL
----@field list_pupil_conditions fun(pupil_id: string, opts?: table): OptimisMedicalConditionAlert[]
+---@field list_batch fun(pupil_ids: string[]|table, opts?: table): table<string, OptimisSenAndMedicalSummary>
+---@field list_conditions fun(pupil_id_or_opts?: string|table, opts?: table): OptimisMedicalConditionAlert[]
+---@field upsert_condition fun(params: table, opts?: table): OptimisMedicalConditionAlert
 
 ---@class OptimisStaffDAL
----@field get_by_id fun(staff_id: string, opts?: table): OptimisStaffRecord
----@field list_active fun(opts?: table): OptimisStaffRecord[]
+---@field list_active fun(): OptimisStaffRecord[]
+---@field list_all fun(opts?: table): OptimisStaffRecord[]
+---@field list_roles fun(): OptimisStaffRoleRecord[]
+---@field list_cover_assignments fun(opts?: table): OptimisStaffCoverAssignmentRecord[]
+---@field get_by_id fun(staff_id: string): OptimisStaffRecord
+---@field list_scr_register fun(opts?: table): OptimisStaffSCRRecord[]
+---@field list_contracts fun(staff_id_or_opts?: string|table): OptimisStaffContractRecord[]
+---@field list_absences fun(staff_id_or_opts?: string|table, academic_year_id?: string): OptimisStaffAbsenceRecord[]
+---@field upsert_staff_member fun(params: table): OptimisStaffRecord
+---@field upsert_cover_assignment fun(params: table): OptimisStaffCoverAssignmentRecord
+---@field upsert_scr_record fun(params: table): OptimisStaffSCRRecord
+---@field upsert_contract fun(params: table): OptimisStaffContractRecord
+---@field upsert_absence fun(params: table): OptimisStaffAbsenceRecord
 
 ---@class OptimisCensusDAL
----@field get_statutory_rollup fun(opts: { census_date: string, term: "AUTUMN"|"SPRING"|"SUMMER", academic_year_id?: string }): table
+---@field get_statutory_rollup fun(opts: { census_date: string, term_code: "AUTUMN"|"SPRING"|"SUMMER", academic_year_id?: string, attendance_start_date?: string, attendance_end_date?: string }): table
+
+---@class OptimisDashboardDAL
+---@field list_available_widgets fun(): table[]
+---@field list_role_defaults fun(): table<string, OptimisDashboardWidgetPlacement[]>
+---@field get_role_default fun(role_id: string|table): OptimisDashboardWidgetPlacement[]
+---@field save_role_default fun(params: { role_id: string, layout: OptimisDashboardWidgetPlacement[], append_to_existing_staff?: boolean }): { role_id: string, layout: OptimisDashboardWidgetPlacement[], appended_staff_count: integer }
+---@field append_widget_to_role fun(params: { role_id: string, plug_id: string, widget_id: string }): { role_id: string, layout: OptimisDashboardWidgetPlacement[], appended_staff_count: integer }
+---@field get_staff_layout fun(staff_id?: string|table): { staff_id: string, has_override: boolean, column_count: integer, layout: OptimisDashboardWidgetPlacement[] }
+---@field save_staff_layout fun(params: { staff_id?: string, column_count?: integer, layout: OptimisDashboardWidgetPlacement[] }): { staff_id: string, column_count: integer, layout: OptimisDashboardWidgetPlacement[] }
+---@field reset_staff_layout fun(staff_id?: string|table): { staff_id: string, reset: boolean }
 
 ---@class OptimisDAL
+---@field academic OptimisAcademicDAL
 ---@field pupils OptimisPupilsDAL
 ---@field groups OptimisGroupsDAL
 ---@field guardians OptimisGuardiansDAL
@@ -197,6 +624,7 @@
 ---@field medical OptimisMedicalDAL
 ---@field staff OptimisStaffDAL
 ---@field census OptimisCensusDAL
+---@field dashboard OptimisDashboardDAL
 
 ---@class OptimisPluginDB
 ---@field query fun(sql: string, params?: table): table[]

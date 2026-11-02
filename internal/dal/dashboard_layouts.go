@@ -212,6 +212,23 @@ func (d *CoreDAL) SaveStaffDashboardLayoutWithColumns(
 	return normalized, resolvedCols, nil
 }
 
+func (d *CoreDAL) DeleteStaffDashboardLayout(ctx context.Context, staffID string) (bool, error) {
+	trimmedStaff := strings.TrimSpace(staffID)
+	if trimmedStaff == "" {
+		return false, errors.New("missing mandatory parameter: staff_id")
+	}
+	res, err := d.writeDB.ExecContext(
+		ctx,
+		`DELETE FROM dashboard_layouts WHERE scope_type = 'STAFF' AND scope_target = ?`,
+		trimmedStaff,
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to delete staff dashboard layout for %s: %w", trimmedStaff, err)
+	}
+	affected, _ := res.RowsAffected()
+	return affected > 0, nil
+}
+
 func (d *CoreDAL) GetRoleDefaultDashboardLayout(ctx context.Context, roleID string) ([]DashboardWidgetItem, bool, error) {
 	normalizedRole := strings.ToUpper(strings.TrimSpace(roleID))
 	if normalizedRole == "" {

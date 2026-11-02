@@ -65,23 +65,23 @@ func (d *CoreDAL) SeedPersonaTestFixtures(ctx context.Context, academicYearID st
 	}{
 		{
 			"ADMIN", "STAFF", "System Administrator / Headteacher", "ADM", "Full school administrative access",
-			`["dal.census.read:all","dal.pupils.read:all","dal.pupils.write:all","dal.staff.read:admin","dal.staff.write:admin","dal.groups.read:all","dal.groups.write:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.guardians.write:all","dal.sen.read:all","dal.medical.read:all","plugin.config.write"]`,
+			`["dal.academic.read:all","dal.academic.write:all","dal.census.read:all","dal.dashboard.read:all","dal.dashboard.write:all","dal.pupils.read:all","dal.pupils.write:all","dal.staff.read:admin","dal.staff.write:admin","dal.groups.read:all","dal.groups.write:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.guardians.write:all","dal.sen.read:all","dal.sen.write:all","dal.medical.read:all","dal.medical.write:all","plugin.config.write"]`,
 		},
 		{
 			"DSL", "STAFF", "Designated Safeguarding Lead", "DSL", "KCSIE Safeguarding Vault read & triage authority",
-			`["dal.safeguarding.create","dal.safeguarding.read","dal.pupils.read:all","dal.guardians.read:all","dal.attendance.read:all","dal.sen.read:all","dal.medical.read:all"]`,
+			`["dal.academic.read:all","dal.safeguarding.create","dal.safeguarding.read","dal.pupils.read:all","dal.guardians.read:all","dal.attendance.read:all","dal.sen.read:all","dal.sen.write:all","dal.medical.read:all","dal.medical.write:all"]`,
 		},
 		{
 			"HOD", "STAFF", "Head of Department", "HOD", "Departmental curriculum and cohort lead",
-			`["dal.pupils.read:all","dal.groups.read:all","dal.groups.write:all","dal.attendance.read:all","dal.sen.read:all","dal.medical.read:all","dal.safeguarding.create","plugin.config.write"]`,
+			`["dal.academic.read:all","dal.pupils.read:all","dal.groups.read:all","dal.groups.write:all","dal.attendance.read:all","dal.sen.read:all","dal.sen.write:all","dal.medical.read:all","dal.safeguarding.create","plugin.config.write"]`,
 		},
 		{
 			"TEACHER", "STAFF", "Classroom Teacher", "TCH", "Scoped access to assigned teaching and registration groups",
-			`["dal.pupils.read:own_groups","dal.groups.read:own_groups","dal.attendance.read:own_groups","dal.attendance.write:own_groups","dal.guardians.read:own_groups","dal.sen.read:own_groups","dal.medical.read:own_groups","dal.safeguarding.create"]`,
+			`["dal.academic.read:all","dal.pupils.read:own_groups","dal.groups.read:own_groups","dal.attendance.read:own_groups","dal.attendance.write:own_groups","dal.guardians.read:own_groups","dal.sen.read:own_groups","dal.medical.read:own_groups","dal.safeguarding.create"]`,
 		},
 		{
 			"SUPPORT", "STAFF", "School Office & Pastoral Support", "SUP", "Attendance officer, First Aider, and administrative support",
-			`["dal.pupils.read:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.medical.read:all","dal.safeguarding.create"]`,
+			`["dal.academic.read:all","dal.pupils.read:all","dal.attendance.read:all","dal.attendance.write:all","dal.guardians.read:all","dal.medical.read:all","dal.medical.write:all","dal.safeguarding.create"]`,
 		},
 	}
 	for _, r := range roles {
